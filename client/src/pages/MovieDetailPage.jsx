@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
+import { presignUpload, uploadToS3 } from "../api/uploads";
 
 function toSeconds(min, sec) {
   const m = Number(min || 0);
@@ -22,6 +23,9 @@ export default function MovieDetailPage() {
 
   const [form, setForm] = useState({ min: "", sec: "", title: "", body: "" });
   const [selectedIndex, setSelectedIndex] = useState(-1);
+
+  // NEW: optional annotation image upload
+  const [annotationFile, setAnnotationFile] = useState(null);
 
   async function load() {
     setErr("");
@@ -52,16 +56,30 @@ export default function MovieDetailPage() {
 
     try {
       const time_seconds = toSeconds(form.min, form.sec);
+
+      let imageKey = null;
+      if (annotationFile) {
+        const { uploadUrl, key } = await presignUpload({
+          movieId: id,
+          type: "annotation",
+          contentType: annotationFile.type,
+        });
+
+        await uploadToS3(uploadUrl, annotationFile);
+        imageKey = key;
+      }
+
       const payload = {
         time_seconds,
         title: form.title.trim(),
         body: form.body.trim(),
-        // image_key will come later when you add S3 presigned uploads
-        image_key: null,
+        image_key: imageKey,
       };
 
       await api.createAnnotation(id, payload);
+
       setForm({ min: "", sec: "", title: "", body: "" });
+      setAnnotationFile(null);
       await load();
     } catch (e2) {
       setErr(e2.message);
@@ -80,6 +98,7 @@ export default function MovieDetailPage() {
           <h3>
             {movie.title} <span style={{ color: "#666" }}>({movie.year})</span>
           </h3>
+
           <p>
             <b>Director:</b> {movie.director} • <b>Runtime:</b> {movie.runtime_minutes} min •{" "}
             <Link to={`/movies/${movie.id}/edit`}>Edit</Link>
@@ -99,6 +118,7 @@ export default function MovieDetailPage() {
             {annotations.map((a, idx) => {
               const pct =
                 runtimeSeconds > 0 ? Math.min(100, (a.time_seconds / runtimeSeconds) * 100) : 0;
+
               return (
                 <button
                   key={a.id}
@@ -156,7 +176,18 @@ export default function MovieDetailPage() {
               rows={4}
             />
 
-            {/* image upload comes later with S3 presigned URLs */}
+            <label style={{ display: "grid", gap: 6 }}>
+              Screenshot / image (optional)
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setAnnotationFile(e.target.files?.[0] ?? null)}
+              />
+              {annotationFile && (
+                <div style={{ fontSize: 12, opacity: 0.8 }}>Selected: {annotationFile.name}</div>
+              )}
+            </label>
+
             <button type="submit">Add Annotation</button>
           </form>
 
