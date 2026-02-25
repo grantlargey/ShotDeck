@@ -1,0 +1,688 @@
+===== src/App.css =====
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+===== src/index.css =====
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+===== src/main.jsx =====
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import App from "./App.jsx";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>
+);
+===== src/App.jsx =====
+import { Routes, Route, Navigate, Link } from "react-router-dom";
+import MoviesListPage from "./pages/MoviesListPage";
+import MovieFormPage from "./pages/MovieFormPage";
+import MovieDetailPage from "./pages/MovieDetailPage";
+
+export default function App() {
+  return (
+    <div style={{ padding: 24, fontFamily: "system-ui" }}>
+      <header style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>Movie Annotator</h2>
+        <nav style={{ display: "flex", gap: 12 }}>
+          <Link to="/movies">Archive</Link>
+          <Link to="/movies/new">Create Movie</Link>
+        </nav>
+      </header>
+
+      <hr />
+
+      <Routes>
+        <Route path="/" element={<Navigate to="/movies" replace />} />
+        <Route path="/movies" element={<MoviesListPage />} />
+        <Route path="/movies/new" element={<MovieFormPage mode="create" />} />
+        <Route path="/movies/:id/edit" element={<MovieFormPage mode="edit" />} />
+        <Route path="/movies/:id" element={<MovieDetailPage />} />
+      </Routes>
+    </div>
+  );
+}
+===== src/api/uploads.js =====
+// client/src/api/uploads.js
+const API_BASE =
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "http://localhost:4000";
+
+export async function presignUpload({ movieId, type, contentType }) {
+  const res = await fetch(`${API_BASE}/uploads/presign`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ movieId, type, contentType }),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.error || "Failed to presign upload");
+  }
+  return data; // { uploadUrl, key, publicUrl }
+}
+
+export async function uploadToS3(uploadUrl, file) {
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type },
+  });
+
+  if (!res.ok) {
+    throw new Error(`S3 upload failed (${res.status})`);
+  }
+}
+===== src/api.js =====
+// client/src/api.js
+const API_BASE =
+    import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "http://localhost:4000";
+
+async function req(path, opts) {
+    const res = await fetch(`${API_BASE}${path}`, opts);
+
+    const text = await res.text();
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch {
+        data = { raw: text };
+    }
+
+    if (!res.ok) {
+        throw new Error(data?.error || `${res.status} ${res.statusText}`);
+    }
+    return data;
+}
+
+export const api = {
+    // Movies
+    listMovies: () => req("/movies"),
+    getMovie: (id) => req(`/movies/${id}`),
+
+    createMovie: (payload) =>
+        req("/movies", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        }),
+
+    updateMovie: (id, payload) =>
+        req(`/movies/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        }),
+
+    // Annotations
+    listAnnotations: (movieId) => req(`/movies/${movieId}/annotations`),
+
+    createAnnotation: (movieId, payload) =>
+        req(`/movies/${movieId}/annotations`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        }),
+
+    deleteAnnotation: (movieId, annotationId) =>
+        req(`/movies/${movieId}/annotations/${annotationId}`, {
+            method: "DELETE",
+        }),
+};
+===== src/pages/MovieFormPage.jsx =====
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { api } from "../api";
+import { presignUpload, uploadToS3 } from "../api/uploads";
+
+export default function MovieFormPage({ mode }) {
+  const { id } = useParams();
+  const nav = useNavigate();
+
+  const [form, setForm] = useState({
+    title: "",
+    director: "",
+    year: "",
+    runtime_minutes: "",
+  });
+
+  const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [coverFile, setCoverFile] = useState(null);
+
+  useEffect(() => {
+    if (mode !== "edit") return;
+    (async () => {
+      try {
+        const m = await api.getMovie(id);
+        setForm({
+          title: m.title || "",
+          director: m.director || "",
+          year: String(m.year ?? ""),
+          runtime_minutes: String(m.runtime_minutes ?? ""),
+        });
+      } catch (e) {
+        setErr(e.message || "Failed to load movie");
+      }
+    })();
+  }, [mode, id]);
+
+  function updateField(k, v) {
+    setForm((f) => ({ ...f, [k]: v }));
+  }
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    setErr("");
+
+    try {
+      const payload = {
+        title: form.title.trim(),
+        director: form.director.trim(),
+        year: Number(form.year),
+        runtime_minutes: Number(form.runtime_minutes),
+      };
+
+      if (mode === "edit") {
+        // Update core fields
+        const updated = await api.updateMovie(id, payload);
+
+        // Optional: upload new cover and then update cover_image_key
+        if (coverFile) {
+          const { uploadUrl, key } = await presignUpload({
+            movieId: id,
+            type: "cover",
+            contentType: coverFile.type,
+          });
+
+          await uploadToS3(uploadUrl, coverFile);
+
+          await api.updateMovie(id, {
+            ...updated,
+            cover_image_key: key,
+          });
+        }
+
+        nav(`/movies/${id}`);
+        return;
+      }
+
+      // CREATE mode:
+      const created = await api.createMovie(payload);
+
+      if (coverFile) {
+        const { uploadUrl, key } = await presignUpload({
+          movieId: created.id,
+          type: "cover",
+          contentType: coverFile.type,
+        });
+
+        await uploadToS3(uploadUrl, coverFile);
+
+        await api.updateMovie(created.id, {
+          ...created,
+          cover_image_key: key,
+        });
+      }
+
+      nav(`/movies/${created.id}`);
+    } catch (e) {
+      setErr(e.message || "Something went wrong");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <h3>{mode === "edit" ? "Edit Movie" : "Create Movie"}</h3>
+      {err && <p style={{ color: "crimson" }}>{err}</p>}
+
+      <form
+        onSubmit={onSubmit}
+        style={{ maxWidth: 480, display: "grid", gap: 12 }}
+      >
+        <label>
+          Title
+          <input
+            value={form.title}
+            onChange={(e) => updateField("title", e.target.value)}
+            required
+          />
+        </label>
+
+        <label>
+          Director
+          <input
+            value={form.director}
+            onChange={(e) => updateField("director", e.target.value)}
+            required
+          />
+        </label>
+
+        <label>
+          Year
+          <input
+            type="number"
+            value={form.year}
+            onChange={(e) => updateField("year", e.target.value)}
+            required
+          />
+        </label>
+
+        <label>
+          Runtime (minutes)
+          <input
+            type="number"
+            value={form.runtime_minutes}
+            onChange={(e) => updateField("runtime_minutes", e.target.value)}
+            required
+          />
+        </label>
+
+        <label>
+          Cover image (optional)
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
+          />
+          {coverFile && (
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              Selected: {coverFile.name}
+            </div>
+          )}
+        </label>
+
+        <button disabled={saving} type="submit">
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </form>
+    </div>
+  );
+}
+===== src/pages/MovieDetailPage.jsx =====
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { api } from "../api";
+import { presignUpload, uploadToS3 } from "../api/uploads";
+
+function toSeconds(min, sec) {
+  const m = Number(min || 0);
+  const s = Number(sec || 0);
+  return m * 60 + s;
+}
+
+function formatTime(totalSec) {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export default function MovieDetailPage() {
+  const { id } = useParams();
+  const [movie, setMovie] = useState(null);
+  const [annotations, setAnnotations] = useState([]);
+  const [err, setErr] = useState("");
+
+  const [form, setForm] = useState({ min: "", sec: "", title: "", body: "" });
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+
+  // NEW: optional annotation image upload
+  const [annotationFile, setAnnotationFile] = useState(null);
+
+  async function load() {
+    setErr("");
+    try {
+      const m = await api.getMovie(id);
+      const a = await api.listAnnotations(id);
+      a.sort((x, y) => x.time_seconds - y.time_seconds);
+      setMovie(m);
+      setAnnotations(a);
+      setSelectedIndex(a.length ? a.length - 1 : -1);
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, [id]);
+
+  const runtimeSeconds = useMemo(() => {
+    if (!movie?.runtime_minutes) return 0;
+    return Number(movie.runtime_minutes) * 60;
+  }, [movie]);
+
+  async function addAnnotation(e) {
+    e.preventDefault();
+    setErr("");
+
+    try {
+      const time_seconds = toSeconds(form.min, form.sec);
+
+      let imageKey = null;
+      if (annotationFile) {
+        const { uploadUrl, key } = await presignUpload({
+          movieId: id,
+          type: "annotation",
+          contentType: annotationFile.type,
+        });
+
+        await uploadToS3(uploadUrl, annotationFile);
+        imageKey = key;
+      }
+
+      const payload = {
+        time_seconds,
+        title: form.title.trim(),
+        body: form.body.trim(),
+        image_key: imageKey,
+      };
+
+      await api.createAnnotation(id, payload);
+
+      setForm({ min: "", sec: "", title: "", body: "" });
+      setAnnotationFile(null);
+      await load();
+    } catch (e2) {
+      setErr(e2.message);
+    }
+  }
+
+  const selected = selectedIndex >= 0 ? annotations[selectedIndex] : null;
+
+  return (
+    <div>
+      {err && <p style={{ color: "crimson" }}>{err}</p>}
+      {!movie ? (
+        <p>Loading...</p>
+      ) : (
+        <>
+          <h3>
+            {movie.title} <span style={{ color: "#666" }}>({movie.year})</span>
+          </h3>
+
+          <p>
+            <b>Director:</b> {movie.director} • <b>Runtime:</b> {movie.runtime_minutes} min •{" "}
+            <Link to={`/movies/${movie.id}/edit`}>Edit</Link>
+          </p>
+
+          <h4>Timeline</h4>
+          <div
+            style={{
+              position: "relative",
+              height: 18,
+              background: "#ddd",
+              borderRadius: 999,
+              marginBottom: 16,
+              overflow: "hidden",
+            }}
+          >
+            {annotations.map((a, idx) => {
+              const pct =
+                runtimeSeconds > 0 ? Math.min(100, (a.time_seconds / runtimeSeconds) * 100) : 0;
+
+              return (
+                <button
+                  key={a.id}
+                  title={`${formatTime(a.time_seconds)} • ${a.title}`}
+                  onClick={() => setSelectedIndex(idx)}
+                  style={{
+                    position: "absolute",
+                    left: `${pct}%`,
+                    top: 0,
+                    transform: "translateX(-50%)",
+                    width: 10,
+                    height: 18,
+                    border: "none",
+                    cursor: "pointer",
+                    background: idx === selectedIndex ? "#333" : "#555",
+                  }}
+                />
+              );
+            })}
+          </div>
+
+          <h4>Add Annotation</h4>
+          <form onSubmit={addAnnotation} style={{ maxWidth: 560, display: "grid", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="number"
+                placeholder="Min"
+                min="0"
+                value={form.min}
+                onChange={(e) => setForm((f) => ({ ...f, min: e.target.value }))}
+                required
+              />
+              <input
+                type="number"
+                placeholder="Sec"
+                min="0"
+                max="59"
+                value={form.sec}
+                onChange={(e) => setForm((f) => ({ ...f, sec: e.target.value }))}
+                required
+              />
+            </div>
+
+            <input
+              placeholder="Annotation title"
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              required
+            />
+
+            <textarea
+              placeholder="Annotation body"
+              value={form.body}
+              onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+              rows={4}
+            />
+
+            <label style={{ display: "grid", gap: 6 }}>
+              Screenshot / image (optional)
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setAnnotationFile(e.target.files?.[0] ?? null)}
+              />
+              {annotationFile && (
+                <div style={{ fontSize: 12, opacity: 0.8 }}>Selected: {annotationFile.name}</div>
+              )}
+            </label>
+
+            <button type="submit">Add Annotation</button>
+          </form>
+
+          <h4 style={{ marginTop: 24 }}>Annotation Viewer</h4>
+          {!selected ? (
+            <p>No annotations yet.</p>
+          ) : (
+            <div style={{ borderTop: "1px solid #ddd", paddingTop: 12 }}>
+              <p style={{ margin: 0, color: "#666" }}>{formatTime(selected.time_seconds)}</p>
+              <h3 style={{ marginTop: 6 }}>{selected.title}</h3>
+              <p>{selected.body}</p>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  disabled={selectedIndex <= 0}
+                  onClick={() => setSelectedIndex((i) => Math.max(0, i - 1))}
+                >
+                  ← Previous
+                </button>
+                <button
+                  disabled={selectedIndex >= annotations.length - 1}
+                  onClick={() => setSelectedIndex((i) => Math.min(annotations.length - 1, i + 1))}
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+===== src/pages/MoviesListPage.jsx =====
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { api } from "../api";
+
+export default function MoviesListPage() {
+  const [movies, setMovies] = useState([]);
+  const [err, setErr] = useState("");
+
+  async function load() {
+    setErr("");
+    try {
+      const data = await api.listMovies();
+      setMovies(data);
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <div>
+      <h3>Archive</h3>
+      {err && <p style={{ color: "crimson" }}>{err}</p>}
+
+      {movies.length === 0 ? (
+        <p>No movies yet.</p>
+      ) : (
+        <ul>
+          {movies.map((m) => (
+            <li key={m.id} style={{ marginBottom: 8 }}>
+              <Link to={`/movies/${m.id}`}>{m.title}</Link>{" "}
+              <span style={{ color: "#666" }}>
+                ({m.year}) • {m.director}
+              </span>{" "}
+              <Link to={`/movies/${m.id}/edit`} style={{ marginLeft: 8 }}>
+                Edit
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

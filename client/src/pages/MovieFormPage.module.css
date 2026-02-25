@@ -1,0 +1,50 @@
+/* mirrors new-entry.html */
+.title {
+    margin: 0 0 18px;
+    font-size: 32px;
+    font-weight: 800;
+  }
+  
+  .label {
+    display: block;
+    margin: 1rem 0 0.5rem;
+    font-weight: 600;
+  }
+  
+  .input,
+  .textarea {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #888;
+    border-radius: 2px;
+    background: #fff;
+  }
+  
+  .textarea {
+    min-height: 90px;
+    resize: vertical;
+  }
+  
+  .previewImg {
+    max-width: 300px;
+    margin-top: 1rem;
+    display: block;
+  }
+  
+  .button {
+    background-color: #333;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    cursor: pointer;
+    margin-top: 1rem;
+  }
+  
+  .button:hover {
+    background-color: #555;
+  }
+  
+  .error {
+    color: crimson;
+    margin: 12px 0;
+  }
