@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
+import { presignUpload, uploadToS3 } from "../api/uploads";
 
 export default function MovieFormPage({ mode }) {
   const { id } = useParams();
@@ -12,8 +13,10 @@ export default function MovieFormPage({ mode }) {
     year: "",
     runtime_minutes: "",
   });
+
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const [coverFile, setCoverFile] = useState(null);
 
   useEffect(() => {
     if (mode !== "edit") return;
@@ -23,11 +26,11 @@ export default function MovieFormPage({ mode }) {
         setForm({
           title: m.title || "",
           director: m.director || "",
-          year: String(m.year || ""),
-          runtime_minutes: String(m.runtime_minutes || ""),
+          year: String(m.year ?? ""),
+          runtime_minutes: String(m.runtime_minutes ?? ""),
         });
       } catch (e) {
-        setErr(e.message);
+        setErr(e.message || "Failed to load movie");
       }
     })();
   }, [mode, id]);
@@ -50,28 +53,71 @@ export default function MovieFormPage({ mode }) {
       };
 
       if (mode === "edit") {
-        await api.updateMovie(id, payload);
+        // Update core fields
+        const updated = await api.updateMovie(id, payload);
+
+        // Optional: upload new cover and then update cover_image_key
+        if (coverFile) {
+          const { uploadUrl, key } = await presignUpload({
+            movieId: id,
+            type: "cover",
+            contentType: coverFile.type,
+          });
+
+          await uploadToS3(uploadUrl, coverFile);
+
+          await api.updateMovie(id, {
+            ...updated,
+            cover_image_key: key,
+          });
+        }
+
         nav(`/movies/${id}`);
-      } else {
-        const created = await api.createMovie(payload);
-        nav(`/movies/${created.id}`);
+        return;
       }
+
+      // CREATE mode:
+      const created = await api.createMovie(payload);
+
+      if (coverFile) {
+        const { uploadUrl, key } = await presignUpload({
+          movieId: created.id,
+          type: "cover",
+          contentType: coverFile.type,
+        });
+
+        await uploadToS3(uploadUrl, coverFile);
+
+        await api.updateMovie(created.id, {
+          ...created,
+          cover_image_key: key,
+        });
+      }
+
+      nav(`/movies/${created.id}`);
     } catch (e) {
-      setErr(e.message);
+      setErr(e.message || "Something went wrong");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div>
+    <div style={{ padding: 16 }}>
       <h3>{mode === "edit" ? "Edit Movie" : "Create Movie"}</h3>
       {err && <p style={{ color: "crimson" }}>{err}</p>}
 
-      <form onSubmit={onSubmit} style={{ maxWidth: 480, display: "grid", gap: 12 }}>
+      <form
+        onSubmit={onSubmit}
+        style={{ maxWidth: 480, display: "grid", gap: 12 }}
+      >
         <label>
           Title
-          <input value={form.title} onChange={(e) => updateField("title", e.target.value)} required />
+          <input
+            value={form.title}
+            onChange={(e) => updateField("title", e.target.value)}
+            required
+          />
         </label>
 
         <label>
@@ -101,6 +147,20 @@ export default function MovieFormPage({ mode }) {
             onChange={(e) => updateField("runtime_minutes", e.target.value)}
             required
           />
+        </label>
+
+        <label>
+          Cover image (optional)
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
+          />
+          {coverFile && (
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              Selected: {coverFile.name}
+            </div>
+          )}
         </label>
 
         <button disabled={saving} type="submit">

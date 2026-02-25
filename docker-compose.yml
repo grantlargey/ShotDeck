@@ -10,5 +10,17 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  api:
+    build: ./server
+    env_file:
+      - ./server/.env
+    environment:
+      # IMPORTANT: inside compose, the host is the service name "db"
+      DATABASE_URL: postgres://app:app@db:5432/shotdeck
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+
 volumes:
   pgdata:
