@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS movies (
   year INT NOT NULL,
   runtime_minutes INT NOT NULL,
   cover_image_key TEXT,
+  links JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

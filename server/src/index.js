@@ -32,16 +32,26 @@ async function withMovieCoverUrl(movieRow) {
     if (!movieRow) return movieRow;
     if (!movieRow.cover_image_key) return { ...movieRow, cover_image_url: null };
 
-    const { url } = await createPresignedGetUrl({ key: movieRow.cover_image_key });
-    return { ...movieRow, cover_image_url: url };
+    try {
+        const { url } = await createPresignedGetUrl({ key: movieRow.cover_image_key });
+        return { ...movieRow, cover_image_url: url };
+    } catch (err) {
+        console.error("Failed to sign movie cover URL:", movieRow.cover_image_key, err?.message);
+        return { ...movieRow, cover_image_url: null };
+    }
 }
 
 async function withAnnotationImageUrl(row) {
     if (!row) return row;
     if (!row.image_key) return { ...row, image_url: null };
 
-    const { url } = await createPresignedGetUrl({ key: row.image_key });
-    return { ...row, image_url: url };
+    try {
+        const { url } = await createPresignedGetUrl({ key: row.image_key });
+        return { ...row, image_url: url };
+    } catch (err) {
+        console.error("Failed to sign annotation image URL:", row.image_key, err?.message);
+        return { ...row, image_url: null };
+    }
 }
 
 /**
@@ -50,6 +60,7 @@ async function withAnnotationImageUrl(row) {
  * - GET  /movies
  * - GET  /movies/:id
  * - PUT  /movies/:id
+ * - DELETE /movies/:id
  */
 
 // Create a movie
@@ -197,6 +208,27 @@ app.put("/movies/:id", async (req, res) => {
     } catch (err) {
         console.error("PUT /movies/:id error:", err);
         return res.status(500).json({ error: "Failed to update movie" });
+    }
+});
+
+app.delete("/movies/:id", async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await pool.query(
+            `
+        DELETE FROM movies
+        WHERE id = $1
+        RETURNING id
+      `,
+            [id]
+        );
+
+        if (result.rows.length === 0) return res.status(404).json({ error: "Movie not found" });
+        return res.status(204).send();
+    } catch (err) {
+        console.error("DELETE /movies/:id error:", err);
+        return res.status(500).json({ error: "Failed to delete movie" });
     }
 });
 
