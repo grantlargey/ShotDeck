@@ -1,5 +1,18 @@
 // client/src/api/uploads.js
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+const API_BASE =
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||
+  import.meta.env.VITE_API_URL?.replace(/\/$/, "") ||
+  "http://localhost:4000";
+
+async function fetchApi(path, options) {
+  try {
+    return await fetch(`${API_BASE}${path}`, options);
+  } catch (error) {
+    throw new Error(
+      `Network error calling ${API_BASE}${path}. Check VITE_API_BASE, HTTPS, and CORS.`
+    );
+  }
+}
 
 export async function presignUpload({ movieId, type, contentType }) {
   // Basic client-side guardrails
@@ -11,7 +24,7 @@ export async function presignUpload({ movieId, type, contentType }) {
     throw new Error("presignUpload: contentType must be an image/* mime type");
   }
 
-  const res = await fetch(`${API_BASE}/uploads/presign`, {
+  const res = await fetchApi("/uploads/presign", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

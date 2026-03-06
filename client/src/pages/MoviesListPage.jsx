@@ -25,6 +25,7 @@ export default function MoviesListPage() {
 
   const [movies, setMovies] = useState([]);
   const [err, setErr] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
   // controls
   const [query, setQuery] = useState("");
@@ -49,6 +50,24 @@ export default function MoviesListPage() {
   useEffect(() => {
     load();
   }, []);
+
+  async function onDeleteMovie(movie) {
+    const confirmed = window.confirm(`Delete "${movie.title}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setErr("");
+    setDeletingId(movie.id);
+
+    try {
+      await api.deleteMovie(movie.id);
+      setMovies((current) => current.filter((entry) => entry.id !== movie.id));
+      setOpenMenuId(null);
+    } catch (e) {
+      setErr(e.message || "Failed to delete movie");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   // close menus on outside click
   useEffect(() => {
@@ -235,11 +254,12 @@ export default function MoviesListPage() {
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      if (deletingId === m.id) return;
                       setOpenMenuId(null);
-                      alert("Delete not wired yet (needs a DELETE /movies/:id endpoint).");
+                      onDeleteMovie(m);
                     }}
                   >
-                    Delete
+                    {deletingId === m.id ? "Deleting..." : "Delete"}
                   </div>
                 </div>
               </li>

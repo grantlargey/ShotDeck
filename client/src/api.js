@@ -9,7 +9,14 @@ const API_BASE =
  * - Throws a useful Error message when !res.ok
  */
 async function req(path, opts = {}) {
-    const res = await fetch(`${API_BASE}${path}`, opts);
+    let res;
+    try {
+        res = await fetch(`${API_BASE}${path}`, opts);
+    } catch {
+        throw new Error(
+            `Network error calling ${API_BASE}${path}. Check VITE_API_BASE, HTTPS, and CORS.`
+        );
+    }
 
     const contentType = res.headers.get("content-type") || "";
     const text = await res.text();
@@ -87,6 +94,11 @@ export const api = {
             body: JSON.stringify(body),
         });
     },
+
+    deleteMovie: (id) =>
+        req(`/movies/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+        }),
 
     // Annotations
     listAnnotations: (movieId) =>
