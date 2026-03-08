@@ -67,7 +67,25 @@ function normalizeLinks(links) {
     return [];
 }
 
+function normalizeTags(tags) {
+    if (Array.isArray(tags)) return tags.map(String).map((s) => s.trim()).filter(Boolean);
+    if (typeof tags === "string") {
+        return tags
+            .split(/[,\n]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+    }
+    return [];
+}
+
 export const api = {
+    formatAnnotationText: (rawText) =>
+        req("/api/annotations/format", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rawText }),
+        }),
+
     // Movies
     listMovies: () => req("/movies"),
 
@@ -130,6 +148,124 @@ export const api = {
             )}`,
             { method: "DELETE" }
         ),
+
+    // Scripts
+    listScripts: (movieId) => req(`/movies/${encodeURIComponent(movieId)}/scripts`),
+
+    getScript: (movieId, scriptId) =>
+        req(`/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}`),
+
+    findSceneByTime: (movieId, timeSeconds, options = {}) => {
+        const params = new URLSearchParams();
+        params.set("time", String(timeSeconds));
+        if (options.scriptId) params.set("script_id", String(options.scriptId));
+        return req(`/movies/${encodeURIComponent(movieId)}/scene-by-time?${params.toString()}`);
+    },
+
+    saveScript: (movieId, payload) =>
+        req(`/movies/${encodeURIComponent(movieId)}/scripts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        }),
+
+    // Script scenes (persistent anchors + metadata)
+    listScriptScenes: (movieId, scriptId, options = {}) => {
+        const params = new URLSearchParams();
+        if (options.tags) {
+            const tags = normalizeTags(options.tags);
+            if (tags.length) params.set("tags", tags.join(","));
+        }
+        if (options.match === "any") params.set("match", "any");
+        const qs = params.toString();
+        return req(
+            `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations${qs ? `?${qs}` : ""}`
+        );
+    },
+
+    createScriptScene: (movieId, scriptId, payload) => {
+        const body = { ...payload };
+        if ("tags" in body) body.tags = normalizeTags(body.tags);
+
+        return req(`/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+    },
+
+    updateScriptScene: (movieId, scriptId, sceneId, payload) => {
+        const body = { ...payload };
+        if ("tags" in body) body.tags = normalizeTags(body.tags);
+
+        return req(
+            `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations/${encodeURIComponent(sceneId)}`,
+            {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            }
+        );
+    },
+
+    deleteScriptScene: (movieId, scriptId, sceneId) =>
+        req(
+            `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations/${encodeURIComponent(sceneId)}`,
+            { method: "DELETE" }
+        ),
+
+    searchScriptScenes: (options = {}) => {
+        const params = new URLSearchParams();
+        if (options.tags) {
+            const tags = normalizeTags(options.tags);
+            if (tags.length) params.set("tags", tags.join(","));
+        }
+        if (options.match === "any") params.set("match", "any");
+        if (options.movie_id) params.set("movie_id", String(options.movie_id));
+        if (options.script_id) params.set("script_id", String(options.script_id));
+        if (typeof options.q === "string" && options.q.trim()) params.set("q", options.q.trim());
+        const qs = params.toString();
+        return req(`/script-scenes${qs ? `?${qs}` : ""}`);
+    },
+
+    // Backwards-compatible wrappers
+    listScriptAnnotations: (movieId, scriptId, options = {}) => {
+        const params = new URLSearchParams();
+        if (options.tags) {
+            const tags = normalizeTags(options.tags);
+            if (tags.length) params.set("tags", tags.join(","));
+        }
+        if (options.match === "any") params.set("match", "any");
+        const qs = params.toString();
+        return req(
+            `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations${qs ? `?${qs}` : ""}`
+        );
+    },
+
+    createScriptAnnotation: (movieId, scriptId, payload) => {
+        const body = { ...payload };
+        if ("tags" in body) body.tags = normalizeTags(body.tags);
+
+        return req(`/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+    },
+
+    searchScriptAnnotations: (options = {}) => {
+        const params = new URLSearchParams();
+        if (options.tags) {
+            const tags = normalizeTags(options.tags);
+            if (tags.length) params.set("tags", tags.join(","));
+        }
+        if (options.match === "any") params.set("match", "any");
+        if (options.movie_id) params.set("movie_id", String(options.movie_id));
+        if (options.script_id) params.set("script_id", String(options.script_id));
+        if (typeof options.q === "string" && options.q.trim()) params.set("q", options.q.trim());
+        const qs = params.toString();
+        return req(`/script-scenes${qs ? `?${qs}` : ""}`);
+    },
 
     // Upload viewing (handy fallback if API only gives keys)
     getViewUrlForKey: (key) =>

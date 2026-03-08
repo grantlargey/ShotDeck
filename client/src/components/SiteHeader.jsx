@@ -7,6 +7,7 @@ export default function SiteHeader() {
   const isHome = pathname === "/";
   const isArchive = pathname === "/movies";
   const isNew = pathname === "/movies/new" || pathname.includes("/edit");
+  const isScriptSearch = pathname === "/script-search";
 
   return (
     <header className={styles.wrap}>
@@ -25,6 +26,10 @@ export default function SiteHeader() {
 
         <Link className={isArchive ? styles.active : ""} to="/movies">
           Archive
+        </Link>
+
+        <Link className={isScriptSearch ? styles.active : ""} to="/script-search">
+          Script Search
         </Link>
       </nav>
     </header>

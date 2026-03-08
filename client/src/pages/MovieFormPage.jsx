@@ -3,6 +3,12 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { presignUpload, uploadToS3 } from "../api/uploads";
+import {
+  formatMinutesToHms,
+  formatSecondsToHms,
+  parseTimeInputToMinutes,
+  parseTimeInputToSeconds,
+} from "../utils/time";
 import styles from "./MovieFormPage.module.css";
 
 export default function MovieFormPage({ mode }) {
@@ -13,7 +19,7 @@ export default function MovieFormPage({ mode }) {
     title: "",
     director: "",
     year: "",
-    runtime_minutes: "",
+    runtime_hms: "",
     links: "", // keep UI; don't send until backend supports it
   });
 
@@ -46,7 +52,7 @@ export default function MovieFormPage({ mode }) {
           title: m.title || "",
           director: m.director || "",
           year: String(m.year ?? ""),
-          runtime_minutes: String(m.runtime_minutes ?? ""),
+          runtime_hms: formatMinutesToHms(m.runtime_minutes, { fallback: "00:00:00" }),
           links: Array.isArray(m.links) ? m.links.join("\n") : "",
         });
 
@@ -68,11 +74,18 @@ export default function MovieFormPage({ mode }) {
     setErr("");
 
     try {
+      const runtimeMinutes = parseTimeInputToMinutes(form.runtime_hms, {
+        rounding: "nearest",
+      });
+      if (runtimeMinutes === null || runtimeMinutes < 1) {
+        throw new Error("Runtime must use HH:MM:SS and be at least 00:01:00.");
+      }
+
       const basePayload = {
         title: form.title.trim(),
         director: form.director.trim(),
         year: Number(form.year),
-        runtime_minutes: Number(form.runtime_minutes),
+        runtime_minutes: runtimeMinutes,
 
         // Enable ONLY when backend supports it:
         // links: form.links.split("\n").map(s => s.trim()).filter(Boolean),
@@ -166,15 +179,21 @@ export default function MovieFormPage({ mode }) {
         />
 
         <label className={styles.label} htmlFor="runtime">
-          Runtime (minutes):
+          Runtime (HH:MM:SS):
         </label>
         <input
           id="runtime"
-          type="number"
-          min="1"
+          type="text"
           className={styles.input}
-          value={form.runtime_minutes}
-          onChange={(e) => updateField("runtime_minutes", e.target.value)}
+          value={form.runtime_hms}
+          onChange={(e) => updateField("runtime_hms", e.target.value)}
+          onBlur={(e) => {
+            const parsed = parseTimeInputToSeconds(e.target.value);
+            if (parsed !== null) {
+              updateField("runtime_hms", formatSecondsToHms(parsed, { fallback: "00:00:00" }));
+            }
+          }}
+          placeholder="00:00:00"
           required
         />
 
