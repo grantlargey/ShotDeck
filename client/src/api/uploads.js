@@ -7,7 +7,7 @@ const API_BASE =
 async function fetchApi(path, options) {
   try {
     return await fetch(`${API_BASE}${path}`, options);
-  } catch (error) {
+  } catch {
     throw new Error(
       `Network error calling ${API_BASE}${path}. Check VITE_API_BASE, HTTPS, and CORS.`
     );
@@ -17,11 +17,17 @@ async function fetchApi(path, options) {
 export async function presignUpload({ movieId, type, contentType }) {
   // Basic client-side guardrails
   if (!movieId) throw new Error("presignUpload: movieId is required");
-  if (type !== "cover" && type !== "annotation") {
-    throw new Error('presignUpload: type must be "cover" or "annotation"');
+  if (type !== "cover" && type !== "annotation" && type !== "script") {
+    throw new Error('presignUpload: type must be "cover", "annotation", or "script"');
   }
-  if (typeof contentType !== "string" || !contentType.startsWith("image/")) {
-    throw new Error("presignUpload: contentType must be an image/* mime type");
+  if (typeof contentType !== "string") {
+    throw new Error("presignUpload: contentType is required");
+  }
+  if ((type === "cover" || type === "annotation") && !contentType.startsWith("image/")) {
+    throw new Error("presignUpload: image uploads require image/* mime type");
+  }
+  if (type === "script" && contentType !== "application/pdf") {
+    throw new Error("presignUpload: script uploads require application/pdf");
   }
 
   const res = await fetchApi("/uploads/presign", {

@@ -1,14 +1,14 @@
 // client/src/pages/MovieDetailPage.jsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { presignUpload, uploadToS3 } from "../api/uploads";
-
-function toSeconds(min, sec) {
-  const m = Number(min || 0);
-  const s = Number(sec || 0);
-  return m * 60 + s;
-}
+import {
+  formatMinutesToHms,
+  formatSecondsToHms,
+  parseTimeInputToMinutes,
+  parseTimeInputToSeconds,
+} from "../utils/time";
 
 function linksToText(links) {
   if (!links) return "";
@@ -25,15 +25,19 @@ function textToLinks(text) {
 }
 
 export default function MovieDetailPage() {
+  const nav = useNavigate();
   const { id } = useParams();
   const [movie, setMovie] = useState(null);
   const [annotations, setAnnotations] = useState([]);
+  const [scripts, setScripts] = useState([]);
   const [err, setErr] = useState("");
 
-  const [form, setForm] = useState({ min: "", sec: "", title: "", body: "" });
+  const [form, setForm] = useState({ time_hms: "", title: "", body: "" });
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
   const [annotationFile, setAnnotationFile] = useState(null);
+  const [scriptFile, setScriptFile] = useState(null);
+  const [savingScript, setSavingScript] = useState(false);
 
   // Cache signed view urls (fallback)
   const [viewUrlByKey, setViewUrlByKey] = useState({});
@@ -44,17 +48,21 @@ export default function MovieDetailPage() {
     title: "",
     director: "",
     year: "",
-    runtime_minutes: "",
+    runtime_hms: "",
     links: "",
   });
 
   // Inline edit mode (ANNOTATION)
   const [annotationEditMode, setAnnotationEditMode] = useState(false);
   const [annotationEditForm, setAnnotationEditForm] = useState({
+    time_hms: "",
     title: "",
     body: "",
   });
   const [annotationEditFile, setAnnotationEditFile] = useState(null);
+  const [sceneLookupStatus, setSceneLookupStatus] = useState("idle");
+  const [sceneLookupResult, setSceneLookupResult] = useState(null);
+  const [sceneLookupMessage, setSceneLookupMessage] = useState("");
 
   const btnPrimary = {
     background: "#333",
@@ -84,12 +92,17 @@ export default function MovieDetailPage() {
   async function load() {
     setErr("");
     try {
-      const m = await api.getMovie(id);
-      const a = await api.listAnnotations(id);
+      const [m, annotationRows, scriptRows] = await Promise.all([
+        api.getMovie(id),
+        api.listAnnotations(id),
+        api.listScripts(id),
+      ]);
+      const a = Array.isArray(annotationRows) ? annotationRows : [];
       a.sort((x, y) => x.time_seconds - y.time_seconds);
 
       setMovie(m);
       setAnnotations(a);
+      setScripts(Array.isArray(scriptRows) ? scriptRows : []);
       setSelectedIndex(a.length ? a.length - 1 : -1);
 
       // Keep edit form in sync with loaded movie
@@ -97,7 +110,7 @@ export default function MovieDetailPage() {
         title: m.title ?? "",
         director: m.director ?? "",
         year: m.year ?? "",
-        runtime_minutes: m.runtime_minutes ?? "",
+        runtime_hms: formatMinutesToHms(m.runtime_minutes, { fallback: "00:00:00" }),
         links: linksToText(m.links),
       });
     } catch (e) {
@@ -140,7 +153,7 @@ export default function MovieDetailPage() {
   // If selection changes, exit annotation edit mode (avoids editing wrong item)
   useEffect(() => {
     setAnnotationEditMode(false);
-    setAnnotationEditForm({ title: "", body: "" });
+    setAnnotationEditForm({ time_hms: "", title: "", body: "" });
     setAnnotationEditFile(null);
   }, [selected?.id]);
 
@@ -149,7 +162,10 @@ export default function MovieDetailPage() {
     setErr("");
 
     try {
-      const time_seconds = toSeconds(form.min, form.sec);
+      const time_seconds = parseTimeInputToSeconds(form.time_hms);
+      if (time_seconds === null || time_seconds < 0) {
+        throw new Error("Annotation time must use HH:MM:SS (or MM:SS).");
+      }
 
       let image_key = null;
       if (annotationFile) {
@@ -170,7 +186,7 @@ export default function MovieDetailPage() {
         image_key,
       });
 
-      setForm({ min: "", sec: "", title: "", body: "" });
+      setForm({ time_hms: "", title: "", body: "" });
       setAnnotationFile(null);
       await load();
     } catch (e2) {
@@ -199,7 +215,13 @@ export default function MovieDetailPage() {
 
       // NOTE: this assumes you have api.updateAnnotation(movieId, annotationId, payload)
       // If your api method name differs, adjust here.
+      const time_seconds = parseTimeInputToSeconds(annotationEditForm.time_hms);
+      if (time_seconds === null || time_seconds < 0) {
+        throw new Error("Annotation time must use HH:MM:SS (or MM:SS).");
+      }
+
       await api.updateAnnotation(id, selected.id, {
+        time_seconds,
         title: annotationEditForm.title.trim(),
         body: annotationEditForm.body.trim(),
         image_key,
@@ -210,6 +232,37 @@ export default function MovieDetailPage() {
       setAnnotationEditFile(null);
     } catch (e) {
       setErr(e.message);
+    }
+  }
+
+  async function saveScriptPdf() {
+    if (!scriptFile) return;
+    setErr("");
+    setSavingScript(true);
+
+    try {
+      if (scriptFile.type !== "application/pdf") {
+        throw new Error("Please choose a PDF file.");
+      }
+
+      const { uploadUrl, key } = await presignUpload({
+        movieId: id,
+        type: "script",
+        contentType: scriptFile.type,
+      });
+
+      await uploadToS3(uploadUrl, scriptFile);
+      const script = await api.saveScript(id, { s3_key: key });
+      setScriptFile(null);
+      setScripts((prev) => {
+        if (!script?.id) return prev;
+        const rest = prev.filter((row) => row.id !== script.id);
+        return [script, ...rest];
+      });
+    } catch (e) {
+      setErr(e.message || "Failed to save script PDF");
+    } finally {
+      setSavingScript(false);
     }
   }
 
@@ -225,6 +278,76 @@ export default function MovieDetailPage() {
   const selectedImageUrl =
     selected?.image_url ||
     (selected?.image_key ? viewUrlByKey[selected.image_key] : null);
+  const currentScript = scripts[0] || null;
+  const canOpenSceneInScript = sceneLookupStatus === "found" && Boolean(sceneLookupResult);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveSceneForSelectedAnnotation() {
+      if (!selected?.id) {
+        setSceneLookupStatus("idle");
+        setSceneLookupResult(null);
+        setSceneLookupMessage("");
+        return;
+      }
+
+      if (!currentScript?.id) {
+        setSceneLookupStatus("no_script");
+        setSceneLookupResult(null);
+        setSceneLookupMessage("No script available.");
+        return;
+      }
+
+      const annotationTimeSeconds = Number(selected.time_seconds);
+      if (!Number.isFinite(annotationTimeSeconds) || annotationTimeSeconds < 0) {
+        setSceneLookupStatus("no_scene");
+        setSceneLookupResult(null);
+        setSceneLookupMessage("No scene annotation for this timestamp.");
+        return;
+      }
+
+      setSceneLookupStatus("loading");
+      setSceneLookupResult(null);
+      setSceneLookupMessage("");
+
+      try {
+        const result = await api.findSceneByTime(id, annotationTimeSeconds, {
+          scriptId: currentScript.id,
+        });
+
+        if (cancelled) return;
+
+        if (result?.found && result.scene_id && result.script_id) {
+          setSceneLookupStatus("found");
+          setSceneLookupResult(result);
+          setSceneLookupMessage("");
+          return;
+        }
+
+        if (result?.reason === "NO_SCRIPT") {
+          setSceneLookupStatus("no_script");
+          setSceneLookupResult(null);
+          setSceneLookupMessage("No script available.");
+          return;
+        }
+
+        setSceneLookupStatus("no_scene");
+        setSceneLookupResult(null);
+        setSceneLookupMessage("No scene annotation for this timestamp.");
+      } catch (e) {
+        if (cancelled) return;
+        setSceneLookupStatus("error");
+        setSceneLookupResult(null);
+        setSceneLookupMessage(e.message || "Failed to resolve scene for this timestamp.");
+      }
+    }
+
+    void resolveSceneForSelectedAnnotation();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentScript?.id, id, selected?.id, selected?.time_seconds]);
 
   return (
     <div style={{ padding: "2rem", background: "#fdfdfd" }}>
@@ -261,7 +384,7 @@ export default function MovieDetailPage() {
                 <strong>Director:</strong> {movie.director}
               </p>
               <p>
-                <strong>Runtime:</strong> {movie.runtime_minutes} minutes
+                <strong>Runtime:</strong> {formatMinutesToHms(movie.runtime_minutes)}
               </p>
 
               <p style={{ marginBottom: 8 }}>
@@ -283,6 +406,76 @@ export default function MovieDetailPage() {
                   No links.
                 </p>
               )}
+
+              <div
+                style={{
+                  marginTop: 10,
+                  marginBottom: 16,
+                  padding: "10px 12px",
+                  border: "1px solid #ddd",
+                  borderRadius: 8,
+                  background: "#fafafa",
+                  maxWidth: 900,
+                }}
+              >
+                <p style={{ margin: "0 0 8px 0" }}>
+                  <strong>Script PDF:</strong>{" "}
+                  {currentScript ? "Available" : "No script uploaded yet"}
+                </p>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    style={{
+                      ...btnPrimary,
+                      opacity: currentScript ? 1 : 0.5,
+                      cursor: currentScript ? "pointer" : "not-allowed",
+                    }}
+                    disabled={!currentScript}
+                    onClick={() =>
+                      currentScript &&
+                      nav(`/movies/${id}/scripts/${currentScript.id}`)
+                    }
+                  >
+                    View PDF
+                  </button>
+
+                  <button
+                    type="button"
+                    style={btnSecondary}
+                    onClick={() => document.getElementById("scriptPdfInput")?.click()}
+                  >
+                    {currentScript ? "Replace PDF" : "Upload PDF"}
+                  </button>
+
+                  <button
+                    type="button"
+                    style={{
+                      ...btnPrimary,
+                      opacity: scriptFile ? 1 : 0.6,
+                      cursor: scriptFile ? "pointer" : "not-allowed",
+                    }}
+                    disabled={!scriptFile || savingScript}
+                    onClick={saveScriptPdf}
+                  >
+                    {savingScript ? "Saving..." : "Save Script"}
+                  </button>
+
+                  <input
+                    id="scriptPdfInput"
+                    type="file"
+                    accept="application/pdf"
+                    style={{ display: "none" }}
+                    onChange={(e) => setScriptFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+
+                {scriptFile && (
+                  <p style={{ margin: "8px 0 0", fontSize: 12, color: "#666" }}>
+                    Selected PDF: {scriptFile.name}
+                  </p>
+                )}
+              </div>
             </>
           )}
 
@@ -329,14 +522,23 @@ export default function MovieDetailPage() {
               />
 
               <input
-                value={editForm.runtime_minutes}
+                value={editForm.runtime_hms}
                 onChange={(e) =>
                   setEditForm((f) => ({
                     ...f,
-                    runtime_minutes: e.target.value,
+                    runtime_hms: e.target.value,
                   }))
                 }
-                placeholder="Runtime (minutes)"
+                onBlur={(e) => {
+                  const parsed = parseTimeInputToSeconds(e.target.value);
+                  if (parsed !== null) {
+                    setEditForm((f) => ({
+                      ...f,
+                      runtime_hms: formatSecondsToHms(parsed, { fallback: "00:00:00" }),
+                    }));
+                  }
+                }}
+                placeholder="Runtime (HH:MM:SS)"
                 style={{ width: "100%", padding: 8, marginBottom: 10 }}
               />
 
@@ -356,11 +558,18 @@ export default function MovieDetailPage() {
                   onClick={async () => {
                     setErr("");
                     try {
+                      const runtimeMinutes = parseTimeInputToMinutes(editForm.runtime_hms, {
+                        rounding: "nearest",
+                      });
+                      if (runtimeMinutes === null || runtimeMinutes < 1) {
+                        throw new Error("Runtime must use HH:MM:SS and be at least 00:01:00.");
+                      }
+
                       const payload = {
                         title: editForm.title.trim(),
                         director: editForm.director.trim(),
                         year: Number(editForm.year) || null,
-                        runtime_minutes: Number(editForm.runtime_minutes) || null,
+                        runtime_minutes: runtimeMinutes,
                         links: textToLinks(editForm.links),
                       };
 
@@ -383,7 +592,9 @@ export default function MovieDetailPage() {
                       title: movie.title ?? "",
                       director: movie.director ?? "",
                       year: movie.year ?? "",
-                      runtime_minutes: movie.runtime_minutes ?? "",
+                      runtime_hms: formatMinutesToHms(movie.runtime_minutes, {
+                        fallback: "00:00:00",
+                      }),
                       links: linksToText(movie.links),
                     });
                     setEditMode(false);
@@ -430,7 +641,7 @@ export default function MovieDetailPage() {
               return (
                 <div
                   key={a.id}
-                  title={a.title}
+                  title={`${formatSecondsToHms(a.time_seconds)} • ${a.title}`}
                   onClick={() => setSelectedIndex(idx)}
                   style={{
                     position: "absolute",
@@ -456,21 +667,19 @@ export default function MovieDetailPage() {
           {/* Add annotation */}
           <form onSubmit={addAnnotation} style={{ maxWidth: 900 }}>
             <input
-              type="number"
-              placeholder="Minutes"
-              min="0"
-              value={form.min}
-              onChange={(e) => setForm((f) => ({ ...f, min: e.target.value }))}
-              required
-              style={{ width: "100%", padding: 8, marginBottom: 10 }}
-            />
-            <input
-              type="number"
-              placeholder="Seconds"
-              min="0"
-              max="59"
-              value={form.sec}
-              onChange={(e) => setForm((f) => ({ ...f, sec: e.target.value }))}
+              type="text"
+              placeholder="Time (HH:MM:SS)"
+              value={form.time_hms}
+              onChange={(e) => setForm((f) => ({ ...f, time_hms: e.target.value }))}
+              onBlur={(e) => {
+                const parsed = parseTimeInputToSeconds(e.target.value);
+                if (parsed !== null) {
+                  setForm((f) => ({
+                    ...f,
+                    time_hms: formatSecondsToHms(parsed, { fallback: "00:00:00" }),
+                  }));
+                }
+              }}
               required
               style={{ width: "100%", padding: 8, marginBottom: 10 }}
             />
@@ -534,12 +743,7 @@ export default function MovieDetailPage() {
             }}
           />
 
-          {/* Viewer (changes requested)
-              1) Remove header "Annotation Viewer"  ✅ (deleted)
-              2) Do not display time              ✅ (deleted)
-              3) Buttons match rest of page       ✅ (btnPrimary + layout)
-              4) Add Edit button between Next and Delete ✅
-          */}
+          {/* Annotation viewer */}
           {!selected ? (
             <p>No annotations yet.</p>
           ) : (
@@ -560,6 +764,34 @@ export default function MovieDetailPage() {
               {/* Inline annotation edit form */}
               {annotationEditMode ? (
                 <>
+                  <input
+                    value={annotationEditForm.time_hms}
+                    onChange={(e) =>
+                      setAnnotationEditForm((f) => ({
+                        ...f,
+                        time_hms: e.target.value,
+                      }))
+                    }
+                    onBlur={(e) => {
+                      const parsed = parseTimeInputToSeconds(e.target.value);
+                      if (parsed !== null) {
+                        setAnnotationEditForm((f) => ({
+                          ...f,
+                          time_hms: formatSecondsToHms(parsed, { fallback: "00:00:00" }),
+                        }));
+                      }
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: 12,
+                      marginBottom: 12,
+                      border: "2px solid #777",
+                      borderRadius: 4,
+                      fontSize: 20,
+                    }}
+                    placeholder="Time (HH:MM:SS)"
+                  />
+
                   <input
                     value={annotationEditForm.title}
                     onChange={(e) =>
@@ -624,7 +856,7 @@ export default function MovieDetailPage() {
                       style={btnSecondary}
                       onClick={() => {
                         setAnnotationEditMode(false);
-                        setAnnotationEditForm({ title: "", body: "" });
+                        setAnnotationEditForm({ time_hms: "", title: "", body: "" });
                         setAnnotationEditFile(null);
                       }}
                     >
@@ -634,6 +866,9 @@ export default function MovieDetailPage() {
                 </>
               ) : (
                 <>
+                  <p style={{ marginTop: 0, marginBottom: 8, color: "#555" }}>
+                    <strong>Time:</strong> {formatSecondsToHms(selected.time_seconds)}
+                  </p>
                   <h3 style={{ margin: "0 0 10px 0" }}>{selected.title}</h3>
                   <p style={{ marginTop: 0 }}>{selected.body}</p>
                 </>
@@ -674,11 +909,43 @@ export default function MovieDetailPage() {
                   Next →
                 </button>
 
-                {/* Edit button between Next and Delete */}
+                {/* Scene navigation + edit/delete controls */}
+                <button
+                  type="button"
+                  disabled={!canOpenSceneInScript}
+                  onClick={() => {
+                    if (!sceneLookupResult?.scene_id || !sceneLookupResult?.script_id) return;
+                    const params = new URLSearchParams();
+                    params.set("sceneId", sceneLookupResult.scene_id);
+                    const page = Number(
+                      sceneLookupResult.page_start || sceneLookupResult.page_end || 1
+                    );
+                    params.set("page", String(Number.isInteger(page) && page > 0 ? page : 1));
+                    nav(
+                      `/movies/${id}/scripts/${sceneLookupResult.script_id}?${params.toString()}`
+                    );
+                  }}
+                  title={
+                    !canOpenSceneInScript
+                      ? sceneLookupStatus === "loading"
+                        ? "Finding scene annotation for this timestamp..."
+                        : sceneLookupMessage || "No scene annotation for this timestamp."
+                      : "Open matching scene annotation in script"
+                  }
+                  style={{
+                    ...btnPrimary,
+                    opacity: canOpenSceneInScript ? 1 : 0.5,
+                    cursor: canOpenSceneInScript ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {sceneLookupStatus === "loading" ? "Finding Scene..." : "Open Scene In Script"}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
                     setAnnotationEditForm({
+                      time_hms: formatSecondsToHms(selected.time_seconds, { fallback: "00:00:00" }),
                       title: selected.title ?? "",
                       body: selected.body ?? "",
                     });
@@ -706,6 +973,18 @@ export default function MovieDetailPage() {
                   Delete
                 </button>
               </div>
+
+              {sceneLookupStatus === "no_script" && (
+                <p style={{ margin: "10px 0 0", color: "#666" }}>No script available.</p>
+              )}
+              {sceneLookupStatus === "no_scene" && (
+                <p style={{ margin: "10px 0 0", color: "#666" }}>
+                  No scene annotation for this timestamp.
+                </p>
+              )}
+              {sceneLookupStatus === "error" && sceneLookupMessage && (
+                <p style={{ margin: "10px 0 0", color: "crimson" }}>{sceneLookupMessage}</p>
+              )}
             </div>
           )}
         </>
