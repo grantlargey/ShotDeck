@@ -452,6 +452,20 @@ export default function ScriptViewerPage() {
     }
   }
 
+  function handleSelectFormattedText() {
+    const rawText = String(form.raw_selected_text || "");
+    if (!form.formatted_selected_text && rawText.trim() && formatStatus !== "loading") {
+      void requestFormattedAnnotationText(rawText);
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      text_source: "formatted",
+      formatted_selected_text: prev.formatted_selected_text || prev.raw_selected_text,
+    }));
+  }
+
   function extractSelectionContext(selection) {
     if (!selection || selection.rangeCount < 1) {
       return {
@@ -938,14 +952,7 @@ export default function ScriptViewerPage() {
                       name="text_source"
                       value="formatted"
                       checked={form.text_source === "formatted"}
-                      onChange={() =>
-                        setForm((prev) => ({
-                          ...prev,
-                          text_source: "formatted",
-                          formatted_selected_text:
-                            prev.formatted_selected_text || prev.raw_selected_text,
-                        }))
-                      }
+                      onChange={handleSelectFormattedText}
                     />
                     Use formatted text{formatAccepted ? " (Recommended)" : ""}
                   </label>
