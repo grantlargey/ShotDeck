@@ -14,6 +14,7 @@ node_modules/
 /data/sd/
 /data/shotdeck/
 /server/src/importShotdeckShots.js
+/infra/
 
 # README
 README.md
