@@ -15,7 +15,27 @@ import {
 
 const app = express();
 
-app.use(cors({ origin: true }));
+const allowedOrigins = new Set([
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    ...(process.env.ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+]);
+
+app.use(
+    cors({
+        origin(origin, callback) {
+            if (!origin || allowedOrigins.has(origin)) {
+                return callback(null, true);
+            }
+            return callback(null, false);
+        },
+    })
+);
 app.use(express.json({ limit: "2mb" })); // metadata only; no big file uploads
 
 app.get("/health", (req, res) => res.json({ ok: true }));
