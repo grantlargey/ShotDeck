@@ -296,6 +296,15 @@ export default function ScriptViewerPage() {
     }
   }
 
+  function openFirstImageAnnotation(scene) {
+    const annotationId = scene?.first_image_annotation?.id;
+    if (!annotationId) return;
+
+    const params = new URLSearchParams();
+    params.set("annotationId", annotationId);
+    nav(`/movies/${movieId}?${params.toString()}`);
+  }
+
   async function load() {
     setErr("");
     setLoading(true);
@@ -1080,6 +1089,21 @@ export default function ScriptViewerPage() {
                               onClick={() => activateScene(item, { scroll: true })}
                             >
                               Open Scene
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.jumpBtn}
+                              disabled={!item.first_image_annotation?.id}
+                              title={
+                                item.first_image_annotation?.id
+                                  ? `Open first image annotation at ${formatSecondsToHms(
+                                      item.first_image_annotation.time_seconds
+                                    )}`
+                                  : "No image annotation falls inside this scene's timeframe."
+                              }
+                              onClick={() => openFirstImageAnnotation(item)}
+                            >
+                              Open First Image
                             </button>
                             <button
                               type="button"

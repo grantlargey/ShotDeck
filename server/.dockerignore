@@ -1,0 +1,4 @@
+.env
+.env.remote
+node_modules
+.DS_Store

@@ -65,6 +65,15 @@ export default function ScriptSearchPage() {
     }));
   }
 
+  function openFirstImageAnnotation(row) {
+    const annotationId = row?.first_image_annotation?.id;
+    if (!annotationId) return;
+
+    const params = new URLSearchParams();
+    params.set("annotationId", annotationId);
+    nav(`/movies/${row.movie_id}?${params.toString()}`);
+  }
+
   const subtitle = useMemo(() => {
     const parts = [];
 
@@ -168,6 +177,7 @@ export default function ScriptSearchPage() {
               const summary = row.scene_summary || "";
               const isExpanded = Boolean(expandedById[row.id]);
               const previewText = summary || displaySceneText(row);
+              const firstImageAnnotation = row.first_image_annotation;
 
               return (
                 <li
@@ -203,18 +213,35 @@ export default function ScriptSearchPage() {
                     <div className={styles.expandedBody}>
                       {summary && <p className={styles.resultSummary}>{summary}</p>}
                       <p className={styles.resultText}>{displaySceneText(row)}</p>
-                      <button
-                        type="button"
-                        className={styles.openBtn}
-                        onClick={() => {
-                          const params = new URLSearchParams();
-                          params.set("sceneId", row.id);
-                          params.set("page", String(pageStart));
-                          nav(`/movies/${row.movie_id}/scripts/${row.script_id}?${params.toString()}`);
-                        }}
-                      >
-                        Open Scene In Script
-                      </button>
+                      <div className={styles.resultActions}>
+                        <button
+                          type="button"
+                          className={styles.openBtn}
+                          onClick={() => {
+                            const params = new URLSearchParams();
+                            params.set("sceneId", row.id);
+                            params.set("page", String(pageStart));
+                            nav(`/movies/${row.movie_id}/scripts/${row.script_id}?${params.toString()}`);
+                          }}
+                        >
+                          Open Scene In Script
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.openBtn}
+                          disabled={!firstImageAnnotation?.id}
+                          title={
+                            firstImageAnnotation?.id
+                              ? `Open first image annotation at ${formatSecondsToHms(
+                                  firstImageAnnotation.time_seconds
+                                )}`
+                              : "No image annotation falls inside this scene's timeframe."
+                          }
+                          onClick={() => openFirstImageAnnotation(row)}
+                        >
+                          Open First Image
+                        </button>
+                      </div>
                     </div>
                   )}
                 </li>

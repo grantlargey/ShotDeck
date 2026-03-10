@@ -1,6 +1,6 @@
 // client/src/pages/MovieDetailPage.jsx
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { presignUpload, uploadToS3 } from "../api/uploads";
 import {
@@ -27,6 +27,7 @@ function textToLinks(text) {
 export default function MovieDetailPage() {
   const nav = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const [movie, setMovie] = useState(null);
   const [annotations, setAnnotations] = useState([]);
   const [scripts, setScripts] = useState([]);
@@ -63,6 +64,8 @@ export default function MovieDetailPage() {
   const [sceneLookupStatus, setSceneLookupStatus] = useState("idle");
   const [sceneLookupResult, setSceneLookupResult] = useState(null);
   const [sceneLookupMessage, setSceneLookupMessage] = useState("");
+  const lastDeepLinkedAnnotationRef = useRef("");
+  const annotationIdFromQuery = searchParams.get("annotationId") || "";
 
   const btnPrimary = {
     background: "#333",
@@ -99,11 +102,14 @@ export default function MovieDetailPage() {
       ]);
       const a = Array.isArray(annotationRows) ? annotationRows : [];
       a.sort((x, y) => x.time_seconds - y.time_seconds);
+      const targetIndex = annotationIdFromQuery
+        ? a.findIndex((row) => row.id === annotationIdFromQuery)
+        : -1;
 
       setMovie(m);
       setAnnotations(a);
       setScripts(Array.isArray(scriptRows) ? scriptRows : []);
-      setSelectedIndex(a.length ? a.length - 1 : -1);
+      setSelectedIndex(targetIndex >= 0 ? targetIndex : a.length ? a.length - 1 : -1);
 
       // Keep edit form in sync with loaded movie
       setEditForm({
@@ -122,6 +128,20 @@ export default function MovieDetailPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (!annotationIdFromQuery) {
+      lastDeepLinkedAnnotationRef.current = "";
+      return;
+    }
+    if (lastDeepLinkedAnnotationRef.current === annotationIdFromQuery) return;
+
+    const targetIndex = annotations.findIndex((row) => row.id === annotationIdFromQuery);
+    if (targetIndex < 0) return;
+
+    lastDeepLinkedAnnotationRef.current = annotationIdFromQuery;
+    setSelectedIndex(targetIndex);
+  }, [annotationIdFromQuery, annotations]);
 
   const runtimeSeconds = useMemo(() => {
     if (!movie?.runtime_minutes) return 0;

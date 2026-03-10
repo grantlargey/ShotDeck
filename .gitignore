@@ -9,3 +9,11 @@ node_modules/
 .env
 **/.env
 **/.env.*
+
+# ShotDeck import artifacts
+/data/sd/
+/data/shotdeck/
+/server/src/importShotdeckShots.js
+
+# README
+README.md

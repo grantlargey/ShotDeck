@@ -396,6 +396,11 @@
   cursor: pointer;
 }
 
+.jumpBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .sceneActions {
   display: flex;
   gap: 0.45rem;

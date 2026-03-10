@@ -1,5 +1,6 @@
 // server/src/s3.js
 import "./env.js";
+import path from "path";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -11,6 +12,70 @@ if (!region || !bucket) {
 }
 
 export const s3 = new S3Client({ region });
+
+export function getExtensionForContentType(contentType) {
+  return contentType === "application/pdf"
+    ? "pdf"
+    : contentType === "image/png"
+      ? "png"
+      : contentType === "image/webp"
+        ? "webp"
+        : contentType === "image/jpeg"
+          ? "jpg"
+          : contentType === "image/gif"
+            ? "gif"
+            : contentType === "image/avif"
+              ? "avif"
+              : "jpg";
+}
+
+function sanitizePathSegment(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function sanitizeFileName(fileName) {
+  const baseName = path.basename(String(fileName || "")).trim();
+  if (!baseName) throw new Error("filename is required");
+
+  const ext = path.extname(baseName);
+  const name = path.basename(baseName, ext);
+  const safeName = sanitizePathSegment(name);
+  const safeExt = ext ? `.${sanitizePathSegment(ext.slice(1))}` : "";
+
+  if (!safeName) throw new Error("filename is invalid");
+  return `${safeName}${safeExt}`;
+}
+
+export function buildObjectKey({ movieId, type, filename, namespace = "" }) {
+  if (!movieId) throw new Error("movieId is required");
+  if (!filename) throw new Error("filename is required");
+
+  const root =
+    type === "cover"
+      ? "covers"
+      : type === "annotation"
+        ? "annotations"
+        : type === "script"
+          ? "scripts"
+          : null;
+
+  if (!root) {
+    throw new Error('type must be "cover", "annotation", or "script"');
+  }
+
+  const movieSegment = sanitizePathSegment(movieId);
+  if (!movieSegment) throw new Error("movieId is invalid");
+
+  const namespaceSegments = String(namespace || "")
+    .split("/")
+    .map(sanitizePathSegment)
+    .filter(Boolean);
+
+  return [root, movieSegment, ...namespaceSegments, sanitizeFileName(filename)].join("/");
+}
 
 export async function createPresignedPutUrl({ key, contentType }) {
   if (!bucket) throw new Error("S3_BUCKET is not set");
@@ -28,6 +93,24 @@ export async function createPresignedPutUrl({ key, contentType }) {
 
   const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 300 });
   return { uploadUrl };
+}
+
+export async function putObjectToS3({ key, contentType, body }) {
+  if (!bucket) throw new Error("S3_BUCKET is not set");
+  if (!region) throw new Error("AWS_REGION is not set");
+  if (!key) throw new Error("key is required");
+  if (!contentType) throw new Error("contentType is required");
+  if (body === undefined || body === null) throw new Error("body is required");
+
+  const cmd = new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    ContentType: contentType,
+    Body: body,
+  });
+
+  await s3.send(cmd);
+  return { key };
 }
 
 export async function createPresignedGetUrl({ key }) {

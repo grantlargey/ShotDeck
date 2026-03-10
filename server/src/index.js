@@ -5,7 +5,13 @@ import "./env.js";
 
 import { pool } from "./db.js";
 import { v4 as uuidv4 } from "uuid";
-import { createPresignedPutUrl, createPresignedGetUrl } from "./s3.js";
+import { ensureMovieExists, createAnnotationRecord } from "./annotation-service.js";
+import {
+    buildObjectKey,
+    createPresignedPutUrl,
+    createPresignedGetUrl,
+    getExtensionForContentType,
+} from "./s3.js";
 
 const app = express();
 
@@ -224,8 +230,7 @@ function normalizeOptionalInt(value) {
     return Number.isInteger(num) ? num : NaN;
 }
 
-const SCRIPT_SCENE_SELECT_SQL = `
-    SELECT
+const SCRIPT_SCENE_SELECT_FIELDS_SQL = `
       sc.id,
       sc.anchor_id,
       sc.legacy_annotation_id,
@@ -249,14 +254,52 @@ const SCRIPT_SCENE_SELECT_SQL = `
       a.end_offset,
       a.anchor_geometry,
       a.created_at AS anchor_created_at,
-      a.updated_at AS anchor_updated_at
+      a.updated_at AS anchor_updated_at,
+      first_image_ann.first_image_annotation_id,
+      first_image_ann.first_image_annotation_time_seconds,
+      first_image_ann.first_image_annotation_title,
+      first_image_ann.first_image_annotation_image_key,
+      first_image_ann.first_image_annotation_created_at
+`;
+
+const SCRIPT_SCENE_FROM_SQL = `
     FROM script_scene_annotations sc
     JOIN script_scene_anchors a ON a.id = sc.anchor_id
+    LEFT JOIN LATERAL (
+      SELECT
+        ann.id AS first_image_annotation_id,
+        ann.time_seconds AS first_image_annotation_time_seconds,
+        ann.title AS first_image_annotation_title,
+        ann.image_key AS first_image_annotation_image_key,
+        ann.created_at AS first_image_annotation_created_at
+      FROM annotations ann
+      WHERE ann.movie_id = sc.movie_id
+        AND COALESCE(ann.image_key, '') <> ''
+        AND ann.time_seconds >= sc.start_time_seconds
+        AND ann.time_seconds <= sc.end_time_seconds
+      ORDER BY ann.time_seconds ASC, ann.created_at ASC, ann.id ASC
+      LIMIT 1
+    ) first_image_ann ON TRUE
+`;
+
+const SCRIPT_SCENE_SELECT_SQL = `
+    SELECT
+${SCRIPT_SCENE_SELECT_FIELDS_SQL}
+    ${SCRIPT_SCENE_FROM_SQL}
 `;
 
 function mapScriptSceneRow(row) {
     const tags = Array.isArray(row?.tags) ? row.tags : [];
     const anchorGeometry = Array.isArray(row?.anchor_geometry) ? row.anchor_geometry : [];
+    const firstImageAnnotation = row?.first_image_annotation_id
+        ? {
+            id: row.first_image_annotation_id,
+            time_seconds: row.first_image_annotation_time_seconds,
+            title: row.first_image_annotation_title,
+            image_key: row.first_image_annotation_image_key,
+            created_at: row.first_image_annotation_created_at,
+        }
+        : null;
 
     return {
         id: row.id,
@@ -280,6 +323,7 @@ function mapScriptSceneRow(row) {
         start_offset: row.start_offset,
         end_offset: row.end_offset,
         anchor_geometry: anchorGeometry,
+        first_image_annotation: firstImageAnnotation,
         anchor: {
             id: row.anchor_id,
             page_start: row.page_start,
@@ -559,22 +603,19 @@ app.post("/movies/:id/annotations", async (req, res) => {
         });
     }
 
-    const id = uuidv4();
-
     try {
-        const movieCheck = await pool.query(`SELECT id FROM movies WHERE id = $1`, [movieId]);
-        if (movieCheck.rows.length === 0) return res.status(404).json({ error: "Movie not found" });
+        const movie = await ensureMovieExists(pool, movieId);
+        if (!movie) return res.status(404).json({ error: "Movie not found" });
 
-        const result = await pool.query(
-            `
-        INSERT INTO annotations (id, movie_id, time_seconds, title, body, image_key)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *
-      `,
-            [id, movieId, time_seconds, title, body ?? null, image_key ?? null]
-        );
+        const created = await createAnnotationRecord(pool, {
+            movieId,
+            timeSeconds: time_seconds,
+            title,
+            body,
+            imageKey: image_key,
+        });
 
-        const row = await withAnnotationImageUrl(result.rows[0]);
+        const row = await withAnnotationImageUrl(created);
         return res.status(201).json(row);
     } catch (err) {
         console.error("POST /movies/:id/annotations error:", err);
@@ -1529,34 +1570,10 @@ async function searchScriptScenes(req, res) {
         const result = await pool.query(
             `
             SELECT
-              sc.id,
-              sc.anchor_id,
-              sc.legacy_annotation_id,
-              sc.movie_id,
-              sc.script_id,
-              sc.start_time_seconds,
-              sc.end_time_seconds,
-              sc.tags,
-              sc.scene_label,
-              sc.scene_summary,
-              sc.created_at,
-              sc.updated_at,
-              a.page_start,
-              a.page_end,
-              a.selected_text,
-              a.raw_selected_text,
-              a.formatted_selected_text,
-              a.context_prefix,
-              a.context_suffix,
-              a.start_offset,
-              a.end_offset,
-              a.anchor_geometry,
-              a.created_at AS anchor_created_at,
-              a.updated_at AS anchor_updated_at,
+${SCRIPT_SCENE_SELECT_FIELDS_SQL},
               m.title AS movie_title,
               s.s3_key
-            FROM script_scene_annotations sc
-            JOIN script_scene_anchors a ON a.id = sc.anchor_id
+            ${SCRIPT_SCENE_FROM_SQL}
             JOIN movies m ON m.id = sc.movie_id
             JOIN scripts s ON s.id = sc.script_id
             ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -1635,28 +1652,13 @@ app.post("/uploads/presign", async (req, res) => {
         });
     }
 
-    const ext =
-        contentType === "application/pdf"
-            ? "pdf"
-            : contentType === "image/png"
-            ? "png"
-            : contentType === "image/webp"
-                ? "webp"
-                : contentType === "image/jpeg"
-                    ? "jpg"
-                    : contentType === "image/gif"
-                        ? "gif"
-                        : contentType === "image/avif"
-                            ? "avif"
-                            : "jpg";
-
     const id = uuidv4();
-    const key =
-        type === "cover"
-            ? `covers/${movieId}/${id}.${ext}`
-            : type === "annotation"
-                ? `annotations/${movieId}/${id}.${ext}`
-                : `scripts/${movieId}/${id}.${ext}`;
+    const ext = getExtensionForContentType(contentType);
+    const key = buildObjectKey({
+        movieId,
+        type,
+        filename: `${id}.${ext}`,
+    });
 
     try {
         const { uploadUrl } = await createPresignedPutUrl({ key, contentType });
