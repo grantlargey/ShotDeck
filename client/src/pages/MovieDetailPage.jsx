@@ -10,20 +10,6 @@ import {
   parseTimeInputToSeconds,
 } from "../utils/time";
 
-function linksToText(links) {
-  if (!links) return "";
-  if (Array.isArray(links)) return links.join("\n");
-  if (typeof links === "string") return links;
-  return "";
-}
-
-function textToLinks(text) {
-  return String(text || "")
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 export default function MovieDetailPage() {
   const nav = useNavigate();
   const { id } = useParams();
@@ -33,7 +19,7 @@ export default function MovieDetailPage() {
   const [scripts, setScripts] = useState([]);
   const [err, setErr] = useState("");
 
-  const [form, setForm] = useState({ time_hms: "", title: "", body: "" });
+  const [form, setForm] = useState({ time_hms: "" });
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
   const [annotationFile, setAnnotationFile] = useState(null);
@@ -50,15 +36,12 @@ export default function MovieDetailPage() {
     director: "",
     year: "",
     runtime_hms: "",
-    links: "",
   });
 
   // Inline edit mode (ANNOTATION)
   const [annotationEditMode, setAnnotationEditMode] = useState(false);
   const [annotationEditForm, setAnnotationEditForm] = useState({
     time_hms: "",
-    title: "",
-    body: "",
   });
   const [annotationEditFile, setAnnotationEditFile] = useState(null);
   const [sceneLookupStatus, setSceneLookupStatus] = useState("idle");
@@ -92,7 +75,7 @@ export default function MovieDetailPage() {
     flexWrap: "wrap",
   };
 
-  async function load() {
+  async function load(options = {}) {
     setErr("");
     try {
       const [m, annotationRows, scriptRows] = await Promise.all([
@@ -102,14 +85,16 @@ export default function MovieDetailPage() {
       ]);
       const a = Array.isArray(annotationRows) ? annotationRows : [];
       a.sort((x, y) => x.time_seconds - y.time_seconds);
-      const targetIndex = annotationIdFromQuery
-        ? a.findIndex((row) => row.id === annotationIdFromQuery)
+      const preferredAnnotationId =
+        options.annotationId || annotationIdFromQuery || "";
+      const targetIndex = preferredAnnotationId
+        ? a.findIndex((row) => row.id === preferredAnnotationId)
         : -1;
 
       setMovie(m);
       setAnnotations(a);
       setScripts(Array.isArray(scriptRows) ? scriptRows : []);
-      setSelectedIndex(targetIndex >= 0 ? targetIndex : a.length ? a.length - 1 : -1);
+      setSelectedIndex(targetIndex >= 0 ? targetIndex : a.length ? 0 : -1);
 
       // Keep edit form in sync with loaded movie
       setEditForm({
@@ -117,7 +102,6 @@ export default function MovieDetailPage() {
         director: m.director ?? "",
         year: m.year ?? "",
         runtime_hms: formatMinutesToHms(m.runtime_minutes, { fallback: "00:00:00" }),
-        links: linksToText(m.links),
       });
     } catch (e) {
       setErr(e.message);
@@ -173,7 +157,7 @@ export default function MovieDetailPage() {
   // If selection changes, exit annotation edit mode (avoids editing wrong item)
   useEffect(() => {
     setAnnotationEditMode(false);
-    setAnnotationEditForm({ time_hms: "", title: "", body: "" });
+    setAnnotationEditForm({ time_hms: "" });
     setAnnotationEditFile(null);
   }, [selected?.id]);
 
@@ -186,29 +170,26 @@ export default function MovieDetailPage() {
       if (time_seconds === null || time_seconds < 0) {
         throw new Error("Annotation time must use HH:MM:SS (or MM:SS).");
       }
-
-      let image_key = null;
-      if (annotationFile) {
-        const { uploadUrl, key } = await presignUpload({
-          movieId: id,
-          type: "annotation",
-          contentType: annotationFile.type,
-        });
-
-        await uploadToS3(uploadUrl, annotationFile);
-        image_key = key;
+      if (!annotationFile) {
+        throw new Error("Please choose an image for the annotation.");
       }
 
-      await api.createAnnotation(id, {
-        time_seconds,
-        title: form.title.trim(),
-        body: form.body.trim(),
-        image_key,
+      const { uploadUrl, key } = await presignUpload({
+        movieId: id,
+        type: "annotation",
+        contentType: annotationFile.type,
       });
 
-      setForm({ time_hms: "", title: "", body: "" });
+      await uploadToS3(uploadUrl, annotationFile);
+
+      const created = await api.createAnnotation(id, {
+        time_seconds,
+        image_key: key,
+      });
+
+      setForm({ time_hms: "" });
       setAnnotationFile(null);
-      await load();
+      await load({ annotationId: created?.id || "" });
     } catch (e2) {
       setErr(e2.message);
     }
@@ -239,15 +220,16 @@ export default function MovieDetailPage() {
       if (time_seconds === null || time_seconds < 0) {
         throw new Error("Annotation time must use HH:MM:SS (or MM:SS).");
       }
+      if (!image_key) {
+        throw new Error("Please choose an image for the annotation.");
+      }
 
       await api.updateAnnotation(id, selected.id, {
         time_seconds,
-        title: annotationEditForm.title.trim(),
-        body: annotationEditForm.body.trim(),
         image_key,
       });
 
-      await load();
+      await load({ annotationId: selected.id });
       setAnnotationEditMode(false);
       setAnnotationEditFile(null);
     } catch (e) {
@@ -287,13 +269,6 @@ export default function MovieDetailPage() {
   }
 
   const coverUrl = movie?.cover_url || movie?.cover_image_url || null;
-
-  // Links can come back as array or string; normalize to array for display
-  const links = Array.isArray(movie?.links)
-    ? movie.links
-    : typeof movie?.links === "string"
-      ? textToLinks(movie.links)
-      : [];
 
   const selectedImageUrl =
     selected?.image_url ||
@@ -406,26 +381,6 @@ export default function MovieDetailPage() {
               <p>
                 <strong>Runtime:</strong> {formatMinutesToHms(movie.runtime_minutes)}
               </p>
-
-              <p style={{ marginBottom: 8 }}>
-                <strong>Links:</strong>
-              </p>
-
-              {links.length ? (
-                <ul style={{ marginTop: 0, marginBottom: 12 }}>
-                  {links.map((link) => (
-                    <li key={link}>
-                      <a href={link} target="_blank" rel="noreferrer">
-                        {link}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p style={{ color: "#666", marginTop: 0, marginBottom: 12 }}>
-                  No links.
-                </p>
-              )}
 
               <div
                 style={{
@@ -562,16 +517,6 @@ export default function MovieDetailPage() {
                 style={{ width: "100%", padding: 8, marginBottom: 10 }}
               />
 
-              <textarea
-                value={editForm.links}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, links: e.target.value }))
-                }
-                placeholder={"Links (one per line)\nhttps://...\nhttps://..."}
-                rows={4}
-                style={{ width: "100%", padding: 8, marginBottom: 10 }}
-              />
-
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   type="button"
@@ -590,7 +535,6 @@ export default function MovieDetailPage() {
                         director: editForm.director.trim(),
                         year: Number(editForm.year) || null,
                         runtime_minutes: runtimeMinutes,
-                        links: textToLinks(editForm.links),
                       };
 
                       await api.updateMovie(id, payload);
@@ -615,7 +559,6 @@ export default function MovieDetailPage() {
                       runtime_hms: formatMinutesToHms(movie.runtime_minutes, {
                         fallback: "00:00:00",
                       }),
-                      links: linksToText(movie.links),
                     });
                     setEditMode(false);
                   }}
@@ -661,7 +604,7 @@ export default function MovieDetailPage() {
               return (
                 <div
                   key={a.id}
-                  title={`${formatSecondsToHms(a.time_seconds)} • ${a.title}`}
+                  title={formatSecondsToHms(a.time_seconds)}
                   onClick={() => setSelectedIndex(idx)}
                   style={{
                     position: "absolute",
@@ -701,22 +644,6 @@ export default function MovieDetailPage() {
                 }
               }}
               required
-              style={{ width: "100%", padding: 8, marginBottom: 10 }}
-            />
-            <input
-              placeholder="Annotation title"
-              value={form.title}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, title: e.target.value }))
-              }
-              required
-              style={{ width: "100%", padding: 8, marginBottom: 10 }}
-            />
-            <textarea
-              placeholder="Annotation text"
-              value={form.body}
-              onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-              rows={4}
               style={{ width: "100%", padding: 8, marginBottom: 10 }}
             />
 
@@ -812,45 +739,6 @@ export default function MovieDetailPage() {
                     placeholder="Time (HH:MM:SS)"
                   />
 
-                  <input
-                    value={annotationEditForm.title}
-                    onChange={(e) =>
-                      setAnnotationEditForm((f) => ({
-                        ...f,
-                        title: e.target.value,
-                      }))
-                    }
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      marginBottom: 12,
-                      border: "2px solid #777",
-                      borderRadius: 4,
-                      fontSize: 22,
-                    }}
-                    placeholder="Title"
-                  />
-
-                  <textarea
-                    value={annotationEditForm.body}
-                    onChange={(e) =>
-                      setAnnotationEditForm((f) => ({
-                        ...f,
-                        body: e.target.value,
-                      }))
-                    }
-                    rows={4}
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      marginBottom: 12,
-                      border: "2px solid #777",
-                      borderRadius: 4,
-                      fontSize: 20,
-                    }}
-                    placeholder="Annotation text"
-                  />
-
                   <div style={{ marginBottom: 12 }}>
                     <input
                       id="annotationEditImageInput"
@@ -876,7 +764,7 @@ export default function MovieDetailPage() {
                       style={btnSecondary}
                       onClick={() => {
                         setAnnotationEditMode(false);
-                        setAnnotationEditForm({ time_hms: "", title: "", body: "" });
+                        setAnnotationEditForm({ time_hms: "" });
                         setAnnotationEditFile(null);
                       }}
                     >
@@ -889,8 +777,6 @@ export default function MovieDetailPage() {
                   <p style={{ marginTop: 0, marginBottom: 8, color: "#555" }}>
                     <strong>Time:</strong> {formatSecondsToHms(selected.time_seconds)}
                   </p>
-                  <h3 style={{ margin: "0 0 10px 0" }}>{selected.title}</h3>
-                  <p style={{ marginTop: 0 }}>{selected.body}</p>
                 </>
               )}
 
@@ -966,8 +852,6 @@ export default function MovieDetailPage() {
                   onClick={() => {
                     setAnnotationEditForm({
                       time_hms: formatSecondsToHms(selected.time_seconds, { fallback: "00:00:00" }),
-                      title: selected.title ?? "",
-                      body: selected.body ?? "",
                     });
                     setAnnotationEditFile(null);
                     setAnnotationEditMode(true);
@@ -982,8 +866,12 @@ export default function MovieDetailPage() {
                   onClick={async () => {
                     if (!window.confirm("Delete this annotation?")) return;
                     try {
+                      const nextSelectedId =
+                        annotations[selectedIndex - 1]?.id ||
+                        annotations[selectedIndex + 1]?.id ||
+                        "";
                       await api.deleteAnnotation(id, selected.id);
-                      await load();
+                      await load({ annotationId: nextSelectedId });
                     } catch (e) {
                       setErr(e.message);
                     }

@@ -20,13 +20,13 @@ export default function MovieFormPage({ mode }) {
     director: "",
     year: "",
     runtime_hms: "",
-    links: "", // keep UI; don't send until backend supports it
   });
 
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [coverFile, setCoverFile] = useState(null);
+  const [scriptFile, setScriptFile] = useState(null);
   const [coverPreviewUrl, setCoverPreviewUrl] = useState("");
   const [existingCoverUrl, setExistingCoverUrl] = useState("");
 
@@ -53,7 +53,6 @@ export default function MovieFormPage({ mode }) {
           director: m.director || "",
           year: String(m.year ?? ""),
           runtime_hms: formatMinutesToHms(m.runtime_minutes, { fallback: "00:00:00" }),
-          links: Array.isArray(m.links) ? m.links.join("\n") : "",
         });
 
         // Prefer cover_url / cover_image_url if backend provides it
@@ -74,6 +73,10 @@ export default function MovieFormPage({ mode }) {
     setErr("");
 
     try {
+      if (scriptFile && scriptFile.type !== "application/pdf") {
+        throw new Error("Please choose a PDF file for the script.");
+      }
+
       const runtimeMinutes = parseTimeInputToMinutes(form.runtime_hms, {
         rounding: "nearest",
       });
@@ -86,16 +89,11 @@ export default function MovieFormPage({ mode }) {
         director: form.director.trim(),
         year: Number(form.year),
         runtime_minutes: runtimeMinutes,
-
-        // Enable ONLY when backend supports it:
-        // links: form.links.split("\n").map(s => s.trim()).filter(Boolean),
       };
 
       if (mode === "edit") {
-        // 1) update metadata (no cover change yet)
         await api.updateMovie(id, basePayload);
 
-        // 2) if a new cover file is selected, upload + patch cover_image_key
         if (coverFile) {
           const { uploadUrl, key } = await presignUpload({
             movieId: id,
@@ -106,6 +104,17 @@ export default function MovieFormPage({ mode }) {
           await uploadToS3(uploadUrl, coverFile);
 
           await api.updateMovie(id, { ...basePayload, cover_image_key: key });
+        }
+
+        if (scriptFile) {
+          const { uploadUrl, key } = await presignUpload({
+            movieId: id,
+            type: "script",
+            contentType: scriptFile.type,
+          });
+
+          await uploadToS3(uploadUrl, scriptFile);
+          await api.saveScript(id, { s3_key: key });
         }
 
         nav(`/movies/${id}`);
@@ -124,6 +133,17 @@ export default function MovieFormPage({ mode }) {
         await uploadToS3(uploadUrl, coverFile);
 
         await api.updateMovie(created.id, { ...basePayload, cover_image_key: key });
+      }
+
+      if (scriptFile) {
+        const { uploadUrl, key } = await presignUpload({
+          movieId: created.id,
+          type: "script",
+          contentType: scriptFile.type,
+        });
+
+        await uploadToS3(uploadUrl, scriptFile);
+        await api.saveScript(created.id, { s3_key: key });
       }
 
       nav(`/movies`);
@@ -211,16 +231,16 @@ export default function MovieFormPage({ mode }) {
           <img className={styles.previewImg} src={coverToShow} alt="Cover Preview" />
         )}
 
-        <label className={styles.label} htmlFor="links">
-          Links to scripts/articles (optional):
+        <label className={styles.label} htmlFor="scriptPdf">
+          Upload Script PDF (.pdf, optional):
         </label>
-        <textarea
-          id="links"
-          className={styles.textarea}
-          placeholder="Paste URLs here, one per line..."
-          value={form.links}
-          onChange={(e) => updateField("links", e.target.value)}
+        <input
+          id="scriptPdf"
+          type="file"
+          accept="application/pdf"
+          onChange={(e) => setScriptFile(e.target.files?.[0] ?? null)}
         />
+        {scriptFile && <p className={styles.helperText}>Selected PDF: {scriptFile.name}</p>}
 
         <button className={styles.button} disabled={saving} type="submit">
           {saving ? "Saving..." : "Save Entry"}

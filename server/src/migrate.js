@@ -59,12 +59,6 @@ await pool.query(`
         AND table_name = 'script_scene_annotations'
     ) THEN
       ALTER TABLE script_scene_annotations
-      ADD COLUMN IF NOT EXISTS scene_label TEXT;
-
-      ALTER TABLE script_scene_annotations
-      ADD COLUMN IF NOT EXISTS scene_summary TEXT;
-
-      ALTER TABLE script_scene_annotations
       ADD COLUMN IF NOT EXISTS legacy_annotation_id UUID UNIQUE;
 
       ALTER TABLE script_scene_annotations
@@ -168,14 +162,12 @@ if (legacyTableExistsResult.rows[0]?.exists) {
               start_time_seconds,
               end_time_seconds,
               tags,
-              scene_label,
-              scene_summary,
               created_at,
               updated_at
             )
             VALUES (
               $1, $2, $3, $4, $5, $6, $7, $8::jsonb,
-              NULL, NULL, $9, $9
+              $9, $9
             )
           `,
           [

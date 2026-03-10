@@ -214,6 +214,18 @@ async function withAnnotationImageUrl(row) {
     }
 }
 
+function mapImageAnnotationRow(row) {
+    if (!row) return row;
+    return {
+        id: row.id,
+        movie_id: row.movie_id,
+        time_seconds: row.time_seconds,
+        image_key: row.image_key,
+        image_url: row.image_url ?? null,
+        created_at: row.created_at,
+    };
+}
+
 async function withScriptViewUrl(row) {
     if (!row) return row;
     if (!row.s3_key) return { ...row, script_url: null };
@@ -259,8 +271,6 @@ const SCRIPT_SCENE_SELECT_FIELDS_SQL = `
       sc.start_time_seconds,
       sc.end_time_seconds,
       sc.tags,
-      sc.scene_label,
-      sc.scene_summary,
       sc.created_at,
       sc.updated_at,
       a.page_start,
@@ -277,7 +287,6 @@ const SCRIPT_SCENE_SELECT_FIELDS_SQL = `
       a.updated_at AS anchor_updated_at,
       first_image_ann.first_image_annotation_id,
       first_image_ann.first_image_annotation_time_seconds,
-      first_image_ann.first_image_annotation_title,
       first_image_ann.first_image_annotation_image_key,
       first_image_ann.first_image_annotation_created_at
 `;
@@ -289,7 +298,6 @@ const SCRIPT_SCENE_FROM_SQL = `
       SELECT
         ann.id AS first_image_annotation_id,
         ann.time_seconds AS first_image_annotation_time_seconds,
-        ann.title AS first_image_annotation_title,
         ann.image_key AS first_image_annotation_image_key,
         ann.created_at AS first_image_annotation_created_at
       FROM annotations ann
@@ -315,7 +323,6 @@ function mapScriptSceneRow(row) {
         ? {
             id: row.first_image_annotation_id,
             time_seconds: row.first_image_annotation_time_seconds,
-            title: row.first_image_annotation_title,
             image_key: row.first_image_annotation_image_key,
             created_at: row.first_image_annotation_created_at,
         }
@@ -329,8 +336,6 @@ function mapScriptSceneRow(row) {
         start_time_seconds: row.start_time_seconds,
         end_time_seconds: row.end_time_seconds,
         tags,
-        scene_label: row.scene_label,
-        scene_summary: row.scene_summary,
         created_at: row.created_at,
         updated_at: row.updated_at,
         page_start: row.page_start,
@@ -616,10 +621,14 @@ app.post("/movies/:id/annotations", async (req, res) => {
     const movieId = req.params.id;
     const { time_seconds, title, body, image_key } = req.body;
 
-    if (typeof time_seconds !== "number" || typeof title !== "string") {
+    if (
+        typeof time_seconds !== "number" ||
+        !Number.isFinite(time_seconds) ||
+        time_seconds < 0 ||
+        (image_key !== undefined && image_key !== null && typeof image_key !== "string")
+    ) {
         return res.status(400).json({
-            error:
-                "Invalid body. Expected { time_seconds:number, title:string, (optional) body:string, (optional) image_key:string }",
+            error: "Invalid body. Expected { time_seconds:number, (optional) image_key:string }",
         });
     }
 
@@ -630,12 +639,12 @@ app.post("/movies/:id/annotations", async (req, res) => {
         const created = await createAnnotationRecord(pool, {
             movieId,
             timeSeconds: time_seconds,
-            title,
-            body,
+            title: typeof title === "string" ? title.trim() : "",
+            body: typeof body === "string" && body.trim() ? body.trim() : null,
             imageKey: image_key,
         });
 
-        const row = await withAnnotationImageUrl(created);
+        const row = mapImageAnnotationRow(await withAnnotationImageUrl(created));
         return res.status(201).json(row);
     } catch (err) {
         console.error("POST /movies/:id/annotations error:", err);
@@ -657,7 +666,9 @@ app.get("/movies/:id/annotations", async (req, res) => {
             [movieId]
         );
 
-        const withUrls = await Promise.all(result.rows.map(withAnnotationImageUrl));
+        const withUrls = await Promise.all(
+            result.rows.map(async (row) => mapImageAnnotationRow(await withAnnotationImageUrl(row)))
+        );
         return res.json(withUrls);
     } catch (err) {
         console.error("GET /movies/:id/annotations error:", err);
@@ -674,13 +685,33 @@ app.put("/movies/:movieId/annotations/:annotationId", async (req, res) => {
             typeof time_seconds !== "number" ||
             !Number.isFinite(time_seconds) ||
             time_seconds < 0 ||
-            typeof title !== "string" ||
-            typeof body !== "string"
+            (title !== undefined && title !== null && typeof title !== "string") ||
+            (body !== undefined && body !== null && typeof body !== "string") ||
+            (image_key !== undefined && image_key !== null && typeof image_key !== "string")
         ) {
             return res.status(400).json({
-                error: "Invalid body. Expected { time_seconds:number, title:string, body:string, (optional) image_key:string }",
+                error: "Invalid body. Expected { time_seconds:number, (optional) image_key:string }",
             });
         }
+
+        const existingResult = await pool.query(
+            `
+            SELECT *
+            FROM annotations
+            WHERE id = $1 AND movie_id = $2
+            LIMIT 1
+          `,
+            [annotationId, movieId]
+        );
+
+        if (existingResult.rowCount === 0) {
+            return res.status(404).json({ error: "Annotation not found" });
+        }
+
+        const existing = existingResult.rows[0];
+        const nextImageKey = image_key === undefined ? existing.image_key : image_key ?? null;
+        const nextTitle = typeof title === "string" ? title.trim() : "";
+        const nextBody = typeof body === "string" && body.trim() ? body.trim() : null;
 
         const q = `
         UPDATE annotations
@@ -694,18 +725,15 @@ app.put("/movies/:movieId/annotations/:annotationId", async (req, res) => {
 
         const result = await pool.query(q, [
             time_seconds,
-            title,
-            body,
-            image_key ?? null,
+            nextTitle,
+            nextBody,
+            nextImageKey,
             annotationId,
             movieId,
         ]);
 
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: "Annotation not found" });
-        }
-
-        res.json(result.rows[0]);
+        const row = mapImageAnnotationRow(await withAnnotationImageUrl(result.rows[0]));
+        res.json(row);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -943,8 +971,6 @@ async function createScriptScene(req, res) {
         end_offset,
         anchor_geometry,
         tags,
-        scene_label,
-        scene_summary,
     } = req.body || {};
 
     const startTime = Number(start_time_seconds);
@@ -1042,15 +1068,6 @@ async function createScriptScene(req, res) {
         });
     }
 
-    if (
-        (scene_label !== undefined && scene_label !== null && typeof scene_label !== "string") ||
-        (scene_summary !== undefined && scene_summary !== null && typeof scene_summary !== "string")
-    ) {
-        return res.status(400).json({
-            error: "Invalid body. scene_label/scene_summary must be strings when provided.",
-        });
-    }
-
     const anchorGeometryNorm = normalizeAnchorGeometry(anchor_geometry);
     if (anchorGeometryNorm === "__INVALID__") {
         return res.status(400).json({
@@ -1136,11 +1153,9 @@ async function createScriptScene(req, res) {
                   script_id,
                   start_time_seconds,
                   end_time_seconds,
-                  tags,
-                  scene_label,
-                  scene_summary
+                  tags
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
               `,
                 [
                     sceneId,
@@ -1150,10 +1165,6 @@ async function createScriptScene(req, res) {
                     startTime,
                     endTime,
                     JSON.stringify(tagsNorm === undefined ? [] : tagsNorm),
-                    typeof scene_label === "string" && scene_label.trim() ? scene_label.trim() : null,
-                    typeof scene_summary === "string" && scene_summary.trim()
-                        ? scene_summary.trim()
-                        : null,
                 ]
             );
 
@@ -1332,11 +1343,7 @@ async function updateScriptScene(req, res) {
                 typeof body.context_prefix !== "string") ||
             (body.context_suffix !== undefined &&
                 body.context_suffix !== null &&
-                typeof body.context_suffix !== "string") ||
-            (body.scene_label !== undefined && body.scene_label !== null && typeof body.scene_label !== "string") ||
-            (body.scene_summary !== undefined &&
-                body.scene_summary !== null &&
-                typeof body.scene_summary !== "string")
+                typeof body.context_suffix !== "string")
         ) {
             return res.status(400).json({
                 error:
@@ -1394,18 +1401,6 @@ async function updateScriptScene(req, res) {
             body.context_prefix === undefined ? existingRow.context_prefix : body.context_prefix;
         const nextContextSuffix =
             body.context_suffix === undefined ? existingRow.context_suffix : body.context_suffix;
-        const nextSceneLabel =
-            body.scene_label === undefined
-                ? existingRow.scene_label
-                : body.scene_label && body.scene_label.trim()
-                    ? body.scene_label.trim()
-                    : null;
-        const nextSceneSummary =
-            body.scene_summary === undefined
-                ? existingRow.scene_summary
-                : body.scene_summary && body.scene_summary.trim()
-                    ? body.scene_summary.trim()
-                    : null;
         const nextTags = tagsNorm === undefined ? existingRow.tags : tagsNorm;
         const nextAnchorGeometry =
             anchorGeometryNorm === undefined ? existingRow.anchor_geometry : anchorGeometryNorm;
@@ -1470,8 +1465,6 @@ async function updateScriptScene(req, res) {
                   start_time_seconds = $2,
                   end_time_seconds = $3,
                   tags = $4::jsonb,
-                  scene_label = $5,
-                  scene_summary = $6,
                   updated_at = NOW()
                 WHERE id = $1
               `,
@@ -1480,8 +1473,6 @@ async function updateScriptScene(req, res) {
                     nextStartTime,
                     nextEndTime,
                     JSON.stringify(Array.isArray(nextTags) ? nextTags : []),
-                    nextSceneLabel,
-                    nextSceneSummary,
                 ]
             );
 
@@ -1574,9 +1565,7 @@ async function searchScriptScenes(req, res) {
         const textParam = `$${values.length}`;
         where.push(
             `(
-              sc.scene_label ILIKE ${textParam}
-              OR sc.scene_summary ILIKE ${textParam}
-              OR a.selected_text ILIKE ${textParam}
+              a.selected_text ILIKE ${textParam}
               OR COALESCE(a.formatted_selected_text, '') ILIKE ${textParam}
               OR COALESCE(a.raw_selected_text, '') ILIKE ${textParam}
             )`

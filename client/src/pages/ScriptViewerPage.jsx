@@ -5,7 +5,7 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { api } from "../api";
-import { SCRIPT_TAG_CATEGORIES } from "../constants/scriptTagCategories";
+import { SCRIPT_TAG_CATEGORIES, getScriptTagLabel } from "../constants/scriptTagCategories";
 import { formatSecondsToHms, parseTimeInputToSeconds } from "../utils/time";
 import styles from "./ScriptViewerPage.module.css";
 
@@ -132,8 +132,6 @@ const EMPTY_FORM = {
   end_offset: "",
   anchor_geometry: [],
   tags: [],
-  scene_label: "",
-  scene_summary: "",
 };
 
 export default function ScriptViewerPage() {
@@ -210,8 +208,6 @@ export default function ScriptViewerPage() {
           : String(scene.end_offset),
       anchor_geometry: Array.isArray(scene?.anchor_geometry) ? scene.anchor_geometry : [],
       tags: safeTags(scene?.tags),
-      scene_label: scene?.scene_label || "",
-      scene_summary: scene?.scene_summary || "",
     });
     setFormatStatus("ready");
     setFormatAccepted(
@@ -645,8 +641,6 @@ export default function ScriptViewerPage() {
       end_offset: endOffset,
       anchor_geometry: Array.isArray(form.anchor_geometry) ? form.anchor_geometry : [],
       tags: form.tags,
-      scene_label: form.scene_label || null,
-      scene_summary: form.scene_summary || null,
     };
 
     setSaving(true);
@@ -676,7 +670,7 @@ export default function ScriptViewerPage() {
     setInfo("");
 
     const scene = scenes.find((row) => row.id === sceneId);
-    const label = scene?.scene_label || displaySceneText(scene).slice(0, 32) || "this scene";
+    const label = displaySceneText(scene).slice(0, 32) || "this scene";
     const ok = window.confirm(`Delete ${label}?`);
     if (!ok) return;
 
@@ -791,7 +785,7 @@ export default function ScriptViewerPage() {
                         <div className={styles.pageSceneBlocks}>
                           {pageScenes.map((scene) => {
                             const isActive = scene.id === activeSceneId;
-                            const label = scene.scene_label || displaySceneText(scene).slice(0, 72);
+                            const label = displaySceneText(scene).slice(0, 72);
                             return (
                               <button
                                 key={`${pageNum}-${scene.id}`}
@@ -840,28 +834,6 @@ export default function ScriptViewerPage() {
             </p>
 
             <form onSubmit={onSubmitScene} className={styles.form}>
-              <label className={styles.label}>
-                Scene Label (optional)
-                <input
-                  type="text"
-                  value={form.scene_label}
-                  onChange={(e) => setForm((prev) => ({ ...prev, scene_label: e.target.value }))}
-                  className={styles.input}
-                  placeholder="INT. KITCHEN - NIGHT"
-                />
-              </label>
-
-              <label className={styles.label}>
-                Scene Summary (optional)
-                <textarea
-                  value={form.scene_summary}
-                  rows={3}
-                  onChange={(e) => setForm((prev) => ({ ...prev, scene_summary: e.target.value }))}
-                  className={styles.textarea}
-                  placeholder="Brief narrative summary..."
-                />
-              </label>
-
               <div className={styles.row}>
                 <label className={styles.label}>
                   Start Time (HH:MM:SS)
@@ -998,13 +970,13 @@ export default function ScriptViewerPage() {
                   <legend>{group.label}</legend>
                   <div className={styles.tagsGrid}>
                     {group.tags.map((tag) => (
-                      <label key={tag} className={styles.tagChip}>
+                      <label key={tag.value} className={styles.tagChip}>
                         <input
                           type="checkbox"
-                          checked={form.tags.includes(tag)}
-                          onChange={() => toggleTag(tag)}
+                          checked={form.tags.includes(tag.value)}
+                          onChange={() => toggleTag(tag.value)}
                         />
-                        {tag}
+                        {tag.label}
                       </label>
                     ))}
                   </div>
@@ -1040,7 +1012,7 @@ export default function ScriptViewerPage() {
                   const page = Number(item.page_start || item.page_end || 1);
                   const isActive = activeSceneId === item.id;
                   const isExpanded = Boolean(expandedSceneById[item.id]);
-                  const previewText = item.scene_summary || displaySceneText(item);
+                  const previewText = displaySceneText(item);
                   return (
                     <li
                       key={item.id}
@@ -1067,12 +1039,11 @@ export default function ScriptViewerPage() {
                           </div>
                           <span className={styles.sceneExpandHint}>{isExpanded ? "Collapse" : "Expand"}</span>
                         </div>
-                        {item.scene_label && <h3 className={styles.annotationLabel}>{item.scene_label}</h3>}
                         <p className={styles.scenePreviewText}>{previewText}</p>
                         {tags.length > 0 && (
                           <div className={styles.annotationTags}>
                             {tags.slice(0, 6).map((tag) => (
-                              <span key={tag}>{tag}</span>
+                              <span key={tag}>{getScriptTagLabel(tag)}</span>
                             ))}
                           </div>
                         )}
@@ -1080,7 +1051,6 @@ export default function ScriptViewerPage() {
 
                       {isExpanded && (
                         <div className={styles.sceneExpandedBody}>
-                          {item.scene_summary && <p className={styles.annotationSummary}>{item.scene_summary}</p>}
                           <p className={styles.annotationText}>{displaySceneText(item)}</p>
                           <div className={styles.sceneActions}>
                             <button

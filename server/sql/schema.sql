@@ -69,8 +69,6 @@ CREATE TABLE IF NOT EXISTS script_scene_annotations (
   start_time_seconds INT NOT NULL CHECK (start_time_seconds >= 0),
   end_time_seconds INT NOT NULL CHECK (end_time_seconds >= start_time_seconds),
   tags JSONB NOT NULL DEFAULT '[]'::jsonb,
-  scene_label TEXT,
-  scene_summary TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT fk_script_scene_annotations_script_movie

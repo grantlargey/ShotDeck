@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { SCRIPT_TAG_CATEGORIES } from "../constants/scriptTagCategories";
+import { SCRIPT_TAG_CATEGORIES, getScriptTagLabel } from "../constants/scriptTagCategories";
 import { formatSecondsToHms } from "../utils/time";
 import styles from "./ScriptSearchPage.module.css";
 
@@ -103,7 +103,7 @@ export default function ScriptSearchPage() {
         <div className={styles.filterMeta}>
           <p className={styles.subtitle}>{subtitle}</p>
           <label className={styles.searchLabel}>
-            Search text/labels/summary
+            Search scene text
             <input
               type="text"
               value={query}
@@ -129,15 +129,15 @@ export default function ScriptSearchPage() {
             <legend>{group.label}</legend>
             <div className={styles.chips}>
               {group.tags.map((tag) => {
-                const selected = selectedTags.includes(tag);
+                const selected = selectedTags.includes(tag.value);
                 return (
                   <button
-                    key={tag}
+                    key={tag.value}
                     type="button"
                     className={`${styles.chip} ${selected ? styles.chipSelected : ""}`}
-                    onClick={() => toggleTag(tag)}
+                    onClick={() => toggleTag(tag.value)}
                   >
-                    {tag}
+                    {tag.label}
                   </button>
                 );
               })}
@@ -173,10 +173,8 @@ export default function ScriptSearchPage() {
               const tags = safeTags(row.tags);
               const pageStart = Number(row.page_start || row.page_end || 1);
               const pageEnd = Number(row.page_end || row.page_start || pageStart);
-              const label = row.scene_label || "";
-              const summary = row.scene_summary || "";
               const isExpanded = Boolean(expandedById[row.id]);
-              const previewText = summary || displaySceneText(row);
+              const previewText = displaySceneText(row);
               const firstImageAnnotation = row.first_image_annotation;
 
               return (
@@ -198,12 +196,11 @@ export default function ScriptSearchPage() {
                       {pageStart}
                       {pageEnd > pageStart ? `-${pageEnd}` : ""}
                     </p>
-                    {label && <p className={styles.resultLabel}>{label}</p>}
                     <p className={styles.previewText}>{previewText}</p>
                     {tags.length > 0 && (
                       <div className={styles.resultTags}>
                         {tags.slice(0, 6).map((tag) => (
-                          <span key={tag}>{tag}</span>
+                          <span key={tag}>{getScriptTagLabel(tag)}</span>
                         ))}
                       </div>
                     )}
@@ -211,7 +208,6 @@ export default function ScriptSearchPage() {
 
                   {isExpanded && (
                     <div className={styles.expandedBody}>
-                      {summary && <p className={styles.resultSummary}>{summary}</p>}
                       <p className={styles.resultText}>{displaySceneText(row)}</p>
                       <div className={styles.resultActions}>
                         <button

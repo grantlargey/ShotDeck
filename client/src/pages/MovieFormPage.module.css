@@ -25,11 +25,17 @@
     resize: vertical;
   }
   
-  .previewImg {
-    max-width: 300px;
-    margin-top: 1rem;
-    display: block;
-  }
+.previewImg {
+  max-width: 300px;
+  margin-top: 1rem;
+  display: block;
+}
+
+.helperText {
+  margin: 0.5rem 0 0;
+  font-size: 12px;
+  color: #666;
+}
   
   .button {
     background-color: #333;
