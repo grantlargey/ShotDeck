@@ -18,3 +18,7 @@ node_modules/
 
 # README
 README.md
+
+# Task definition snapshots
+td.json
+td-new.json
