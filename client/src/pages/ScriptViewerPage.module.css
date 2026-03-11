@@ -59,12 +59,23 @@
   min-width: 0;
 }
 
+.viewerFallback {
+  border: 1px solid #d2d2d2;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .pagesWrap {
   background: #dcdcdc;
   border-radius: 10px;
   padding: 0.75rem;
   max-height: calc(100vh - 180px);
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .pageCard {
@@ -74,6 +85,17 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   width: fit-content;
   border: 1px solid transparent;
+}
+
+.pageCard :global(canvas) {
+  max-width: 100%;
+  height: auto !important;
+}
+
+.pagePlaceholder {
+  width: 100%;
+  background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%);
+  pointer-events: none;
 }
 
 .pageCardActive {
@@ -122,6 +144,10 @@
   max-width: 100%;
 }
 
+.pagesSentinel {
+  height: 1px;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -154,6 +180,10 @@
   color: #111;
   padding: 0.3rem 0.5rem;
   cursor: pointer;
+}
+
+.mobileJumpBtn {
+  display: none;
 }
 
 .subtle {
@@ -380,12 +410,18 @@
   margin-top: auto;
 }
 
-.annotationTags span {
+.annotationTags span,
+.annotationDetailTags span {
   border: 1px solid #bbb;
   border-radius: 999px;
   padding: 0.15rem 0.42rem;
   font-size: 0.75rem;
   background: #fff;
+}
+
+.moreTags {
+  color: #5f5f5f;
+  background: #f4f4f4;
 }
 
 .jumpBtn {
@@ -413,6 +449,13 @@
   padding: 0.62rem;
 }
 
+.annotationDetailTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0 0 0.55rem;
+}
+
 .rowDeleteBtn {
   border: 1px solid #cc3a3a;
   border-radius: 6px;
@@ -434,5 +477,85 @@
 
   .pagesWrap {
     max-height: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .wrap {
+    padding: 0.75rem 0.75rem 4.5rem;
+  }
+
+  .topBar {
+    align-items: flex-start;
+  }
+
+  .topActions {
+    width: 100%;
+  }
+
+  .ghostBtn {
+    flex: 1 1 calc(50% - 0.25rem);
+    text-align: center;
+    padding: 0.62rem 0.7rem;
+  }
+
+  .pagesWrap {
+    background: transparent;
+    padding: 0.2rem 0;
+    overflow: visible;
+  }
+
+  .pageCard {
+    width: 100%;
+    margin-bottom: 0.75rem;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+  }
+
+  .pageSceneBlocks {
+    gap: 0.35rem;
+    padding: 0.45rem 0.45rem 0.18rem;
+  }
+
+  .pageSceneBlock {
+    width: 100%;
+    max-width: none;
+  }
+
+  .sidebar {
+    gap: 0.75rem;
+  }
+
+  .card {
+    padding: 0.75rem;
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+  }
+
+  .scenePreviewBtn {
+    min-height: 0;
+  }
+
+  .mobileJumpBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 0.85rem;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
+    z-index: 30;
+    border: 1px solid rgba(17, 17, 17, 0.18);
+    border-radius: 999px;
+    background: rgba(17, 17, 17, 0.92);
+    color: #fff;
+    padding: 0.58rem 0.78rem;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    cursor: pointer;
   }
 }

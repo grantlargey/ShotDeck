@@ -37,6 +37,15 @@ function displaySceneText(item) {
   return item?.selected_text || "";
 }
 
+const PREVIEW_TAG_LIMIT = 6;
+const MOBILE_PDF_BATCH_SIZE = 4;
+const MOBILE_PDF_BREAKPOINT = 900;
+const MOBILE_PDF_ROOT_MARGIN = "900px 0px";
+const MOBILE_DEVICE_PIXEL_RATIO = 1;
+const MOBILE_PDF_DEFAULT_ASPECT_RATIO = 11 / 8.5;
+const MOBILE_RENDER_BEHIND_PAGES = 4;
+const MOBILE_RENDER_AHEAD_PAGES = 8;
+
 function normalizeComparableText(value) {
   return String(value || "")
     .toLowerCase()
@@ -108,6 +117,17 @@ function isPageRendered(pageElement) {
 function scrollPageInWrap(wrap, pageElement, behavior = "auto") {
   if (!wrap || !pageElement) return;
 
+  const isScrollable = wrap.scrollHeight > wrap.clientHeight + 2;
+  if (!isScrollable) {
+    const rect = pageElement.getBoundingClientRect();
+    const targetTop = window.scrollY + rect.top - 12;
+    window.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior,
+    });
+    return;
+  }
+
   const targetTop = pageElement.offsetTop - (wrap.clientHeight / 2 - pageElement.offsetHeight / 2);
   const maxTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
   const clampedTop = Math.min(maxTop, Math.max(0, targetTop));
@@ -148,7 +168,12 @@ export default function ScriptViewerPage() {
   const [deletingSceneId, setDeletingSceneId] = useState("");
   const [loading, setLoading] = useState(true);
   const [numPages, setNumPages] = useState(0);
+  const [visiblePageCount, setVisiblePageCount] = useState(0);
   const [pageWidth, setPageWidth] = useState(700);
+  const [compactPdfMode, setCompactPdfMode] = useState(false);
+  const [pdfLoadError, setPdfLoadError] = useState("");
+  const [pageHeightsByNumber, setPageHeightsByNumber] = useState({});
+  const [mobileRenderChunkStart, setMobileRenderChunkStart] = useState(1);
   const [activeSceneId, setActiveSceneId] = useState("");
   const [editingSceneId, setEditingSceneId] = useState("");
   const [expandedSceneById, setExpandedSceneById] = useState({});
@@ -160,7 +185,11 @@ export default function ScriptViewerPage() {
   const [formatMessage, setFormatMessage] = useState("");
 
   const pagesWrapRef = useRef(null);
+  const savedScenesRef = useRef(null);
+  const loadMoreSentinelRef = useRef(null);
   const formatRequestRef = useRef(0);
+  const savedScenesJumpRunRef = useRef(0);
+  const savedScenesJumpTimeoutRef = useRef(null);
   const scrollRunRef = useRef(0);
   const lastDeepLinkedSceneRef = useRef("");
   const lastDeepLinkedPageRef = useRef("");
@@ -172,6 +201,32 @@ export default function ScriptViewerPage() {
     Number(pageFromQueryRaw) > 0
       ? Number(pageFromQueryRaw)
       : null;
+
+  function measureRenderedPageHeight(pageNum) {
+    if (typeof window === "undefined" || !Number.isInteger(pageNum)) return;
+
+    window.requestAnimationFrame(() => {
+      const pageElement = document.getElementById(`script-page-${pageNum}`);
+      if (!pageElement) return;
+
+      const renderedPage = pageElement.querySelector(".react-pdf__Page");
+      const canvas = pageElement.querySelector("canvas");
+      const measuredHeight = Math.round(
+        Number(
+          renderedPage?.getBoundingClientRect?.().height ||
+            canvas?.getBoundingClientRect?.().height ||
+            0
+        )
+      );
+
+      if (!Number.isFinite(measuredHeight) || measuredHeight < 10) return;
+
+      setPageHeightsByNumber((prev) => {
+        if (prev[pageNum] === measuredHeight) return prev;
+        return { ...prev, [pageNum]: measuredHeight };
+      });
+    });
+  }
 
   function setFormFromScene(scene) {
     const fallbackFormatted =
@@ -224,6 +279,17 @@ export default function ScriptViewerPage() {
     if (!Number.isInteger(safePage) || safePage < 1) {
       if (typeof onDone === "function") onDone(false);
       return;
+    }
+
+    if (compactPdfMode) {
+      setMobileRenderChunkStart(
+        Math.floor(Math.max(0, safePage - 1) / MOBILE_PDF_BATCH_SIZE) * MOBILE_PDF_BATCH_SIZE + 1
+      );
+      setVisiblePageCount((prev) => {
+        const current = Math.max(prev, MOBILE_PDF_BATCH_SIZE);
+        const next = Math.max(current, safePage);
+        return numPages > 0 ? Math.min(numPages, next) : next;
+      });
     }
 
     const runId = ++scrollRunRef.current;
@@ -301,10 +367,63 @@ export default function ScriptViewerPage() {
     nav(`/movies/${movieId}?${params.toString()}`);
   }
 
+  function scrollSavedScenesIntoView(behavior = "smooth") {
+    const target = savedScenesRef.current;
+    if (!target || typeof window === "undefined") return false;
+
+    const targetTop = window.scrollY + target.getBoundingClientRect().top - 12;
+    window.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior,
+    });
+    return true;
+  }
+
+  function scheduleSavedScenesJump() {
+    if (typeof window === "undefined") return;
+
+    const runId = ++savedScenesJumpRunRef.current;
+    if (savedScenesJumpTimeoutRef.current) {
+      window.clearTimeout(savedScenesJumpTimeoutRef.current);
+      savedScenesJumpTimeoutRef.current = null;
+    }
+
+    const jumpOnce = (behavior = "auto") => {
+      if (runId !== savedScenesJumpRunRef.current) return;
+      scrollSavedScenesIntoView(behavior);
+    };
+
+    window.requestAnimationFrame(() => {
+      jumpOnce("smooth");
+      window.requestAnimationFrame(() => {
+        jumpOnce("auto");
+      });
+    });
+
+    savedScenesJumpTimeoutRef.current = window.setTimeout(() => {
+      savedScenesJumpTimeoutRef.current = null;
+      jumpOnce("auto");
+    }, 360);
+  }
+
+  function jumpToSavedScenes() {
+    if (compactPdfMode && numPages > 0) {
+      setVisiblePageCount(numPages);
+      scheduleSavedScenesJump();
+      return;
+    }
+
+    scrollSavedScenesIntoView("smooth");
+  }
+
   async function load() {
     setErr("");
+    setPdfLoadError("");
     setLoading(true);
     setNumPages(0);
+    setVisiblePageCount(0);
+    setPageHeightsByNumber({});
+    setMobileRenderChunkStart(1);
     try {
       const [movieData, scriptData, sceneData] = await Promise.all([
         api.getMovie(movieId),
@@ -364,14 +483,130 @@ export default function ScriptViewerPage() {
       setPendingScrollPage(null);
       setPendingDeepLinkSceneId("");
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingScrollPage, numPages]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const updateCompactPdfMode = () => {
+      setCompactPdfMode(window.innerWidth <= MOBILE_PDF_BREAKPOINT);
+    };
+
+    updateCompactPdfMode();
+    window.addEventListener("resize", updateCompactPdfMode);
+    return () => window.removeEventListener("resize", updateCompactPdfMode);
+  }, []);
+
+  useEffect(() => {
+    if (numPages < 1) {
+      setVisiblePageCount(0);
+      setMobileRenderChunkStart(1);
+      return;
+    }
+
+    if (!compactPdfMode) {
+      setVisiblePageCount(numPages);
+      setMobileRenderChunkStart(1);
+      return;
+    }
+
+    setVisiblePageCount((prev) => {
+      const base = prev > 0 ? prev : MOBILE_PDF_BATCH_SIZE;
+      return Math.min(numPages, Math.max(base, MOBILE_PDF_BATCH_SIZE));
+    });
+  }, [compactPdfMode, numPages]);
+
+  useEffect(() => {
+    if (!compactPdfMode) return undefined;
+    if (typeof window === "undefined") return undefined;
+
+    let rafId = 0;
+
+    const updateRenderChunk = () => {
+      rafId = 0;
+      const wrap = pagesWrapRef.current;
+      if (!wrap) return;
+
+      const pageNodes = Array.from(wrap.querySelectorAll("[data-page-number]"));
+      if (pageNodes.length === 0) return;
+
+      const targetY = window.innerHeight * 0.45;
+      let closestPage = Number(pageNodes[0].dataset.pageNumber || 1);
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      for (const node of pageNodes) {
+        const pageNum = Number(node.dataset.pageNumber);
+        if (!Number.isInteger(pageNum)) continue;
+
+        const rect = node.getBoundingClientRect();
+        const centerY = rect.top + rect.height / 2;
+        const distance = Math.abs(centerY - targetY);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          closestPage = pageNum;
+        }
+      }
+
+      const nextChunkStart =
+        Math.floor(Math.max(0, closestPage - 1) / MOBILE_PDF_BATCH_SIZE) * MOBILE_PDF_BATCH_SIZE + 1;
+      setMobileRenderChunkStart((prev) => (prev === nextChunkStart ? prev : nextChunkStart));
+    };
+
+    const queueUpdate = () => {
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(updateRenderChunk);
+    };
+
+    queueUpdate();
+    window.addEventListener("scroll", queueUpdate, { passive: true });
+    window.addEventListener("resize", queueUpdate);
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", queueUpdate);
+      window.removeEventListener("resize", queueUpdate);
+    };
+  }, [compactPdfMode, visiblePageCount]);
+
+  useEffect(() => {
+    if (!compactPdfMode || visiblePageCount >= numPages) return undefined;
+
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return undefined;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setVisiblePageCount((prev) =>
+        Math.min(numPages, Math.max(prev, MOBILE_PDF_BATCH_SIZE) + MOBILE_PDF_BATCH_SIZE)
+      );
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setVisiblePageCount((prev) =>
+          Math.min(numPages, Math.max(prev, MOBILE_PDF_BATCH_SIZE) + MOBILE_PDF_BATCH_SIZE)
+        );
+      },
+      {
+        root: null,
+        rootMargin: MOBILE_PDF_ROOT_MARGIN,
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [compactPdfMode, numPages, visiblePageCount]);
 
   useEffect(() => {
     if (!pagesWrapRef.current) return;
     const el = pagesWrapRef.current;
 
     const update = () => {
-      const next = Math.max(280, Math.floor(el.clientWidth - 24));
+      const horizontalPadding = compactPdfMode ? 8 : 24;
+      const minWidth = compactPdfMode ? 220 : 280;
+      const next = Math.max(minWidth, Math.floor(el.clientWidth - horizontalPadding));
       setPageWidth(next);
     };
     update();
@@ -384,7 +619,7 @@ export default function ScriptViewerPage() {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [compactPdfMode]);
 
   useEffect(() => {
     const el = pagesWrapRef.current;
@@ -402,6 +637,31 @@ export default function ScriptViewerPage() {
       el.removeEventListener("touchstart", cancelAutoScroll);
     };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (savedScenesJumpTimeoutRef.current && typeof window !== "undefined") {
+        window.clearTimeout(savedScenesJumpTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function nodeIsInsidePdf(node) {
+    if (!node) return false;
+
+    let current = node;
+    while (current) {
+      if (current === pagesWrapRef.current) return true;
+      current = current.parentNode || current.host || null;
+    }
+
+    return false;
+  }
+
+  function selectionBelongsToPdf(selection) {
+    if (!selection || selection.rangeCount < 1) return false;
+    return nodeIsInsidePdf(selection.anchorNode) || nodeIsInsidePdf(selection.focusNode);
+  }
 
   async function requestFormattedAnnotationText(rawText) {
     const requestId = ++formatRequestRef.current;
@@ -519,9 +779,10 @@ export default function ScriptViewerPage() {
     }
   }
 
-  function onPdfMouseUp() {
+  function onPdfSelectionComplete() {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) return;
+    if (!selectionBelongsToPdf(selection)) return;
 
     const rawText = selection.toString();
     if (!rawText.trim()) return;
@@ -742,6 +1003,24 @@ export default function ScriptViewerPage() {
     return pageMap;
   }, [scenes]);
 
+  const renderedPageCount = compactPdfMode ? visiblePageCount : numPages;
+  const mobileRenderStart = compactPdfMode
+    ? Math.max(1, mobileRenderChunkStart - MOBILE_RENDER_BEHIND_PAGES)
+    : 1;
+  const mobileRenderEnd = compactPdfMode
+    ? Math.min(
+        renderedPageCount,
+        mobileRenderChunkStart + MOBILE_PDF_BATCH_SIZE + MOBILE_RENDER_AHEAD_PAGES - 1
+      )
+    : renderedPageCount;
+  const defaultMobilePageHeight = (() => {
+    const knownHeights = Object.values(pageHeightsByNumber).filter(
+      (value) => Number.isFinite(value) && value > 10
+    );
+    if (knownHeights.length > 0) return Math.round(Number(knownHeights[0]));
+    return Math.round(pageWidth * MOBILE_PDF_DEFAULT_ASPECT_RATIO);
+  })();
+
   if (loading) {
     return (
       <div className={styles.wrap}>
@@ -775,17 +1054,36 @@ export default function ScriptViewerPage() {
         <section className={styles.viewerPanel}>
           {!script?.script_url ? (
             <p>No script URL available.</p>
+          ) : pdfLoadError ? (
+            <div className={styles.viewerFallback}>
+              <p>{pdfLoadError}</p>
+            </div>
           ) : (
-            <div ref={pagesWrapRef} className={styles.pagesWrap} onMouseUp={onPdfMouseUp}>
+            <div
+              ref={pagesWrapRef}
+              className={styles.pagesWrap}
+              onMouseUp={!compactPdfMode ? onPdfSelectionComplete : undefined}
+            >
               <Document
                 key={`${scriptId}:${script.script_url || ""}`}
                 file={script.script_url}
                 loading={<p>Loading PDF...</p>}
-                onLoadSuccess={({ numPages: totalPages }) => setNumPages(totalPages)}
-                onLoadError={(loadErr) => setErr(loadErr?.message || "Unable to load this PDF.")}
+                onLoadSuccess={({ numPages: totalPages }) => {
+                  setPdfLoadError("");
+                  setNumPages(totalPages);
+                }}
+                onLoadError={(loadErr) => {
+                  const message = loadErr?.message || "Unable to load this PDF.";
+                  setPdfLoadError(message);
+                  setErr(message);
+                }}
               >
-                {Array.from({ length: numPages }, (_, idx) => idx + 1).map((pageNum) => {
+                {Array.from({ length: renderedPageCount }, (_, idx) => idx + 1).map((pageNum) => {
                   const pageScenes = scenesByPage.get(pageNum) || [];
+                  const shouldRenderPage =
+                    !compactPdfMode ||
+                    (pageNum >= mobileRenderStart && pageNum <= mobileRenderEnd);
+                  const estimatedPageHeight = pageHeightsByNumber[pageNum] || defaultMobilePageHeight;
                   return (
                     <div
                       id={`script-page-${pageNum}`}
@@ -818,16 +1116,28 @@ export default function ScriptViewerPage() {
                           })}
                         </div>
                       )}
-                      <Page
-                        pageNumber={pageNum}
-                        width={pageWidth}
-                        renderTextLayer
-                        renderAnnotationLayer
-                      />
+                      {shouldRenderPage ? (
+                        <Page
+                          pageNumber={pageNum}
+                          width={pageWidth}
+                          devicePixelRatio={compactPdfMode ? MOBILE_DEVICE_PIXEL_RATIO : undefined}
+                          renderTextLayer={!compactPdfMode}
+                          renderAnnotationLayer={!compactPdfMode}
+                          onRenderSuccess={() => measureRenderedPageHeight(pageNum)}
+                        />
+                      ) : (
+                        <div
+                          className={styles.pagePlaceholder}
+                          style={{ height: `${estimatedPageHeight}px` }}
+                        />
+                      )}
                     </div>
                   );
                 })}
               </Document>
+              {compactPdfMode && renderedPageCount < numPages && (
+                <div ref={loadMoreSentinelRef} className={styles.pagesSentinel} aria-hidden="true" />
+              )}
             </div>
           )}
         </section>
@@ -1008,7 +1318,7 @@ export default function ScriptViewerPage() {
             </form>
           </div>
 
-          <div className={styles.card}>
+          <div ref={savedScenesRef} className={styles.card}>
             <h2 className={styles.cardTitle}>Saved Script Scenes</h2>
             {scenes.length === 0 ? (
               <p className={styles.subtle}>No scene annotations yet.</p>
@@ -1016,6 +1326,8 @@ export default function ScriptViewerPage() {
               <ul className={styles.annotationList}>
                 {scenes.map((item) => {
                   const tags = safeTags(item.tags);
+                  const previewTags = tags.slice(0, PREVIEW_TAG_LIMIT);
+                  const hiddenTagCount = Math.max(0, tags.length - PREVIEW_TAG_LIMIT);
                   const page = Number(item.page_start || item.page_end || 1);
                   const isActive = activeSceneId === item.id;
                   const isExpanded = Boolean(expandedSceneById[item.id]);
@@ -1049,15 +1361,25 @@ export default function ScriptViewerPage() {
                         <p className={styles.scenePreviewText}>{previewText}</p>
                         {tags.length > 0 && (
                           <div className={styles.annotationTags}>
-                            {tags.slice(0, 6).map((tag) => (
+                            {previewTags.map((tag) => (
                               <span key={tag}>{getScriptTagLabel(tag)}</span>
                             ))}
+                            {hiddenTagCount > 0 && (
+                              <span className={styles.moreTags}>+{hiddenTagCount} more</span>
+                            )}
                           </div>
                         )}
                       </button>
 
                       {isExpanded && (
                         <div className={styles.sceneExpandedBody}>
+                          {tags.length > 0 && (
+                            <div className={styles.annotationDetailTags}>
+                              {tags.map((tag) => (
+                                <span key={tag}>{getScriptTagLabel(tag)}</span>
+                              ))}
+                            </div>
+                          )}
                           <p className={styles.annotationText}>{displaySceneText(item)}</p>
                           <div className={styles.sceneActions}>
                             <button
@@ -1101,6 +1423,9 @@ export default function ScriptViewerPage() {
           </div>
         </aside>
       </div>
+      <button type="button" className={styles.mobileJumpBtn} onClick={jumpToSavedScenes}>
+        Scenes
+      </button>
     </div>
   );
 }
