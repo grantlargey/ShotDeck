@@ -1,0 +1,161 @@
+.sdNavbar {
+  --sd-nav-height: 72px;
+  --sd-nav-bg: rgba(108, 108, 108, 0);
+  --sd-nav-border: rgba(255, 255, 255, 0);
+  --sd-text: #ffffff;
+  --sd-text-soft: rgba(255, 255, 255, 0.78);
+  --sd-accent: #3b82f6;
+  --sd-accent-hover: #2563eb;
+  --sd-button-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+  font-family: "Inter", sans-serif;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  width: 100%;
+  height: var(--sd-nav-height);
+  background: var(--sd-nav-bg);
+  backdrop-filter: blur(3px);
+  border-bottom: 1px solid var(--sd-nav-border);
+}
+
+.sdNavbarInner {
+  max-width: auto;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 48px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 38px;
+}
+
+.sdNavbarBrand {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: var(--sd-text);
+  min-width: 0;
+}
+
+.sdNavbarLogo {
+  width: 30px;
+  height: 20px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95),
+    rgba(243, 244, 248, 0.8)
+  );
+  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+
+.sdNavbarBrandText {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.sdNavbarCenter {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 38px;
+}
+
+.sdNavbarLink {
+  position: relative;
+  display: inline-block;
+  color: var(--sd-text-soft);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  transition: color 0.2s ease;
+}
+
+.sdNavbarLink:hover {
+  color: var(--sd-text);
+}
+
+.sdNavbarLinkActive {
+  color: var(--sd-text);
+}
+
+.sdNavbarLinkActive::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2.9px;
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.sdNavbarRight {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+}
+
+.sdNavbarNewProject {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 18px;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 10px;
+  background: var(--sd-accent);
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 0.93rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: var(--sd-button-shadow);
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.sdNavbarNewProject:hover {
+  background: var(--sd-accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.34);
+}
+
+.sdNavbarNewProject:active {
+  transform: translateY(0);
+}
+
+.sdNavbarNewProject:focus-visible,
+.sdNavbarLink:focus-visible,
+.sdNavbarBrand:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.8);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+@media (max-width: 780px) {
+  .sdNavbar {
+    height: auto;
+  }
+
+  .sdNavbarInner {
+    padding: 14px 20px;
+    grid-template-columns: 1fr auto;
+    row-gap: 16px;
+  }
+
+  .sdNavbarCenter {
+    grid-column: 1 / -1;
+    justify-self: center;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+}

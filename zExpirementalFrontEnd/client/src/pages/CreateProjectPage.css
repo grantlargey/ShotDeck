@@ -1,0 +1,328 @@
+.createProjectPage {
+  --create-project-hero-height: min(900px, 62vh);
+  --create-project-fade-visible-end: 36%;
+  --create-project-fade-deep-start: 74%;
+  --create-project-fade-solid-start: 100%;
+  position: relative;
+  min-height: calc(100vh - var(--sd-nav-height));
+  margin-top: calc(var(--sd-nav-height) * -1);
+  padding: calc(var(--sd-nav-height) + 40px) 0 104px;
+  background: rgb(27, 24, 34);
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.createProjectPage::before,
+.createProjectPage::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--create-project-hero-height);
+}
+
+.createProjectPage::before {
+  background-image: url("../assets/images/hero/hero-home-desktop.webp");
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.createProjectPage::after {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(8, 14, 34, 0.1) 0%,
+      rgba(9, 18, 43, 0.18) 18%,
+      rgba(10, 20, 48, 0.3) var(--create-project-fade-visible-end),
+      rgba(11, 18, 42, 0.48) 56%,
+      rgba(15, 19, 35, 0.68) var(--create-project-fade-deep-start),
+      rgba(22, 20, 31, 0.84) 95%,
+      rgba(27, 24, 34, 0.94) var(--create-project-fade-solid-start),
+      rgba(27, 24, 34, 1) 100%
+    ),
+    linear-gradient(
+      108deg,
+      rgba(29, 48, 118, 0.12) 0%,
+      rgba(18, 28, 82, 0.05) 70%,
+      rgba(58, 30, 95, 0.14) 100%
+    ),
+    radial-gradient(circle at 50% 34%, rgba(80, 119, 255, 0.08), transparent 42%);
+}
+
+.createProjectPageInner {
+  position: relative;
+  z-index: 1;
+  width: min(1120px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.createProjectPagePanel {
+  position: relative;
+  width: min(1000px, 100%);
+  height: min(620px, 80vh);
+  margin: 18px auto 0;
+  padding: clamp(10px, 3vw, 25px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(48, 54, 78, 0.3) 0%, rgba(20, 24, 36, 0.42) 100%),
+    rgba(19, 22, 32, 0.46);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(4, 7, 18, 0.36);
+  backdrop-filter: blur(2px);
+}
+
+.createProjectPagePanel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 44%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 24%);
+  pointer-events: none;
+}
+
+.createProjectPagePanelHeader,
+.createProjectPageForm {
+  position: relative;
+  z-index: 1;
+}
+
+.createProjectPagePanelTitle {
+  margin: 0 0 15px;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: clamp(2rem, 3vw, 3.8rem);
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+
+.createProjectPageFormGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(200px, 0.9fr);
+  gap: 28px;
+}
+
+.createProjectPageFormColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.createProjectPageFormColumnSecondary {
+  padding-left: 28px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.createProjectPageField,
+.createProjectPageFieldPair {
+  min-width: 0;
+}
+
+.createProjectPageFieldPair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.createProjectPageLabelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.createProjectPageLabel {
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.createProjectPageLabelDescription {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.createProjectPageInput .MuiOutlinedInput-root {
+  border-radius: 12px;
+  background: rgba(10, 14, 24, 0.52);
+  color: #ffffff;
+  backdrop-filter: blur(10px);
+}
+
+.createProjectPageInput .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.createProjectPageInput .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: rgba(96, 165, 250, 0.88);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.16);
+}
+
+.createProjectPageInput .MuiOutlinedInput-notchedOutline {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.createProjectPageInput .MuiInputBase-input,
+.createProjectPageInput .MuiSelect-select {
+  color: #ffffff;
+  font-size: 0.96rem;
+}
+
+.createProjectPageInput .MuiInputBase-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+  opacity: 1;
+}
+
+.createProjectPageInput .MuiSvgIcon-root {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.createProjectPageUploadCard {
+  min-height: 150px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 8px;
+  cursor: pointer;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(11, 14, 24, 0.54);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.createProjectPageUploadInput {
+  display: none;
+}
+
+.createProjectPageUploadIcon {
+  font-size: 2.7rem !important;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.createProjectPageUploadPreview {
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  display: block;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.createProjectPageUploadTitle {
+  margin: 10px 0 4px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 1rem;
+}
+
+.createProjectPageUploadMeta {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.8rem;
+}
+
+.createProjectPageActions {
+  margin-top: 30px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.createProjectPageActionButton.MuiButton-root {
+  min-width: 138px;
+  min-height: 40px;
+  border-radius: 12px;
+  font-size: 0.96rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+.createProjectPageActionButtonSecondary.MuiButton-root {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.createProjectPageActionButtonSecondary.MuiButton-root:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.createProjectPageActionButtonPrimary.MuiButton-root {
+  background: linear-gradient(135deg, #4f87ff 0%, #3a6df4 100%);
+  box-shadow: 0 16px 32px rgba(59, 109, 244, 0.28);
+}
+
+.createProjectPageActionButtonPrimary.MuiButton-root:hover {
+  background: linear-gradient(135deg, #6495ff 0%, #4a78f5 100%);
+}
+
+@media (max-width: 980px) {
+  .createProjectPage {
+    padding-top: calc(var(--sd-nav-height) + 54px);
+  }
+
+  .createProjectPageFormGrid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .createProjectPageFormColumnSecondary {
+    padding-left: 0;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 780px) {
+  .createProjectPage::before {
+    background-position: 54% top;
+  }
+
+  .createProjectPageInner {
+    width: calc(100% - 32px);
+  }
+
+  .createProjectPagePanel {
+    margin-top: 12px;
+    padding: 20px 16px;
+    border-radius: 22px;
+  }
+
+  .createProjectPagePanelTitle {
+    margin-bottom: 22px;
+  }
+
+  .createProjectPageFieldPair {
+    grid-template-columns: 1fr;
+  }
+
+  .createProjectPageLabelRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .createProjectPageLabelDescription {
+    text-align: left;
+  }
+
+  .createProjectPageActions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .createProjectPageActionButton.MuiButton-root {
+    width: 100%;
+  }
+}

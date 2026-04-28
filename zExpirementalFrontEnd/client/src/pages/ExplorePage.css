@@ -1,0 +1,129 @@
+.explorePage {
+  min-height: calc(100vh - var(--sd-nav-height));
+}
+
+.explorePageHeroContent {
+  max-width: 860px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.explorePageHeroTitle {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(2rem, 3rem, 3.8rem);
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: 0.05em;
+  text-wrap: balance;
+}
+
+.explorePageHeroSubtitle {
+  max-width: 760px;
+  margin: 24px auto 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: clamp(1.05rem, 2vw, 1.28rem);
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.explorePageHeroActions {
+  margin-top: 34px;
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.explorePageHeroButton {
+  min-width: 190px;
+  min-height: 54px;
+  padding: 0 26px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.explorePageHeroButton:hover {
+  transform: translateY(-1px);
+}
+
+.explorePageHeroButtonPrimary {
+  background: linear-gradient(135deg, #458bff 0%, #2f67eb 100%);
+  color: #ffffff;
+  box-shadow: 0 16px 36px rgba(44, 101, 235, 0.34);
+}
+
+.explorePageHeroButtonPrimary:hover {
+  box-shadow: 0 22px 42px rgba(44, 101, 235, 0.4);
+}
+
+.explorePageHeroButtonSecondary {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(12, 18, 36, 0.22);
+  color: #ffffff;
+  backdrop-filter: blur(18px);
+}
+
+.explorePageHeroButtonSecondary:hover {
+  background: rgba(12, 18, 36, 0.32);
+  border-color: rgba(255, 255, 255, 0.54);
+}
+
+.explorePageHeroButton:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.92);
+  outline-offset: 4px;
+}
+
+.explorePageContent {
+  position: relative;
+  z-index: 2;
+  width: min(1120px, calc(100% - 48px));
+  margin: -92px auto 0;
+}
+
+.explorePageSearch {
+  width: 100%;
+  max-width: 600px;
+  margin: 30px auto 0;
+}
+
+@media (max-width: 780px) {
+  .explorePageHeroTitle {
+    font-size: clamp(2.1rem, 10vw, 2.85rem);
+  }
+
+  .explorePageHeroSubtitle {
+    margin-top: 18px;
+    font-size: 1rem;
+  }
+
+  .explorePageHeroActions {
+    margin-top: 28px;
+    gap: 12px;
+  }
+
+  .explorePageHeroButton {
+    width: min(100%, 320px);
+  }
+
+  .explorePageContent {
+    width: calc(100% - 32px);
+    margin-top: -72px;
+  }
+
+  .explorePageSearch {
+    max-width: none;
+    margin-top: 18px;
+  }
+}
