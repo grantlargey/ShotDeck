@@ -1,0 +1,476 @@
+.page {
+  min-height: 100vh;
+  background: #1b1822;
+  color: #ffffff;
+  font-family: "Inter", sans-serif;
+  overflow-x: hidden;
+}
+
+.hero {
+  position: relative;
+  padding: calc(var(--sd-nav-height) + 82px) 0 230px;
+  overflow: hidden;
+}
+
+.hero::before,
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.hero::before {
+  background-image: url("../assets/hero-home-desktop.webp");
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.hero::after {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(8, 14, 34, 0.1) 0%,
+      rgba(9, 18, 43, 0.18) 18%,
+      rgba(10, 20, 48, 0.3) 36%,
+      rgba(11, 18, 42, 0.48) 56%,
+      rgba(15, 19, 35, 0.68) 74%,
+      rgba(22, 20, 31, 0.84) 88%,
+      rgba(27, 24, 34, 0.94) 96%,
+      rgba(27, 24, 34, 1) 100%
+    ),
+    linear-gradient(108deg, rgba(29, 48, 118, 0.12) 0%, rgba(18, 28, 82, 0.05) 42%, rgba(58, 30, 95, 0.14) 100%),
+    radial-gradient(circle at 50% 34%, rgba(80, 119, 255, 0.08), transparent 42%);
+}
+
+.heroInner {
+  position: relative;
+  z-index: 1;
+  width: min(1120px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.heroContent {
+  max-width: 860px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.heroTitle {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(2rem, 3rem, 3.8rem);
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: 0.05em;
+  text-wrap: balance;
+}
+
+.heroSubtitle {
+  max-width: 760px;
+  margin: 24px auto 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: clamp(1.05rem, 2vw, 1.28rem);
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.heroActions {
+  margin-top: 34px;
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.heroButton {
+  min-width: 190px;
+  min-height: 54px;
+  padding: 0 26px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.heroButton:hover {
+  transform: translateY(-1px);
+}
+
+.heroButtonPrimary {
+  background: linear-gradient(135deg, #458bff 0%, #2f67eb 100%);
+  box-shadow: 0 16px 36px rgba(44, 101, 235, 0.34);
+}
+
+.heroButtonPrimary:hover {
+  box-shadow: 0 22px 42px rgba(44, 101, 235, 0.4);
+}
+
+.heroButtonSecondary {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(12, 18, 36, 0.22);
+  backdrop-filter: blur(18px);
+}
+
+.heroButtonSecondary:hover {
+  border-color: rgba(255, 255, 255, 0.54);
+  background: rgba(12, 18, 36, 0.32);
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+  width: min(1120px, calc(100% - 48px));
+  margin: -92px auto 0;
+  padding-bottom: 70px;
+}
+
+.recentPanel {
+  min-height: 310px;
+  padding: 18px 16px 54px;
+  border: 2px solid rgba(255, 255, 255, 0.42);
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    rgba(67, 72, 94, 0.12) 0%,
+    rgba(63, 67, 88, 0.22) 28%,
+    rgba(52, 50, 66, 0.44) 64%,
+    rgba(28, 31, 46, 0.68) 100%
+  );
+  box-shadow: 0 24px 48px rgba(5, 8, 18, 0.16);
+}
+
+.panelHeader {
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panelTitle {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+}
+
+.viewAllLink {
+  margin-right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(230, 226, 232, 0.84);
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.viewAllLink::after,
+.projectAction::after {
+  content: "\203A";
+  margin-left: 10px;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.viewAllLink:hover {
+  color: #ffffff;
+}
+
+.projectGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 224px));
+  justify-content: start;
+  gap: 14px;
+}
+
+.projectCard {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 12px 28px rgba(6, 10, 22, 0.14);
+  color: #ffffff;
+}
+
+.projectMediaLink {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.projectMedia {
+  position: relative;
+  min-height: 300px;
+  background:
+    radial-gradient(circle at 25% 12%, rgba(255, 255, 255, 0.16), transparent 22%),
+    linear-gradient(135deg, #5865c3 0%, #2b2e50 100%);
+}
+
+.projectImage,
+.projectImageFallback {
+  width: 100%;
+  height: 300px;
+  display: block;
+  object-fit: cover;
+  transition: transform 0.24s ease;
+}
+
+.projectImageFallback {
+  background:
+    linear-gradient(145deg, rgba(68, 83, 142, 0.9), rgba(31, 33, 59, 0.94)),
+    radial-gradient(circle at 25% 20%, rgba(255, 255, 255, 0.2), transparent 24%);
+}
+
+.projectMedia::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(9, 12, 20, 0.02) 0%, rgba(9, 12, 20, 0.82) 100%);
+  pointer-events: none;
+}
+
+.projectMediaLink:hover .projectImage {
+  transform: scale(1.02);
+}
+
+.projectOverlay {
+  position: absolute;
+  right: 12px;
+  bottom: 14px;
+  left: 12px;
+  z-index: 1;
+}
+
+.projectTitle {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.projectDirector {
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.projectAction {
+  min-height: 42px;
+  margin-top: auto;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 2px solid rgba(255, 255, 255, 0.42);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.42);
+  border-left: 2px solid rgba(255, 255, 255, 0.42);
+  border-radius: 0 0 12px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.projectAction:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.searchBar {
+  width: 100%;
+  max-width: 600px;
+  min-height: 50px;
+  margin: 30px auto 0;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: 0 12px 28px rgba(5, 8, 18, 0.16);
+  backdrop-filter: blur(14px);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  height: 50px;
+  padding: 0 18px;
+  border-top: 2px solid rgba(255, 255, 255, 0.42);
+  border-right: 0;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.42);
+  border-left: 2px solid rgba(255, 255, 255, 0.42);
+  border-radius: 12px 0 0 12px;
+  background: rgba(25, 27, 38, 0.82);
+  color: #ffffff;
+  font-size: 0.94rem;
+}
+
+.searchInput::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.82);
+}
+
+.searchButton {
+  flex: 0 0 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: linear-gradient(135deg, #458bff 0%, #2f67eb 100%);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.searchIcon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border: 4px solid currentColor;
+  border-radius: 999px;
+}
+
+.searchIcon::after {
+  content: "";
+  position: absolute;
+  right: -8px;
+  bottom: -7px;
+  width: 12px;
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.error {
+  margin: 0 0 16px;
+  color: #fecaca;
+}
+
+.emptyState {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.76);
+  text-align: center;
+}
+
+.emptyState p {
+  margin: 0;
+}
+
+.emptyState a {
+  color: #93c5fd;
+  font-weight: 700;
+}
+
+.heroButton:focus-visible,
+.viewAllLink:focus-visible,
+.projectMediaLink:focus-visible,
+.projectAction:focus-visible,
+.searchButton:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.92);
+  outline-offset: 4px;
+}
+
+@media (max-width: 960px) {
+  .projectGrid {
+    grid-template-columns: repeat(2, minmax(0, 224px));
+  }
+}
+
+@media (max-width: 780px) {
+  .hero {
+    padding: calc(var(--sd-nav-height) + 54px) 0 134px;
+  }
+
+  .hero::before {
+    background-position: 54% top;
+  }
+
+  .heroInner,
+  .content {
+    width: calc(100% - 32px);
+  }
+
+  .heroTitle {
+    font-size: clamp(2.1rem, 10vw, 2.85rem);
+  }
+
+  .heroSubtitle {
+    margin-top: 18px;
+    font-size: 1rem;
+  }
+
+  .heroActions {
+    margin-top: 28px;
+    gap: 12px;
+  }
+
+  .heroButton {
+    width: min(100%, 320px);
+  }
+
+  .content {
+    margin-top: -72px;
+  }
+
+  .recentPanel {
+    padding: 18px 14px 28px;
+  }
+
+  .projectGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .searchBar {
+    max-width: none;
+    margin-top: 18px;
+  }
+}
+
+@media (max-width: 540px) {
+  .panelHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .searchInput {
+    height: 48px;
+    padding: 0 16px;
+    font-size: 0.9rem;
+  }
+
+  .searchButton {
+    flex-basis: 52px;
+  }
+}

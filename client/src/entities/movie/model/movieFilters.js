@@ -24,6 +24,30 @@ export function getMovieYears(movies) {
   return years;
 }
 
+function getMovieRecencyValue(movie) {
+  const candidates = [movie?.updated_at, movie?.updatedAt, movie?.created_at, movie?.createdAt];
+  for (const value of candidates) {
+    const time = Date.parse(value);
+    if (Number.isFinite(time)) return time;
+  }
+  return 0;
+}
+
+/**
+ * Picks the homepage preview set from real movie rows. If the backend does not
+ * provide timestamps, the original API order remains the tie-breaker.
+ */
+export function getRecentMovies(movies, limit = 3) {
+  return [...(Array.isArray(movies) ? movies : [])]
+    .map((movie, index) => ({ movie, index }))
+    .sort((a, b) => {
+      const byRecency = getMovieRecencyValue(b.movie) - getMovieRecencyValue(a.movie);
+      return byRecency || a.index - b.index;
+    })
+    .slice(0, limit)
+    .map(({ movie }) => movie);
+}
+
 /**
  * Applies the archive page's stable filter/sort rules without mutating the
  * source movie array.

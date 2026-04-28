@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { HomePage } from "@/pages/home";
 import { MovieDetailPage } from "@/pages/movie-detail";
 import { MovieFormPage } from "@/pages/movie-form";
@@ -9,11 +9,14 @@ import { SiteHeader } from "@/widgets/site-header";
 import page from "./styles/page.module.css";
 
 export default function App() {
+  const { pathname } = useLocation();
+  const mainClassName = pathname === "/" ? page.mainFullBleed : page.main;
+
   return (
     <>
       <SiteHeader />
 
-      <main className={page.main}>
+      <main className={mainClassName}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/movies" element={<MoviesListPage />} />

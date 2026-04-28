@@ -1,6 +1,6 @@
 // client/src/pages/movies-list/ui/MoviesListPage.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   filterAndSortMovies,
   getMovieCoverUrl,
@@ -13,13 +13,15 @@ import styles from "./MoviesListPage.module.css";
 
 export default function MoviesListPage() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
+  const queryFromUrl = searchParams.get("query") || "";
 
   const [movies, setMovies] = useState([]);
   const [err, setErr] = useState("");
   const [deletingId, setDeletingId] = useState(null);
 
   // controls
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(queryFromUrl);
   const [sort, setSort] = useState("az");
   const [director, setDirector] = useState("all");
   const [year, setYear] = useState("all");
@@ -41,6 +43,10 @@ export default function MoviesListPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    setQuery(queryFromUrl);
+  }, [queryFromUrl]);
 
   async function onDeleteMovie(movie) {
     const confirmed = window.confirm(`Delete "${movie.title}"? This cannot be undone.`);

@@ -1,13 +1,31 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
 html, body, #root {
   height: 100%;
   width: 100%;
   margin: 0;
 }
 
+:root {
+  --sd-nav-height: 72px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
+  min-height: 100vh;
   font-family: Arial, sans-serif;
   background: #f4f4f4;
   color: #111;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 #root {

@@ -1,11 +1,19 @@
-main {
-    padding: 2rem;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  
-  .card {
-    background: #fff;
-    border-radius: 8px;
-    padding: 1.5rem;
-  }
+.main {
+  min-height: calc(100vh - var(--sd-nav-height, 72px));
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.mainFullBleed {
+  min-height: calc(100vh - var(--sd-nav-height, 72px));
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
