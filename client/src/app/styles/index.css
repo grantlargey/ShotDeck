@@ -1,6 +1,6 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap");
 
-html, body, #root {
+html, body {
   height: 100%;
   width: 100%;
   margin: 0;
@@ -29,6 +29,9 @@ textarea {
 }
 
 #root {
+  /* min-height (not height) so the sticky site header stays pinned on long pages. */
+  min-height: 100%;
+  width: 100%;
   max-width: none !important;
   padding: 0 !important;
   margin: 0 !important;

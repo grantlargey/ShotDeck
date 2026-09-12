@@ -8,9 +8,11 @@ import { ScriptViewerPage } from "@/pages/script-viewer";
 import { SiteHeader } from "@/widgets/site-header";
 import page from "./styles/page.module.css";
 
+const FULL_BLEED_PATHS = new Set(["/", "/script-search"]);
+
 export default function App() {
   const { pathname } = useLocation();
-  const mainClassName = pathname === "/" ? page.mainFullBleed : page.main;
+  const mainClassName = FULL_BLEED_PATHS.has(pathname) ? page.mainFullBleed : page.main;
 
   return (
     <>

@@ -1,47 +1,65 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  displayScriptSceneText,
-  getScriptTagLabel,
-  safeScriptSceneTags,
-  SCRIPT_TAG_CATEGORIES,
-} from "@/entities/script-scene";
+import { getScriptScenePageRange, getScriptTagLabel } from "@/entities/script-scene";
 import { api } from "@/shared/api";
-import { formatSecondsToHms } from "@/shared/lib/time";
+import {
+  buildFilterGroups,
+  countSceneTags,
+  SCENE_SORT_OPTIONS,
+  sortScenes,
+} from "../model/sceneBrowse.js";
+import FilterSidebar from "./FilterSidebar.jsx";
+import SceneCard from "./SceneCard.jsx";
+import SceneDetailModal from "./SceneDetailModal.jsx";
 import styles from "./ScriptSearchPage.module.css";
 
 export default function ScriptSearchPage() {
   const nav = useNavigate();
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [match, setMatch] = useState("all");
-  const [query, setQuery] = useState("");
-  const [expandedById, setExpandedById] = useState({});
+  const [sort, setSort] = useState("recent");
+  const [response, setResponse] = useState({ key: null, rows: [], error: "" });
+  // Unfiltered result set, used for the per-tag counts in the sidebar.
+  const [catalog, setCatalog] = useState([]);
+  const [activeSceneId, setActiveSceneId] = useState(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  async function runSearch() {
-    setErr("");
-    setLoading(true);
-    try {
-      const data = await api.searchScriptScenes({
-        tags: selectedTags,
-        match,
-        q: query,
-      });
-      setResults(Array.isArray(data) ? data : []);
-      setExpandedById({});
-    } catch (e) {
-      setErr(e.message || "Search failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Match mode only matters once tags are selected.
+  const requestKey = selectedTags.length ? JSON.stringify([selectedTags, match]) : "all";
+  const loading = response.key !== requestKey;
 
   useEffect(() => {
-    runSearch();
+    let cancelled = false;
+    api
+      .searchScriptScenes({ tags: selectedTags, match })
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data) ? data : [];
+        setResponse({ key: requestKey, rows, error: "" });
+        if (selectedTags.length === 0) setCatalog(rows);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setResponse({ key: requestKey, rows: [], error: e.message || "Search failed" });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // requestKey captures selectedTags and match.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestKey]);
+
+  const results = useMemo(() => sortScenes(response.rows, sort), [response.rows, sort]);
+  const tagCounts = useMemo(() => countSceneTags(catalog), [catalog]);
+  const filterGroups = useMemo(
+    () => buildFilterGroups(catalog, selectedTags),
+    [catalog, selectedTags]
+  );
+  const titleCount = useMemo(() => new Set(results.map((row) => row.movie_id)).size, [results]);
+
+  const activeIndex = results.findIndex((row) => row.id === activeSceneId);
+  const activeScene = activeIndex >= 0 ? results[activeIndex] : null;
 
   function toggleTag(tag) {
     setSelectedTags((prev) =>
@@ -49,194 +67,124 @@ export default function ScriptSearchPage() {
     );
   }
 
-  function toggleExpanded(sceneId) {
-    setExpandedById((prev) => ({
-      ...prev,
-      [sceneId]: !prev[sceneId],
-    }));
+  function stepScene(delta) {
+    const next = results[activeIndex + delta];
+    if (next) setActiveSceneId(next.id);
   }
 
-  function openFirstImageAnnotation(row) {
-    const annotationId = row?.first_image_annotation?.id;
+  function openSceneInScript(scene) {
+    const { pageStart } = getScriptScenePageRange(scene);
+    const params = new URLSearchParams();
+    params.set("sceneId", scene.id);
+    params.set("page", String(pageStart));
+    nav(`/movies/${scene.movie_id}/scripts/${scene.script_id}?${params.toString()}`);
+  }
+
+  function openFirstImageAnnotation(scene) {
+    const annotationId = scene?.first_image_annotation?.id;
     if (!annotationId) return;
 
     const params = new URLSearchParams();
     params.set("annotationId", annotationId);
-    nav(`/movies/${row.movie_id}?${params.toString()}`);
+    nav(`/movies/${scene.movie_id}?${params.toString()}`);
   }
 
-  const subtitle = useMemo(() => {
-    const parts = [];
-
-    if (query.trim()) parts.push(`query "${query.trim()}"`);
-    if (selectedTags.length > 0) {
-      parts.push(
-        `${selectedTags.length} tag${selectedTags.length === 1 ? "" : "s"} (${match.toUpperCase()})`
-      );
-    }
-
-    if (parts.length === 0) return "Showing all saved script scenes.";
-    return `Filtering by ${parts.join(" + ")}.`;
-  }, [match, query, selectedTags]);
+  const summary = response.key
+    ? `Showing ${results.length} scene${results.length === 1 ? "" : "s"} from ${titleCount} title${
+        titleCount === 1 ? "" : "s"
+      }`
+    : "Loading scenes…";
 
   return (
-    <div className={styles.wrap}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Script Scene Search</h1>
-        <button type="button" className={styles.backBtn} onClick={() => nav("/movies")}>
-          Back To Archive
-        </button>
-      </div>
+    <div className={styles.page}>
+      <h1 className={styles.visuallyHidden}>Script Scene Search</h1>
 
-      {err && <div className={styles.error}>{err}</div>}
+      <FilterSidebar
+        groups={filterGroups}
+        tagCounts={tagCounts}
+        selectedTags={selectedTags}
+        match={match}
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        onToggleTag={toggleTag}
+        onMatchChange={setMatch}
+        onClear={() => setSelectedTags([])}
+      />
 
-      <section className={styles.filterPanel}>
-        <div className={styles.filterMeta}>
-          <p className={styles.subtitle}>{subtitle}</p>
-          <label className={styles.searchLabel}>
-            Search scene text
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className={styles.searchInput}
-              placeholder="Fight scene, rooftop, argument..."
-            />
-          </label>
-          <div className={styles.matchRow}>
-            <label>
-              <input type="radio" checked={match === "all"} onChange={() => setMatch("all")} />
-              Match all selected tags
-            </label>
-            <label>
-              <input type="radio" checked={match === "any"} onChange={() => setMatch("any")} />
-              Match any selected tag
-            </label>
-          </div>
-        </div>
-
-        {SCRIPT_TAG_CATEGORIES.map((group) => (
-          <fieldset key={group.key} className={styles.group}>
-            <legend>{group.label}</legend>
-            <div className={styles.chips}>
-              {group.tags.map((tag) => {
-                const selected = selectedTags.includes(tag.value);
-                return (
-                  <button
-                    key={tag.value}
-                    type="button"
-                    className={`${styles.chip} ${selected ? styles.chipSelected : ""}`}
-                    onClick={() => toggleTag(tag.value)}
-                  >
-                    {tag.label}
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
-        ))}
-
-        <div className={styles.filterActions}>
-          <button type="button" className={styles.searchBtn} onClick={runSearch}>
-            {loading ? "Searching..." : "Search"}
-          </button>
+      <section className={styles.results} aria-busy={loading}>
+        <div className={styles.toolbar}>
           <button
             type="button"
-            className={styles.clearBtn}
-            onClick={() => {
-              setSelectedTags([]);
-              setQuery("");
-            }}
+            className={styles.filtersButton}
+            onClick={() => setFiltersOpen(true)}
           >
-            Clear Filters
+            Filters{selectedTags.length ? ` (${selectedTags.length})` : ""}
           </button>
+          <p className={styles.resultCount} aria-live="polite">
+            {summary}
+          </p>
+          <label className={styles.sortControl}>
+            <span>Sort by:</span>
+            <select value={sort} onChange={(e) => setSort(e.target.value)}>
+              {SCENE_SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-      </section>
 
-      <section className={styles.results}>
-        {loading ? (
-          <p>Loading results...</p>
-        ) : results.length === 0 ? (
-          <p>No scene annotations matched your filters.</p>
-        ) : (
-          <ul className={styles.resultsList}>
-            {results.map((row) => {
-              const tags = safeScriptSceneTags(row.tags);
-              const pageStart = Number(row.page_start || row.page_end || 1);
-              const pageEnd = Number(row.page_end || row.page_start || pageStart);
-              const isExpanded = Boolean(expandedById[row.id]);
-              const previewText = displayScriptSceneText(row);
-              const firstImageAnnotation = row.first_image_annotation;
-
-              return (
-                <li
-                  key={row.id}
-                  className={`${styles.resultItem} ${isExpanded ? styles.resultItemExpanded : ""}`}
+        {selectedTags.length > 0 && (
+          <ul className={styles.activeFilters} aria-label="Active filters">
+            {selectedTags.map((tag) => (
+              <li key={tag}>
+                <button
+                  type="button"
+                  className={styles.activeChip}
+                  onClick={() => toggleTag(tag)}
+                  aria-label={`Remove ${getScriptTagLabel(tag)} filter`}
                 >
-                  <button
-                    type="button"
-                    className={styles.resultPreviewBtn}
-                    onClick={() => toggleExpanded(row.id)}
-                  >
-                    <div className={styles.previewTop}>
-                      <h3 className={styles.resultTitle}>{row.movie_title || "Unknown Movie"}</h3>
-                      <span className={styles.expandHint}>{isExpanded ? "Collapse" : "Expand"}</span>
-                    </div>
-                    <p className={styles.resultMeta}>
-                      {formatSecondsToHms(row.start_time_seconds)} - {formatSecondsToHms(row.end_time_seconds)} | Page{" "}
-                      {pageStart}
-                      {pageEnd > pageStart ? `-${pageEnd}` : ""}
-                    </p>
-                    <p className={styles.previewText}>{previewText}</p>
-                    {tags.length > 0 && (
-                      <div className={styles.resultTags}>
-                        {tags.slice(0, 6).map((tag) => (
-                          <span key={tag}>{getScriptTagLabel(tag)}</span>
-                        ))}
-                      </div>
-                    )}
-                  </button>
+                  {getScriptTagLabel(tag)}
+                  <span aria-hidden="true">×</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-                  {isExpanded && (
-                    <div className={styles.expandedBody}>
-                      <p className={styles.resultText}>{displayScriptSceneText(row)}</p>
-                      <div className={styles.resultActions}>
-                        <button
-                          type="button"
-                          className={styles.openBtn}
-                          onClick={() => {
-                            const params = new URLSearchParams();
-                            params.set("sceneId", row.id);
-                            params.set("page", String(pageStart));
-                            nav(`/movies/${row.movie_id}/scripts/${row.script_id}?${params.toString()}`);
-                          }}
-                        >
-                          Open Scene In Script
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.openBtn}
-                          disabled={!firstImageAnnotation?.id}
-                          title={
-                            firstImageAnnotation?.id
-                              ? `Open first image annotation at ${formatSecondsToHms(
-                                  firstImageAnnotation.time_seconds
-                                )}`
-                              : "No image annotation falls inside this scene's timeframe."
-                          }
-                          onClick={() => openFirstImageAnnotation(row)}
-                        >
-                          Open First Image
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+        {response.error && (
+          <div className={styles.error} role="alert">
+            {response.error}
+          </div>
+        )}
+
+        {results.length === 0 ? (
+          !loading && (
+            <p className={styles.emptyState}>No scene annotations matched your filters.</p>
+          )
+        ) : (
+          <ul className={`${styles.grid} ${loading ? styles.gridLoading : ""}`}>
+            {results.map((scene) => (
+              <li key={scene.id}>
+                <SceneCard scene={scene} onOpen={() => setActiveSceneId(scene.id)} />
+              </li>
+            ))}
           </ul>
         )}
       </section>
+
+      {activeScene && (
+        <SceneDetailModal
+          scene={activeScene}
+          index={activeIndex}
+          total={results.length}
+          onClose={() => setActiveSceneId(null)}
+          onStep={stepScene}
+          onOpenInScript={openSceneInScript}
+          onOpenFirstImage={openFirstImageAnnotation}
+        />
+      )}
     </div>
   );
 }
