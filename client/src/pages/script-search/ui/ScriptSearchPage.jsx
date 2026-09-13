@@ -10,7 +10,7 @@ import {
 } from "@/entities/script-scene";
 import { api } from "@/shared/api";
 import { formatSecondsToHms } from "@/shared/lib/time";
-import { ScreenplayView } from "@/shared/ui";
+import { Button, Callout, Chip, EmptyState, ScreenplayView, Select } from "@/shared/ui";
 import {
   SceneDetailModal,
   SceneFirstImageThumb,
@@ -128,25 +128,21 @@ export default function ScriptSearchPage() {
 
       <section className={styles.results} aria-busy={loading}>
         <div className={styles.toolbar}>
-          <button
-            type="button"
-            className={styles.filtersButton}
-            onClick={() => setFiltersOpen(true)}
-          >
+          <Button size="sm" className={styles.filtersButton} onClick={() => setFiltersOpen(true)}>
             Filters{selectedTags.length ? ` (${selectedTags.length})` : ""}
-          </button>
+          </Button>
           <p className={styles.resultCount} aria-live="polite">
             {summary}
           </p>
           <label className={styles.sortControl}>
-            <span>Sort by:</span>
-            <select value={sort} onChange={(e) => setSort(e.target.value)}>
+            <span>Sort by</span>
+            <Select className={styles.sortSelect} value={sort} onChange={(e) => setSort(e.target.value)}>
               {SCENE_SORT_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
 
@@ -154,29 +150,30 @@ export default function ScriptSearchPage() {
           <ul className={styles.activeFilters} aria-label="Active filters">
             {selectedTags.map((tag) => (
               <li key={tag}>
-                <button
-                  type="button"
-                  className={styles.activeChip}
-                  onClick={() => toggleTag(tag)}
-                  aria-label={`Remove ${getScriptTagLabel(tag)} filter`}
-                >
+                <Chip onRemove={() => toggleTag(tag)} removeLabel={`Remove ${getScriptTagLabel(tag)} filter`}>
                   {getScriptTagLabel(tag)}
-                  <span aria-hidden="true">×</span>
-                </button>
+                </Chip>
               </li>
             ))}
           </ul>
         )}
 
         {response.error && (
-          <div className={styles.error} role="alert">
+          <Callout tone="error" className={styles.notice}>
             {response.error}
-          </div>
+          </Callout>
         )}
 
         {results.length === 0 ? (
-          !loading && (
-            <p className={styles.emptyState}>No scene annotations matched your filters.</p>
+          !loading &&
+          !response.error && (
+            <EmptyState
+              title={selectedTags.length ? "No scenes match these filters" : "No scene annotations yet"}
+            >
+              {selectedTags.length
+                ? "Try removing a filter or switching to Match any."
+                : "Scenes you capture in the script viewer show up here."}
+            </EmptyState>
           )
         ) : (
           <ul className={`${styles.grid} ${loading ? styles.gridLoading : ""}`}>
@@ -206,9 +203,6 @@ export default function ScriptSearchPage() {
               <SceneModalTagGroups groups={groupScriptTagsByCategory(activeScene.tags)} />
               <SceneModalActions>
                 <SceneFirstImageThumb scene={activeScene} onOpen={openFirstImageAnnotation} />
-                <SceneModalButton variant="primary" onClick={() => openSceneInScript(activeScene)}>
-                  Open Scene In Script
-                </SceneModalButton>
                 <SceneModalButton
                   disabled={!activeScene.first_image_annotation?.id}
                   title={
@@ -221,6 +215,9 @@ export default function ScriptSearchPage() {
                   onClick={() => openFirstImageAnnotation(activeScene)}
                 >
                   Open First Image
+                </SceneModalButton>
+                <SceneModalButton variant="primary" onClick={() => openSceneInScript(activeScene)}>
+                  Open Scene In Script
                 </SceneModalButton>
               </SceneModalActions>
             </>

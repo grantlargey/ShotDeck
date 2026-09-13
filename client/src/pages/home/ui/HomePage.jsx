@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getMovieCoverUrl, getRecentMovies } from "@/entities/movie";
+import { getRecentMovies, MovieCard, MovieCardGrid } from "@/entities/movie";
 import { api } from "@/shared/api";
+import {
+  Button,
+  Callout,
+  ChevronRightIcon,
+  EmptyState,
+  Input,
+  LoadingState,
+  Panel,
+  SearchIcon,
+} from "@/shared/ui";
 import styles from "./HomePage.module.css";
 
 export default function HomePage() {
@@ -51,82 +61,74 @@ export default function HomePage() {
               Analyze scripts, annotate scenes, and experience storytelling patterns
             </p>
             <div className={styles.heroActions}>
-              <Link className={`${styles.heroButton} ${styles.heroButtonPrimary}`} to="/movies/new">
+              <Button as={Link} to="/movies/new" variant="primary" size="lg" className={styles.heroButton}>
                 Start New Project
-              </Link>
-              <Link className={`${styles.heroButton} ${styles.heroButtonSecondary}`} to="/movies">
+              </Button>
+              <Button as={Link} to="/movies" size="lg" className={`${styles.heroButton} ${styles.heroButtonGlass}`}>
                 Browse Projects
-              </Link>
+              </Button>
             </div>
           </div>
         </div>
       </section>
 
       <section className={styles.content} aria-label="Project discovery">
-        <div className={styles.recentPanel}>
-          <div className={styles.panelHeader}>
-            <h2 className={styles.panelTitle}>Recent Projects</h2>
-            <Link className={styles.viewAllLink} to="/movies">
-              View All
-            </Link>
-          </div>
-
-          {err && <p className={styles.error}>{err}</p>}
+        <Panel
+          title="Recent projects"
+          className={styles.recentPanel}
+          actions={
+            <Button as={Link} to="/movies" variant="link" size="sm">
+              View all
+              <ChevronRightIcon size={14} />
+            </Button>
+          }
+        >
+          {err && (
+            <Callout tone="error" className={styles.notice}>
+              {err}
+            </Callout>
+          )}
 
           {loading ? (
-            <div className={styles.emptyState}>
-              <p>Loading recent projects...</p>
-            </div>
-          ) : recentProjects.length === 0 && !err ? (
-            <div className={styles.emptyState}>
-              <p>No projects yet.</p>
-              <Link to="/movies/new">Start your first project</Link>
-            </div>
+            <LoadingState>Loading recent projects…</LoadingState>
+          ) : recentProjects.length === 0 ? (
+            !err && (
+              <EmptyState
+                title="No projects yet"
+                action={
+                  <Button as={Link} to="/movies/new" variant="primary" size="sm">
+                    Start your first project
+                  </Button>
+                }
+              >
+                Create a project to upload a script and start annotating scenes.
+              </EmptyState>
+            )
           ) : (
-            <div className={styles.projectGrid}>
+            <MovieCardGrid>
               {recentProjects.map((movie) => (
-                <article className={styles.projectCard} key={movie.id}>
-                  <Link className={styles.projectMediaLink} to={`/movies/${movie.id}`}>
-                    <div className={styles.projectMedia}>
-                      {getMovieCoverUrl(movie) ? (
-                        <img
-                          alt={`${movie.title} cover`}
-                          className={styles.projectImage}
-                          loading="lazy"
-                          src={getMovieCoverUrl(movie)}
-                        />
-                      ) : (
-                        <div className={styles.projectImageFallback} aria-hidden="true" />
-                      )}
-                      <div className={styles.projectOverlay}>
-                        <h3 className={styles.projectTitle}>{movie.title}</h3>
-                        <p className={styles.projectDirector}>{movie.director}</p>
-                      </div>
-                    </div>
-                  </Link>
-
-                  <Link className={styles.projectAction} to={`/movies/${movie.id}`}>
-                    Open Project
-                  </Link>
-                </article>
+                <li key={movie.id}>
+                  <MovieCard movie={movie} />
+                </li>
               ))}
-            </div>
+            </MovieCardGrid>
           )}
-        </div>
+        </Panel>
 
         <form className={styles.searchBar} onSubmit={submitSearch} role="search">
-          <input
+          <Input
+            icon={<SearchIcon />}
+            className={styles.searchField}
             aria-label="Search projects"
             autoComplete="off"
-            className={styles.searchInput}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by film, director, writer, or genre..."
+            placeholder="Search projects by title…"
             type="search"
             value={query}
           />
-          <button className={styles.searchButton} type="submit" aria-label="Search projects">
-            <span aria-hidden="true" className={styles.searchIcon} />
-          </button>
+          <Button type="submit" variant="primary">
+            Search
+          </Button>
         </form>
       </section>
     </div>

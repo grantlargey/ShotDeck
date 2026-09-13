@@ -1,7 +1,6 @@
 export {
   SCRIPT_TAG_CATEGORIES,
   SCRIPT_TAG_LABELS,
-  SCRIPT_TAGS,
   getScriptTagLabel,
   groupScriptTagsByCategory,
 } from "./model/scriptTagCategories.js";
@@ -11,10 +10,6 @@ export {
   getScriptScenePageRange,
   safeScriptSceneTags,
 } from "./model/scriptSceneText.js";
-export { groupScriptScenesByPage, sortScriptScenes } from "./model/scriptSceneSorting.js";
-export {
-  findOverlappingScriptScene,
-  normalizeComparableText,
-  rangesOverlap,
-} from "./model/scriptSceneMatching.js";
+export { sortScriptScenes } from "./model/scriptSceneSorting.js";
 export { SceneCard } from "./ui/SceneCard.jsx";
+export { TagCategoryList } from "./ui/TagCategoryList.jsx";

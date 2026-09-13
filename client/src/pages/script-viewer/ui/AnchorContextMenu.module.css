@@ -1,14 +1,13 @@
 .menu {
   position: fixed;
-  z-index: 1300;
+  z-index: var(--z-menu);
   width: 280px;
   padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  background: #1a1d27;
-  color: #f3f4f8;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
-  font-family: "Inter", Arial, sans-serif;
+  border: 1px solid var(--color-line-control);
+  border-radius: var(--radius-md);
+  background: var(--color-popover);
+  color: var(--color-text);
+  box-shadow: var(--shadow-popover);
 }
 
 .header {
@@ -16,12 +15,12 @@
   padding: 6px 8px 8px;
   display: grid;
   gap: 3px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .location {
-  color: rgba(243, 244, 248, 0.56);
-  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -30,8 +29,8 @@
 
 .snippet {
   overflow: hidden;
-  font-family: "Courier Prime", "Courier New", Courier, monospace;
-  font-size: 0.8rem;
+  font-family: var(--font-script);
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -45,11 +44,11 @@
   align-items: center;
   gap: 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 0.86rem;
+  font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
 }
@@ -57,11 +56,11 @@
 .item:hover:not(:disabled),
 .item:focus-visible {
   outline: none;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-hover);
 }
 
 .item:disabled {
-  color: rgba(243, 244, 248, 0.32);
+  color: var(--color-text-subtle);
   cursor: default;
 }
 
@@ -78,11 +77,11 @@
 }
 
 .start .swatch {
-  background: var(--anchor-start, #34d399);
+  background: var(--anchor-start);
 }
 
 .end .swatch {
-  background: var(--anchor-end, #fbbf24);
+  background: var(--anchor-end);
 }
 
 .item:disabled .swatch {
@@ -92,11 +91,11 @@
 .shortcut {
   min-width: 22px;
   padding: 1px 5px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-  color: rgba(243, 244, 248, 0.6);
-  font-family: "Inter", Arial, sans-serif;
-  font-size: 0.7rem;
+  border: 1px solid var(--color-line-control);
+  border-radius: var(--radius-xs);
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-2xs);
   font-weight: 600;
   text-align: center;
 }
@@ -104,5 +103,5 @@
 .separator {
   height: 1px;
   margin: 4px 2px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-line);
 }

@@ -1,4 +1,5 @@
 import { SceneCard } from "@/entities/script-scene";
+import { Badge, EmptyState } from "@/shared/ui";
 import styles from "./ScriptViewerPage.module.css";
 
 export function SavedScenesGrid({ ref, scenes, selectedSceneId, title, onSelect, onExpand }) {
@@ -7,15 +8,15 @@ export function SavedScenesGrid({ ref, scenes, selectedSceneId, title, onSelect,
       <div className={styles.scenesHeader}>
         <h2 id="saved-scenes-title" className={styles.scenesTitle}>
           Scenes in this script
-          <span className={styles.countPill}>{scenes.length}</span>
+          <Badge tone="accent">{scenes.length}</Badge>
         </h2>
         <p className={styles.scenesHint}>Click a card to edit it · Double-click to expand</p>
       </div>
 
       {scenes.length === 0 ? (
-        <p className={styles.emptyState}>
-          No scenes yet. Right-click a line in the script to place a start anchor and begin one.
-        </p>
+        <EmptyState compact title="No scenes yet">
+          Right-click a line in the script to place a start anchor and begin one.
+        </EmptyState>
       ) : (
         <ul className={styles.sceneGrid}>
           {scenes.map((scene) => {

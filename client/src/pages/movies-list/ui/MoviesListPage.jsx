@@ -1,15 +1,36 @@
 // client/src/pages/movies-list/ui/MoviesListPage.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   filterAndSortMovies,
-  getMovieCoverUrl,
   getMovieDirectors,
   getMovieYears,
+  MovieCard,
+  MovieCardGrid,
 } from "@/entities/movie";
 import { movieActions } from "@/features/movie-actions";
 import { api } from "@/shared/api";
+import {
+  Button,
+  Callout,
+  DropdownMenu,
+  EmptyState,
+  Input,
+  LoadingState,
+  PageHeader,
+  SearchIcon,
+  Select,
+} from "@/shared/ui";
 import styles from "./MoviesListPage.module.css";
+
+const SORT_OPTIONS = [
+  { value: "az", label: "Title A–Z" },
+  { value: "za", label: "Title Z–A" },
+  { value: "newest", label: "Newest release" },
+  { value: "oldest", label: "Oldest release" },
+  { value: "directoraz", label: "Director A–Z" },
+  { value: "directorza", label: "Director Z–A" },
+];
 
 export default function MoviesListPage() {
   const nav = useNavigate();
@@ -17,6 +38,7 @@ export default function MoviesListPage() {
   const queryFromUrl = searchParams.get("query") || "";
 
   const [movies, setMovies] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [deletingId, setDeletingId] = useState(null);
 
@@ -26,22 +48,22 @@ export default function MoviesListPage() {
   const [director, setDirector] = useState("all");
   const [year, setYear] = useState("all");
 
-  // kebab menu state
-  const [openMenuId, setOpenMenuId] = useState(null);
-  const rootRef = useRef(null);
-
-  async function load() {
-    setErr("");
-    try {
-      const data = await api.listMovies();
-      setMovies(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setErr(e.message || "Failed to load movies");
-    }
-  }
-
   useEffect(() => {
-    load();
+    let cancelled = false;
+    api
+      .listMovies()
+      .then((data) => {
+        if (!cancelled) setMovies(Array.isArray(data) ? data : []);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(e.message || "Failed to load projects");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -58,172 +80,141 @@ export default function MoviesListPage() {
     try {
       await movieActions.delete(movie.id);
       setMovies((current) => current.filter((entry) => entry.id !== movie.id));
-      setOpenMenuId(null);
     } catch (e) {
-      setErr(e.message || "Failed to delete movie");
+      setErr(e.message || "Failed to delete project");
     } finally {
       setDeletingId(null);
     }
   }
 
-  // close menus on outside click
-  useEffect(() => {
-    function onDocClick(e) {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(e.target)) {
-        setOpenMenuId(null);
-      }
-    }
-    document.addEventListener("click", onDocClick);
-    return () => document.removeEventListener("click", onDocClick);
-  }, []);
+  const directors = useMemo(() => getMovieDirectors(movies), [movies]);
+  const years = useMemo(() => getMovieYears(movies), [movies]);
+  const filtered = useMemo(
+    () => filterAndSortMovies(movies, { query, director, year, sort }),
+    [movies, query, director, year, sort]
+  );
+  const hasFilters = Boolean(query.trim()) || director !== "all" || year !== "all";
 
-  const directors = useMemo(() => {
-    return getMovieDirectors(movies);
-  }, [movies]);
-
-  const years = useMemo(() => {
-    return getMovieYears(movies);
-  }, [movies]);
-
-  const filtered = useMemo(() => {
-    return filterAndSortMovies(movies, { query, director, year, sort });
-  }, [movies, query, director, year, sort]);
+  function clearFilters() {
+    setQuery("");
+    setDirector("all");
+    setYear("all");
+  }
 
   return (
-    <div ref={rootRef}>
-      <h1 className={styles.title}>Archive of Entries</h1>
+    <div>
+      <PageHeader
+        eyebrow="Library"
+        title="My Projects"
+        description={loading ? undefined : `${movies.length} project${movies.length === 1 ? "" : "s"}`}
+      />
 
-      {err && <div className={styles.error}>{err}</div>}
-
-      <div className={styles.controls}>
-        <input
-          className={styles.control}
-          type="text"
-          placeholder="Search by title..."
+      <div className={styles.toolbar}>
+        <Input
+          icon={<SearchIcon />}
+          className={styles.search}
+          type="search"
+          placeholder="Search by title…"
+          aria-label="Search projects by title"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
 
-        <select
-          className={styles.control}
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-        >
-          <option value="az">Sort by Title A-Z</option>
-          <option value="za">Sort by Title Z-A</option>
-          <option value="newest">Sort by Release Date (Newest)</option>
-          <option value="oldest">Sort by Release Date (Oldest)</option>
-          <option value="directoraz">Sort by Director A-Z</option>
-          <option value="directorza">Sort by Director Z-A</option>
-        </select>
+        <Select className={styles.filter} aria-label="Sort projects" value={sort} onChange={(e) => setSort(e.target.value)}>
+          {SORT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
 
-        <select
-          className={styles.control}
+        <Select
+          className={styles.filter}
+          aria-label="Filter by director"
           value={director}
           onChange={(e) => setDirector(e.target.value)}
         >
-          <option value="all">All Directors</option>
+          <option value="all">All directors</option>
           {directors.map((d) => (
             <option key={d} value={d}>
               {d}
             </option>
           ))}
-        </select>
+        </Select>
 
-        <select
-          className={styles.control}
-          value={year}
-          onChange={(e) => setYear(e.target.value)}
-        >
-          <option value="all">All Years</option>
+        <Select className={styles.filter} aria-label="Filter by year" value={year} onChange={(e) => setYear(e.target.value)}>
+          <option value="all">All years</option>
           {years.map((y) => (
             <option key={y} value={String(y)}>
               {y}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
-      {filtered.length === 0 ? (
-        <div className={styles.empty}>No movies yet.</div>
+      {err && (
+        <Callout tone="error" className={styles.notice}>
+          {err}
+        </Callout>
+      )}
+
+      {loading ? (
+        <LoadingState>Loading projects…</LoadingState>
+      ) : filtered.length === 0 ? (
+        hasFilters ? (
+          <EmptyState
+            title="No projects match your filters"
+            action={
+              <Button size="sm" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            }
+          />
+        ) : (
+          !err && (
+            <EmptyState
+              title="No projects yet"
+              action={
+                <Button as={Link} to="/movies/new" variant="primary" size="sm">
+                  Start a project
+                </Button>
+              }
+            >
+              Create a project to upload a script and start annotating scenes.
+            </EmptyState>
+          )
+        )
       ) : (
-        <ul className={styles.list}>
-          {filtered.map((m) => {
-            const thumb = getMovieCoverUrl(m);
-            const menuOpen = openMenuId === m.id;
-
-            return (
-              <li key={m.id} className={styles.item} onClick={() => nav(`/movies/${m.id}`)}>
-                <Link
-                  className={styles.entryWrapper}
-                  to={`/movies/${m.id}`}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {thumb ? (
-                    <img
-                      className={styles.thumb}
-                      src={thumb}
-                      alt={`${m.title} cover`}
-                      loading="lazy"
-                      onError={(e) => {
-                        // avoids broken-image icon; falls back to blank thumb
-                        e.currentTarget.style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    <div className={styles.thumb} aria-hidden="true" />
-                  )}
-
-                  <span className={styles.entryLink}>{m.title}</span>
-
-                  <span className={styles.entryMeta}>
-                    {m.director} • {m.year}
-                  </span>
-                </Link>
-
-                <button
-                  className={styles.menuButton}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setOpenMenuId((cur) => (cur === m.id ? null : m.id));
-                  }}
-                  aria-label="Menu"
-                >
-                  ⋮
-                </button>
-
-                <div className={`${styles.menu} ${menuOpen ? styles.menuShow : ""}`}>
-                  <div
-                    className={styles.menuItem}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setOpenMenuId(null);
-                      nav(`/movies/${m.id}/edit`);
-                    }}
-                  >
-                    Edit
-                  </div>
-
-                  <div
-                    className={styles.menuItem}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (deletingId === m.id) return;
-                      setOpenMenuId(null);
-                      onDeleteMovie(m);
-                    }}
-                  >
-                    {deletingId === m.id ? "Deleting..." : "Delete"}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <MovieCardGrid>
+          {filtered.map((movie) => (
+            <li key={movie.id}>
+              <MovieCard
+                movie={movie}
+                headingLevel={2}
+                menu={
+                  <DropdownMenu
+                    label={`Actions for ${movie.title}`}
+                    triggerVariant="overlay"
+                    items={[
+                      {
+                        key: "edit",
+                        label: "Edit details",
+                        onSelect: () => nav(`/movies/${movie.id}/edit`),
+                      },
+                      {
+                        key: "delete",
+                        label: deletingId === movie.id ? "Deleting…" : "Delete",
+                        tone: "danger",
+                        disabled: deletingId === movie.id,
+                        onSelect: () => onDeleteMovie(movie),
+                      },
+                    ]}
+                  />
+                }
+              />
+            </li>
+          ))}
+        </MovieCardGrid>
       )}
     </div>
   );

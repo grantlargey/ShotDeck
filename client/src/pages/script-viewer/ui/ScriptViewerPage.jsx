@@ -13,6 +13,7 @@ import { scriptSceneActions } from "@/features/script-scene-actions";
 import { api } from "@/shared/api";
 import { screenplayToPlainText } from "@/shared/lib/screenplay";
 import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
+import { CloseIcon, IconButton, LoadingState } from "@/shared/ui";
 import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
 import { isTypingTarget } from "../lib/pdfViewport.js";
 import {
@@ -409,7 +410,7 @@ function ScriptViewerPage() {
   if (loading) {
     return (
       <div className={styles.page}>
-        <p className={styles.loading}>Loading script viewer…</p>
+        <LoadingState>Loading script viewer…</LoadingState>
       </div>
     );
   }
@@ -605,9 +606,9 @@ function ScriptViewerPage() {
           role={notice.tone === "error" ? "alert" : "status"}
         >
           <span>{notice.text}</span>
-          <button type="button" className={styles.toastClose} onClick={() => setNotice(null)} aria-label="Dismiss">
-            ×
-          </button>
+          <IconButton size="sm" label="Dismiss" onClick={() => setNotice(null)}>
+            <CloseIcon size={14} />
+          </IconButton>
         </div>
       )}
 

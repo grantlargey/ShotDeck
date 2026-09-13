@@ -1,13 +1,10 @@
 @import url("https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap");
+@import "./tokens.css";
 
 html, body {
   height: 100%;
   width: 100%;
   margin: 0;
-}
-
-:root {
-  --sd-nav-height: 72px;
 }
 
 * {
@@ -16,9 +13,10 @@ html, body {
 
 body {
   min-height: 100vh;
-  font-family: Arial, sans-serif;
-  background: #f4f4f4;
-  color: #111;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -26,6 +24,16 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+a {
+  color: var(--color-accent);
+}
+
+/* Zero specificity so any component can restyle or remove its focus ring. */
+:where(:focus-visible) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 #root {

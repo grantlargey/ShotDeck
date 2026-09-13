@@ -6,69 +6,37 @@
   gap: 12px 18px;
 }
 
-.segmented {
-  flex: none;
-  padding: 3px;
-  display: inline-grid;
-  grid-auto-flow: column;
-  gap: 2px;
-  border-radius: 8px;
-  background: var(--sb-panel, #161923);
-}
-
-.segment {
-  height: 30px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--sb-muted, rgba(243, 244, 248, 0.56));
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.segmentActive {
-  background: var(--sb-panel-raised, #262a36);
-  color: var(--sb-text, #f3f4f8);
-}
-
-.segment:focus-visible {
-  outline: 2px solid var(--sb-accent, #5c9dff);
-  outline-offset: 2px;
-}
-
 .fidelityGroup {
   min-width: 0;
   max-width: 560px;
+  padding-top: 6px;
   display: grid;
   gap: 4px;
-  padding-top: 6px;
 }
 
 .fidelityOk,
 .fidelityMuted,
 .proposalError {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   line-height: 1.4;
 }
 
 .fidelityOk {
-  color: #6ee7b7;
+  color: var(--color-success);
 }
 
 .fidelityMuted {
-  color: var(--sb-muted, rgba(243, 244, 248, 0.56));
+  color: var(--color-text-muted);
 }
 
 .proposalError {
-  color: #ffb4b4;
+  color: var(--color-danger);
 }
 
 .fidelityWarn {
-  color: #fde68a;
-  font-size: 0.82rem;
+  color: var(--color-warning);
+  font-size: var(--text-sm);
 }
 
 .fidelityWarn summary {
@@ -79,14 +47,14 @@
   max-height: 72px;
   margin: 6px 0 0;
   overflow-y: auto;
-  color: rgba(243, 244, 248, 0.8);
+  color: var(--color-text-soft);
   overflow-wrap: anywhere;
 }
 
 .editorHint {
   margin: 0;
-  color: var(--sb-muted, rgba(243, 244, 248, 0.56));
-  font-size: 0.76rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
 .source {
@@ -97,7 +65,7 @@
   border: 0;
   background: transparent;
   color: inherit;
-  font-family: "Courier Prime", "Courier New", Courier, monospace;
+  font-family: var(--font-script);
   font-size: 13px;
   line-height: 1.55;
   resize: none;
@@ -106,7 +74,7 @@
 
 .loading {
   margin: 0;
-  color: #6b6558;
-  font-family: "Inter", Arial, sans-serif;
-  font-size: 0.9rem;
+  color: var(--color-ink-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
 }

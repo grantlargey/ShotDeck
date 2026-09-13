@@ -1,21 +1,19 @@
 // client/src/pages/movie-form/ui/MovieFormPage.jsx
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { buildMovieSavePayload, createMovieEditForm } from "@/entities/movie";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { buildMovieSavePayload, createMovieEditForm, MovieDetailsFields } from "@/entities/movie";
 import { movieActions } from "@/features/movie-actions";
 import { saveScriptPdf } from "@/features/script-actions";
 import { uploadMediaFile } from "@/features/upload-media";
 import { api } from "@/shared/api";
-import {
-  formatSecondsToHms,
-  parseTimeInputToMinutes,
-  parseTimeInputToSeconds,
-} from "@/shared/lib/time";
+import { parseTimeInputToMinutes } from "@/shared/lib/time";
+import { Button, Callout, Field, FileInput, PageHeader, Panel } from "@/shared/ui";
 import styles from "./MovieFormPage.module.css";
 
 export default function MovieFormPage({ mode }) {
   const { id } = useParams();
   const nav = useNavigate();
+  const isEdit = mode === "edit";
 
   const [form, setForm] = useState({
     title: "",
@@ -55,7 +53,7 @@ export default function MovieFormPage({ mode }) {
         // Prefer cover_url / cover_image_url if backend provides it
         setExistingCoverUrl(m.cover_url || m.cover_image_url || "");
       } catch (e) {
-        setErr(e.message || "Failed to load movie");
+        setErr(e.message || "Failed to load project");
       }
     })();
   }, [mode, id]);
@@ -83,7 +81,7 @@ export default function MovieFormPage({ mode }) {
 
       const basePayload = buildMovieSavePayload(form, runtimeMinutes);
 
-      if (mode === "edit") {
+      if (isEdit) {
         await movieActions.update(id, basePayload);
 
         if (coverFile) {
@@ -131,94 +129,61 @@ export default function MovieFormPage({ mode }) {
   const coverToShow = coverPreviewUrl || existingCoverUrl;
 
   return (
-    <div>
-      <h1 className={styles.title}>Create or Edit Movie Entry</h1>
-      {err && <div className={styles.error}>{err}</div>}
+    <div className={styles.page}>
+      <PageHeader
+        eyebrow="Projects"
+        title={isEdit ? "Edit project" : "New project"}
+        description={
+          isEdit
+            ? "Update the film details, cover image, or script."
+            : "Add a film, its cover image, and optionally its script."
+        }
+      />
 
-      <form onSubmit={onSubmit}>
-        <label className={styles.label} htmlFor="title">
-          Movie Title:
-        </label>
-        <input
-          id="title"
-          className={styles.input}
-          value={form.title}
-          onChange={(e) => updateField("title", e.target.value)}
-          required
-        />
+      {err && (
+        <Callout tone="error" className={styles.notice}>
+          {err}
+        </Callout>
+      )}
 
-        <label className={styles.label} htmlFor="director">
-          Director:
-        </label>
-        <input
-          id="director"
-          className={styles.input}
-          value={form.director}
-          onChange={(e) => updateField("director", e.target.value)}
-          required
-        />
+      <form className={styles.form} onSubmit={onSubmit}>
+        <Panel title="Film details">
+          <MovieDetailsFields values={form} onChange={updateField} />
+        </Panel>
 
-        <label className={styles.label} htmlFor="year">
-          Release Year:
-        </label>
-        <input
-          id="year"
-          type="number"
-          min="1888"
-          max="2100"
-          className={styles.input}
-          value={form.year}
-          onChange={(e) => updateField("year", e.target.value)}
-          required
-        />
+        <Panel title="Files">
+          <div className={styles.files}>
+            <Field as="div" label="Cover image" hint="JPG or PNG">
+              <div className={styles.cover}>
+                {coverToShow ? (
+                  <img className={styles.coverPreview} src={coverToShow} alt="Cover preview" />
+                ) : (
+                  <div className={styles.coverPreview} aria-hidden="true" />
+                )}
+                <FileInput
+                  accept="image/png, image/jpeg"
+                  file={coverFile}
+                  onChange={setCoverFile}
+                  label={coverToShow ? "Replace image" : "Choose image"}
+                  placeholder={existingCoverUrl ? "Current cover" : "No file chosen"}
+                />
+              </div>
+            </Field>
 
-        <label className={styles.label} htmlFor="runtime">
-          Runtime (HH:MM:SS):
-        </label>
-        <input
-          id="runtime"
-          type="text"
-          className={styles.input}
-          value={form.runtime_hms}
-          onChange={(e) => updateField("runtime_hms", e.target.value)}
-          onBlur={(e) => {
-            const parsed = parseTimeInputToSeconds(e.target.value);
-            if (parsed !== null) {
-              updateField("runtime_hms", formatSecondsToHms(parsed, { fallback: "00:00:00" }));
-            }
-          }}
-          placeholder="00:00:00"
-          required
-        />
+            <Field as="div" label="Script PDF" hint="Optional. You can also add it later from the project page.">
+              <FileInput accept="application/pdf" file={scriptFile} onChange={setScriptFile} label="Choose PDF" />
+            </Field>
+          </div>
+        </Panel>
 
-        <label className={styles.label} htmlFor="cover">
-          Upload Cover Image (.jpg, .png):
-        </label>
-        <input
-          id="cover"
-          type="file"
-          accept="image/png, image/jpeg"
-          onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
-        />
-
-        {coverToShow && (
-          <img className={styles.previewImg} src={coverToShow} alt="Cover Preview" />
-        )}
-
-        <label className={styles.label} htmlFor="scriptPdf">
-          Upload Script PDF (.pdf, optional):
-        </label>
-        <input
-          id="scriptPdf"
-          type="file"
-          accept="application/pdf"
-          onChange={(e) => setScriptFile(e.target.files?.[0] ?? null)}
-        />
-        {scriptFile && <p className={styles.helperText}>Selected PDF: {scriptFile.name}</p>}
-
-        <button className={styles.button} disabled={saving} type="submit">
-          {saving ? "Saving..." : "Save Entry"}
-        </button>
+        <div className={styles.actions}>
+          <Button as={Link} to={isEdit ? `/movies/${id}` : "/movies"}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving}>
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Create project"}
+          </Button>
+        </div>
       </form>
     </div>
   );

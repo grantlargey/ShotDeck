@@ -1,21 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/shared/api";
+import { cx } from "@/shared/lib/cx";
+import { Button, ChevronLeftIcon, ChevronRightIcon, CloseIcon, IconButton } from "@/shared/ui";
 import styles from "./SceneDetailModal.module.css";
-
-function Arrow({ direction }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-      <path
-        d={direction === "left" ? "M11 3.5L5.5 9l5.5 5.5" : "M7 3.5L12.5 9 7 14.5"}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function isTypingTarget(target) {
   return target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
@@ -84,20 +71,12 @@ export function SceneDetailModal({
             {meta && <p className={styles.meta}>{meta}</p>}
           </div>
           {counter && <span className={styles.counter}>{counter}</span>}
-          <button
-            ref={closeRef}
-            type="button"
-            className={styles.iconButton}
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M4.5 4.5l11 11M15.5 4.5l-11 11" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
-            </svg>
-          </button>
+          <IconButton ref={closeRef} label="Close" onClick={onClose}>
+            <CloseIcon size={18} strokeWidth={2.2} />
+          </IconButton>
         </header>
 
-        <div className={`${styles.stage} ${onStep ? "" : styles.stageSolo}`}>
+        <div className={cx(styles.stage, !onStep && styles.stageSolo)}>
           {onStep && (
             <button
               type="button"
@@ -106,7 +85,7 @@ export function SceneDetailModal({
               disabled={!hasPrev}
               aria-label="Previous scene"
             >
-              <Arrow direction="left" />
+              <ChevronLeftIcon size={18} strokeWidth={2.4} />
             </button>
           )}
 
@@ -122,7 +101,7 @@ export function SceneDetailModal({
               disabled={!hasNext}
               aria-label="Next scene"
             >
-              <Arrow direction="right" />
+              <ChevronRightIcon size={18} strokeWidth={2.4} />
             </button>
           )}
         </div>
@@ -163,16 +142,9 @@ export function SceneModalActions({ children }) {
   return <div className={styles.actions}>{children}</div>;
 }
 
-const BUTTON_VARIANTS = {
-  primary: styles.primaryAction,
-  secondary: styles.secondaryAction,
-  danger: styles.dangerAction,
-};
-
-export function SceneModalButton({ variant = "secondary", className = "", ...props }) {
-  return (
-    <button type="button" className={`${BUTTON_VARIANTS[variant] || styles.secondaryAction} ${className}`} {...props} />
-  );
+/** Footer action; a shared Button that stretches to fill the row on phones. */
+export function SceneModalButton({ variant = "secondary", className, ...props }) {
+  return <Button variant={variant} className={cx(styles.actionButton, className)} {...props} />;
 }
 
 /**

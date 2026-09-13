@@ -11,7 +11,7 @@ async function fetchApi(path, options) {
   }
 }
 
-export async function presignUpload({ movieId, type, contentType }) {
+async function presignUpload({ movieId, type, contentType }) {
   // Basic client-side guardrails
   if (!movieId) throw new Error("presignUpload: movieId is required");
   if (type !== "cover" && type !== "annotation" && type !== "script") {
@@ -45,7 +45,7 @@ export async function presignUpload({ movieId, type, contentType }) {
   return res.json();
 }
 
-export async function uploadToS3(uploadUrl, file) {
+async function uploadToS3(uploadUrl, file) {
   if (!uploadUrl) throw new Error("uploadToS3: uploadUrl is required");
   if (!file) throw new Error("uploadToS3: file is required");
 

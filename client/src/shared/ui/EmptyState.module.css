@@ -1,0 +1,32 @@
+.empty {
+  padding: 48px 24px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  border: 1px dashed var(--color-line-control);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.compact {
+  padding: 24px 16px;
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.description {
+  max-width: 46ch;
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.action {
+  margin-top: 10px;
+}

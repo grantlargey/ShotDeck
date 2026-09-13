@@ -1,0 +1,205 @@
+.page {
+  display: grid;
+  gap: 20px;
+}
+
+/* ---------- Header ---------- */
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+}
+
+.poster {
+  flex: none;
+  width: 132px;
+  aspect-ratio: 2 / 3;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: linear-gradient(145deg, var(--color-surface-raised), var(--color-surface));
+  object-fit: cover;
+  box-shadow: var(--shadow-card);
+}
+
+.headerBody {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.headerBody .pageHeader {
+  margin-bottom: 0;
+}
+
+.facts {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 32px;
+}
+
+.facts div {
+  display: grid;
+  gap: 3px;
+}
+
+.facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.facts dd {
+  margin: 0;
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Panels ---------- */
+
+.panelActions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.scriptRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.scriptStatus {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.scriptActions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ---------- Annotations ---------- */
+
+.addForm,
+.editRow {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.addForm,
+.viewer,
+.viewerEmpty {
+  margin-top: 20px;
+}
+
+.addForm,
+.viewer {
+  padding-top: 20px;
+  border-top: 1px solid var(--color-line);
+}
+
+.timeField {
+  flex: 0 1 160px;
+}
+
+.imageField {
+  flex: 1 1 240px;
+}
+
+.viewer {
+  display: grid;
+  gap: 14px;
+}
+
+.viewerBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.position {
+  min-width: 44px;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.timestamp {
+  font-size: var(--text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewerActions,
+.editActions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.editRow {
+  padding: 16px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.still {
+  width: 100%;
+  max-height: 560px;
+  display: block;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-deep);
+  object-fit: contain;
+}
+
+.lookupNote {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 600px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .poster {
+    width: 104px;
+  }
+
+  .viewerActions,
+  .editActions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .viewerActions > *,
+  .editActions > * {
+    flex: 1;
+  }
+}

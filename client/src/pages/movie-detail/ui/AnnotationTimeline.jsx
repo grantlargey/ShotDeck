@@ -1,44 +1,34 @@
 import { getTimelinePositionPercent } from "@/entities/annotation";
+import { cx } from "@/shared/lib/cx";
 import { formatSecondsToHms } from "@/shared/lib/time";
+import styles from "./AnnotationTimeline.module.css";
 
 export function AnnotationTimeline({ annotations, onSelect, runtimeSeconds, selectedIndex }) {
   return (
-    <div
-      style={{
-        position: "relative",
-        height: 20,
-        background: "#ccc",
-        borderRadius: 10,
-        margin: "1rem 0 2rem",
-      }}
-    >
-      {annotations.map((annotation, idx) => {
-        const pct = getTimelinePositionPercent(annotation, runtimeSeconds);
+    <div className={styles.timeline}>
+      <div className={styles.track}>
+        {annotations.map((annotation, idx) => {
+          const pct = getTimelinePositionPercent(annotation, runtimeSeconds);
+          const time = formatSecondsToHms(annotation.time_seconds);
 
-        return (
-          <div
-            key={annotation.id}
-            title={formatSecondsToHms(annotation.time_seconds)}
-            onClick={() => onSelect(idx)}
-            style={{
-              position: "absolute",
-              left: `${pct}%`,
-              top: -10,
-              transform: "translateX(-50%)",
-              cursor: "pointer",
-            }}
-          >
-            <div
-              style={{
-                width: 6,
-                height: 20,
-                background: idx === selectedIndex ? "#111" : "blue",
-                borderRadius: 2,
-              }}
+          return (
+            <button
+              key={annotation.id}
+              type="button"
+              className={cx(styles.marker, idx === selectedIndex && styles.markerActive)}
+              style={{ left: `${pct}%` }}
+              title={time}
+              aria-label={`Annotation at ${time}`}
+              aria-pressed={idx === selectedIndex}
+              onClick={() => onSelect(idx)}
             />
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+      <div className={styles.scale} aria-hidden="true">
+        <span>00:00:00</span>
+        <span>{formatSecondsToHms(runtimeSeconds)}</span>
+      </div>
     </div>
   );
 }

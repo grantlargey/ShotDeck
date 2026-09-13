@@ -1,14 +1,27 @@
 import { useState } from "react";
-import { getScriptTagLabel, SCRIPT_TAG_CATEGORIES, SceneCard } from "@/entities/script-scene";
+import { getScriptTagLabel, SCRIPT_TAG_CATEGORIES, SceneCard, TagCategoryList } from "@/entities/script-scene";
+import { cx } from "@/shared/lib/cx";
 import { formatSecondsToHms } from "@/shared/lib/time";
+import {
+  Badge,
+  Button,
+  Callout,
+  Chip,
+  CloseIcon,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  SegmentedControl,
+} from "@/shared/ui";
 import { undoShortcutLabel } from "../lib/platform.js";
 import styles from "./AnnotatorPanel.module.css";
 
-const ORIGIN_LABELS = {
-  capture: "Captured from PDF",
-  edited: "Edited",
-  ai: "AI formatted",
-  saved: "Saved",
+const ORIGIN_BADGES = {
+  capture: { label: "Captured from PDF", tone: "success" },
+  edited: { label: "Edited", tone: "warning" },
+  ai: { label: "AI formatted", tone: "ai" },
+  saved: { label: "Saved", tone: "neutral" },
 };
 
 function CrosshairIcon() {
@@ -22,11 +35,11 @@ function CrosshairIcon() {
 
 function AnchorRow({ kind, anchor, onJump, onRemove }) {
   const label = kind === "start" ? "Start" : "End";
-  const badgeClass = `${styles.anchorBadge} ${kind === "start" ? styles.anchorBadgeStart : styles.anchorBadgeEnd}`;
+  const badgeClass = cx(styles.anchorBadge, kind === "start" ? styles.anchorBadgeStart : styles.anchorBadgeEnd);
 
   if (!anchor) {
     return (
-      <div className={`${styles.anchorRow} ${styles.anchorRowEmpty}`}>
+      <div className={cx(styles.anchorRow, styles.anchorRowEmpty)}>
         <span className={badgeClass}>{label[0]}</span>
         <span className={styles.anchorText}>
           <span className={styles.anchorLocation}>{label} anchor</span>
@@ -37,7 +50,7 @@ function AnchorRow({ kind, anchor, onJump, onRemove }) {
   }
 
   return (
-    <div className={`${styles.anchorRow} ${anchor.suggested ? styles.anchorRowSuggested : ""}`}>
+    <div className={cx(styles.anchorRow, anchor.suggested && styles.anchorRowSuggested)}>
       <span className={badgeClass}>{label[0]}</span>
       <span className={styles.anchorText}>
         <span className={styles.anchorLocation}>
@@ -48,25 +61,23 @@ function AnchorRow({ kind, anchor, onJump, onRemove }) {
         </span>
       </span>
       <span className={styles.anchorActions}>
-        <button
-          type="button"
-          className={styles.iconButton}
-          onClick={() => onJump(kind)}
-          aria-label={`Scroll to the ${kind} anchor`}
+        <IconButton
+          size="sm"
+          label={`Scroll to the ${kind} anchor`}
           title="Scroll to anchor"
+          onClick={() => onJump(kind)}
         >
           <CrosshairIcon />
-        </button>
+        </IconButton>
         {!anchor.suggested && (
-          <button
-            type="button"
-            className={styles.iconButton}
-            onClick={() => onRemove(kind)}
-            aria-label={`Remove the ${kind} anchor`}
+          <IconButton
+            size="sm"
+            label={`Remove the ${kind} anchor`}
             title="Remove anchor"
+            onClick={() => onRemove(kind)}
           >
-            ×
-          </button>
+            <CloseIcon size={14} />
+          </IconButton>
         )}
       </span>
     </div>
@@ -75,18 +86,15 @@ function AnchorRow({ kind, anchor, onJump, onRemove }) {
 
 function TimeField({ label, value, onChange, onBlur }) {
   return (
-    <label className={styles.field}>
-      {label}
-      <input
-        type="text"
-        className={styles.input}
+    <Field label={label}>
+      <Input
         value={value}
         placeholder="00:00:00"
         autoComplete="off"
         onChange={(event) => onChange(event.target.value)}
         onBlur={onBlur}
       />
-    </label>
+    </Field>
   );
 }
 
@@ -121,6 +129,7 @@ function CaptureTab({
 }) {
   const hasAnchors = Boolean(anchors.start || anchors.end);
   const hasText = Boolean(markdown.trim());
+  const originBadge = ORIGIN_BADGES[textOrigin];
 
   return (
     <>
@@ -130,18 +139,17 @@ function CaptureTab({
             Anchors
           </h3>
           <div className={styles.sectionTools}>
-            <button
-              type="button"
-              className={styles.toolButton}
+            <Button
+              size="sm"
               onClick={onUndoAnchors}
               disabled={!canUndo}
               title={`Undo anchor change (${undoShortcutLabel()})`}
             >
               Undo
-            </button>
-            <button type="button" className={styles.toolButton} onClick={onClearAnchors} disabled={!hasAnchors}>
+            </Button>
+            <Button size="sm" onClick={onClearAnchors} disabled={!hasAnchors}>
               Clear
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -171,14 +179,9 @@ function CaptureTab({
         )}
 
         {overlapScene && (
-          <div className={`${styles.callout} ${styles.calloutWarn}`}>
-            <span>
-              This range overlaps the saved scene at {formatSecondsToHms(overlapScene.start_time_seconds)}.
-            </span>
-            <button type="button" className={styles.calloutAction} onClick={onEditOverlapScene}>
-              Edit that scene
-            </button>
-          </div>
+          <Callout tone="warning" className={styles.callout} action="Edit that scene" onAction={onEditOverlapScene}>
+            This range overlaps the saved scene at {formatSecondsToHms(overlapScene.start_time_seconds)}.
+          </Callout>
         )}
       </section>
 
@@ -207,24 +210,15 @@ function CaptureTab({
           <h3 id="annotator-text" className={styles.sectionTitle}>
             Script text
           </h3>
-          {hasText && (
-            <span className={styles.originBadge} data-origin={textOrigin}>
-              {ORIGIN_LABELS[textOrigin]}
-            </span>
-          )}
+          {hasText && originBadge && <Badge tone={originBadge.tone}>{originBadge.label}</Badge>}
         </div>
 
         {captureStale && (
-          <div className={`${styles.callout} ${styles.calloutInfo}`}>
-            <span>
-              {legacyText
-                ? "This scene was saved before screenplay formatting."
-                : "The anchors moved after this text was captured."}
-            </span>
-            <button type="button" className={styles.calloutAction} onClick={onRecapture}>
-              Re-capture from anchors
-            </button>
-          </div>
+          <Callout tone="info" className={styles.callout} action="Re-capture from anchors" onAction={onRecapture}>
+            {legacyText
+              ? "This scene was saved before screenplay formatting."
+              : "The anchors moved after this text was captured."}
+          </Callout>
         )}
 
         {hasText ? (
@@ -236,45 +230,34 @@ function CaptureTab({
             onKeyActivate={onExpandDraft}
           />
         ) : (
-          <p className={styles.emptyText}>
+          <EmptyState compact>
             {anchors.start && anchors.end
               ? "Capturing text between the anchors…"
               : "Place a start and an end anchor to capture this scene's text."}
-          </p>
+          </EmptyState>
         )}
 
         {hasText && (
           <div className={styles.buttonRow}>
-            <button type="button" className={styles.secondaryButton} onClick={onExpandDraft}>
+            <Button size="sm" block onClick={onExpandDraft}>
               Expand &amp; edit
-            </button>
-            <button
-              type="button"
-              className={`${styles.secondaryButton} ${styles.aiButton}`}
-              onClick={onRequestAi}
-              disabled={proposal?.status === "loading"}
-            >
+            </Button>
+            <Button size="sm" block variant="ai" onClick={onRequestAi} disabled={proposal?.status === "loading"}>
               {proposal?.status === "loading" ? "Formatting…" : "Format with AI"}
-            </button>
+            </Button>
           </div>
         )}
 
         {proposal?.status === "ready" && (
-          <div className={`${styles.callout} ${styles.calloutAi}`}>
-            <span>An AI formatting proposal is ready. Nothing changes until you accept it.</span>
-            <button type="button" className={styles.calloutAction} onClick={onReviewProposal}>
-              Review
-            </button>
-          </div>
+          <Callout tone="ai" className={styles.callout} action="Review" onAction={onReviewProposal}>
+            An AI formatting proposal is ready. Nothing changes until you accept it.
+          </Callout>
         )}
 
         {proposal?.status === "error" && (
-          <div className={`${styles.callout} ${styles.calloutError}`} role="alert">
-            <span>{proposal.error}</span>
-            <button type="button" className={styles.calloutAction} onClick={onDiscardProposal}>
-              Dismiss
-            </button>
-          </div>
+          <Callout tone="error" className={styles.callout} action="Dismiss" onAction={onDiscardProposal}>
+            {proposal.error}
+          </Callout>
         )}
 
         {capture && (
@@ -320,24 +303,18 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
     <>
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle}>Selected · {tags.length}</h3>
-        <button type="button" className={styles.linkButton} onClick={onClearTags} disabled={tags.length === 0}>
+        <Button variant="link" size="sm" onClick={onClearTags} disabled={tags.length === 0}>
           Clear all
-        </button>
+        </Button>
       </div>
 
       {tags.length > 0 ? (
         <ul className={styles.chipList} aria-label="Selected tags">
           {tags.map((tag) => (
             <li key={tag}>
-              <button
-                type="button"
-                className={styles.tagChip}
-                onClick={() => onToggleTag(tag)}
-                aria-label={`Remove ${getScriptTagLabel(tag)}`}
-              >
+              <Chip onRemove={() => onToggleTag(tag)} removeLabel={`Remove ${getScriptTagLabel(tag)}`}>
                 {getScriptTagLabel(tag)}
-                <span aria-hidden="true">×</span>
-              </button>
+              </Chip>
             </li>
           ))}
         </ul>
@@ -345,56 +322,15 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
         <p className={styles.hint}>Open a category below to tag this scene.</p>
       )}
 
-      <ul className={styles.categoryList}>
-        {SCRIPT_TAG_CATEGORIES.map((group) => {
-          const isOpen = openGroups.has(group.key);
-          const selectedCount = group.tags.filter((tag) => tags.includes(tag.value)).length;
-          const panelId = `annotator-tags-${group.key}`;
-
-          return (
-            <li key={group.key} className={styles.category}>
-              <button
-                type="button"
-                className={`${styles.categoryToggle} ${isOpen ? styles.categoryToggleOpen : ""}`}
-                aria-expanded={isOpen}
-                aria-controls={panelId}
-                onClick={() => onToggleGroup(group.key)}
-              >
-                <span className={styles.categoryLabel}>{group.label}</span>
-                {selectedCount > 0 && <span className={styles.categoryBadge}>{selectedCount}</span>}
-                <svg className={styles.chevron} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                  <path
-                    d="M2.5 4.5L6 8l3.5-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-
-              {isOpen && (
-                <ul id={panelId} className={styles.optionList}>
-                  {group.tags.map((tag) => (
-                    <li key={tag.value}>
-                      <label className={styles.option}>
-                        <input
-                          type="checkbox"
-                          className={styles.checkbox}
-                          checked={tags.includes(tag.value)}
-                          onChange={() => onToggleTag(tag.value)}
-                        />
-                        <span>{tag.label}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      <TagCategoryList
+        className={styles.categoryList}
+        groups={SCRIPT_TAG_CATEGORIES}
+        selectedTags={tags}
+        onToggleTag={onToggleTag}
+        idPrefix="annotator-tags"
+        openGroups={openGroups}
+        onToggleGroup={onToggleGroup}
+      />
     </>
   );
 }
@@ -420,6 +356,7 @@ export function AnnotatorPanel(props) {
     onSave,
     onDelete,
   } = props;
+  // Lives here so expanded categories survive switching tabs.
   const [openTagGroups, setOpenTagGroups] = useState(() => new Set());
 
   function toggleTagGroup(key) {
@@ -435,43 +372,35 @@ export function AnnotatorPanel(props) {
     <aside className={styles.panel} aria-label="Scene annotator">
       <header className={styles.header}>
         <div className={styles.headerText}>
-          <p className={`${styles.eyebrow} ${editing ? styles.eyebrowEditing : ""}`}>
+          <p className={cx(styles.eyebrow, editing && styles.eyebrowEditing)}>
             {editing ? "Editing saved scene" : "New scene"}
           </p>
           <h2 className={styles.title}>{sceneLabel}</h2>
         </div>
-        <button type="button" className={styles.newButton} onClick={onNewScene}>
+        <Button size="sm" onClick={onNewScene}>
           + New scene
-        </button>
+        </Button>
       </header>
 
-      <div className={styles.tabs} role="tablist" aria-label="Annotator sections">
-        <button
-          type="button"
-          role="tab"
-          id="annotator-tab-capture"
-          aria-selected={activeTab === "capture"}
-          aria-controls="annotator-tabpanel"
-          className={`${styles.tab} ${activeTab === "capture" ? styles.tabActive : ""}`}
-          onClick={() => onTabChange("capture")}
-        >
-          Capture
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="annotator-tab-tags"
-          aria-selected={activeTab === "tags"}
-          aria-controls="annotator-tabpanel"
-          className={`${styles.tab} ${activeTab === "tags" ? styles.tabActive : ""}`}
-          disabled={tagsDisabled}
-          title={tagsDisabled ? "Capture script text before tagging" : undefined}
-          onClick={() => onTabChange("tags")}
-        >
-          Tags
-          {tags.length > 0 && <span className={styles.tabBadge}>{tags.length}</span>}
-        </button>
-      </div>
+      <SegmentedControl
+        role="tablist"
+        label="Annotator sections"
+        idPrefix="annotator-tab"
+        panelId="annotator-tabpanel"
+        className={styles.tabs}
+        value={activeTab}
+        onChange={onTabChange}
+        options={[
+          { value: "capture", label: "Capture" },
+          {
+            value: "tags",
+            label: "Tags",
+            badge: tags.length,
+            disabled: tagsDisabled,
+            title: tagsDisabled ? "Capture script text before tagging" : undefined,
+          },
+        ]}
+      />
 
       <div
         id="annotator-tabpanel"
@@ -493,13 +422,13 @@ export function AnnotatorPanel(props) {
       </div>
 
       <footer className={styles.footer}>
-        <button type="button" className={styles.primaryButton} onClick={onSave} disabled={saving}>
+        <Button variant="primary" className={styles.saveButton} onClick={onSave} disabled={saving}>
           {saving ? "Saving…" : editing ? "Update scene" : "Save scene"}
-        </button>
+        </Button>
         {editing && (
-          <button type="button" className={styles.dangerButton} onClick={onDelete} disabled={deleting}>
+          <Button variant="danger" onClick={onDelete} disabled={deleting}>
             {deleting ? "Deleting…" : "Delete"}
-          </button>
+          </Button>
         )}
       </footer>
     </aside>

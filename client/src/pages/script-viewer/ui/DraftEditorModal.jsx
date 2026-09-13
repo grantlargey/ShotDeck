@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { compareWordFidelity, screenplayToPlainText } from "@/shared/lib/screenplay";
-import { ScreenplayView } from "@/shared/ui";
+import { ScreenplayView, SegmentedControl } from "@/shared/ui";
 import {
   SceneDetailModal,
   SceneModalActions,
@@ -96,20 +96,7 @@ export function DraftEditorModal({
       footer={
         <>
           <div className={styles.footerStart}>
-            <div className={styles.segmented} role="radiogroup" aria-label="Editor mode">
-              {MODES.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === option.value}
-                  className={`${styles.segment} ${mode === option.value ? styles.segmentActive : ""}`}
-                  onClick={() => setMode(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl label="Editor mode" options={MODES} value={mode} onChange={setMode} />
             <div className={styles.fidelityGroup} aria-live="polite">
               {draftFidelity ? (
                 <FidelitySummary subject="Draft" fidelity={draftFidelity} />
@@ -139,7 +126,7 @@ export function DraftEditorModal({
                   <SceneModalButton onClick={onDiscardProposal}>Dismiss error</SceneModalButton>
                 )}
                 {recaptureLabel && <SceneModalButton onClick={onRecapture}>{recaptureLabel}</SceneModalButton>}
-                <SceneModalButton onClick={onRequestAi} disabled={proposal?.status === "loading"}>
+                <SceneModalButton variant="ai" onClick={onRequestAi} disabled={proposal?.status === "loading"}>
                   {proposal?.status === "loading" ? "Formatting…" : "Format with AI"}
                 </SceneModalButton>
                 <SceneModalButton variant="primary" onClick={onClose}>

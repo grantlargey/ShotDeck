@@ -1,0 +1,120 @@
+.button {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------- Sizes ---------- */
+
+.sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: var(--text-sm);
+}
+
+.md {
+  height: 40px;
+  padding: 0 16px;
+  font-size: var(--text-md);
+}
+
+.lg {
+  height: 50px;
+  padding: 0 24px;
+  font-size: var(--text-base);
+}
+
+.block {
+  width: 100%;
+}
+
+/* ---------- Variants ---------- */
+
+.primary {
+  background: var(--gradient-accent);
+  color: var(--color-on-primary);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--gradient-accent-hover);
+}
+
+.secondary {
+  border-color: var(--color-line-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: var(--color-line-strong);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-text-soft);
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.danger {
+  border-color: var(--color-danger-line);
+  background: transparent;
+  color: var(--color-danger);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+}
+
+.ai {
+  border-color: var(--color-ai-line);
+  background: transparent;
+  color: var(--color-ai);
+}
+
+.ai:hover:not(:disabled) {
+  background: var(--color-ai-soft);
+}
+
+.link {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.link:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:disabled {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+  cursor: default;
+}

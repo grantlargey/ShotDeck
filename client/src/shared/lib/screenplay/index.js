@@ -4,7 +4,6 @@ export {
   NEXT_SCREENPLAY_TYPE,
   normalizeScreenplayType,
   SCREENPLAY_ELEMENTS,
-  SCREENPLAY_ELEMENT_TYPES,
 } from "./elements.js";
 export {
   getScreenplaySceneHeading,

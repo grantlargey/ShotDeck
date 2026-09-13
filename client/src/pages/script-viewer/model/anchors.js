@@ -37,7 +37,7 @@ export function hasAnyAnchor(anchors) {
   return Boolean(anchors?.start || anchors?.end);
 }
 
-export function compareAnchors(left, right) {
+function compareAnchors(left, right) {
   return left.page - right.page || left.line - right.line;
 }
 

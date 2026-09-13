@@ -1,19 +1,10 @@
 .main {
-  min-height: calc(100vh - var(--sd-nav-height, 72px));
-  max-width: 1200px;
+  min-height: calc(100vh - var(--sd-nav-height));
+  max-width: var(--page-max-width);
   margin: 0 auto;
-  padding: 2rem;
+  padding: 32px var(--page-gutter) 64px;
 }
 
 .mainFullBleed {
-  min-height: calc(100vh - var(--sd-nav-height, 72px));
-  max-width: none;
-  margin: 0;
-  padding: 0;
-}
-
-.card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 1.5rem;
+  min-height: calc(100vh - var(--sd-nav-height));
 }

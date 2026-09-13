@@ -1,56 +1,52 @@
-/* mirrors new-entry.html */
-.title {
-    margin: 0 0 18px;
-    font-size: 32px;
-    font-weight: 800;
-  }
-  
-  .label {
-    display: block;
-    margin: 1rem 0 0.5rem;
-    font-weight: 600;
-  }
-  
-  .input,
-  .textarea {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #888;
-    border-radius: 2px;
-    background: #fff;
-  }
-  
-  .textarea {
-    min-height: 90px;
-    resize: vertical;
-  }
-  
-.previewImg {
-  max-width: 300px;
-  margin-top: 1rem;
-  display: block;
+.page {
+  max-width: 760px;
+  margin: 0 auto;
 }
 
-.helperText {
-  margin: 0.5rem 0 0;
-  font-size: 12px;
-  color: #666;
+.notice {
+  margin-bottom: 16px;
 }
-  
-  .button {
-    background-color: #333;
-    color: white;
-    padding: 0.75rem 1.5rem;
-    border: none;
-    cursor: pointer;
-    margin-top: 1rem;
+
+.form {
+  display: grid;
+  gap: 16px;
+}
+
+.files {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.cover {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.coverPreview {
+  flex: none;
+  width: 56px;
+  aspect-ratio: 2 / 3;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  object-fit: cover;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .files {
+    grid-template-columns: minmax(0, 1fr);
   }
-  
-  .button:hover {
-    background-color: #555;
+
+  .actions > * {
+    flex: 1;
   }
-  
-  .error {
-    color: crimson;
-    margin: 12px 0;
-  }
+}

@@ -1,9 +1,9 @@
-export function getLastName(fullName) {
+function getLastName(fullName) {
   const parts = String(fullName || "").trim().split(/\s+/);
   return (parts[parts.length - 1] || "").toLowerCase();
 }
 
-export function safeYear(year) {
+function safeYear(year) {
   const n = Number(year);
   return Number.isFinite(n) ? n : null;
 }

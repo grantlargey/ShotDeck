@@ -21,12 +21,31 @@ import {
   parseTimeInputToMinutes,
   parseTimeInputToSeconds,
 } from "@/shared/lib/time";
-import { FeedbackMessage, LoadingState } from "@/shared/ui";
+import {
+  Badge,
+  Button,
+  Callout,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  EmptyState,
+  Field,
+  FileInput,
+  IconButton,
+  Input,
+  LoadingState,
+  Panel,
+} from "@/shared/ui";
 import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
 import { MovieEditPanel } from "./MovieEditPanel.jsx";
-import { MovieReadOnlyDetails } from "./MovieReadOnlyDetails.jsx";
+import { MovieHeader } from "./MovieHeader.jsx";
 import { MovieScriptPanel } from "./MovieScriptPanel.jsx";
-import { MovieTitleBlock } from "./MovieTitleBlock.jsx";
+import styles from "./MovieDetailPage.module.css";
+
+/** Reformats typed time as HH:MM:SS, leaving input it can't parse untouched. */
+function normalizeHms(value) {
+  const parsed = parseTimeInputToSeconds(value);
+  return parsed === null ? value : formatSecondsToHms(parsed, { fallback: "00:00:00" });
+}
 
 export default function MovieDetailPage() {
   const nav = useNavigate();
@@ -67,31 +86,6 @@ export default function MovieDetailPage() {
   const [sceneLookupMessage, setSceneLookupMessage] = useState("");
   const lastDeepLinkedAnnotationRef = useRef("");
   const annotationIdFromQuery = searchParams.get("annotationId") || "";
-
-  const btnPrimary = {
-    background: "#333",
-    color: "white",
-    padding: "0.6rem 0.9rem",
-    border: "none",
-    cursor: "pointer",
-    borderRadius: 6,
-  };
-
-  const btnSecondary = {
-    background: "#eee",
-    color: "#111",
-    padding: "0.6rem 0.9rem",
-    border: "1px solid #ccc",
-    cursor: "pointer",
-    borderRadius: 6,
-  };
-
-  const btnRow = {
-    display: "flex",
-    gap: 8,
-    marginTop: 12,
-    flexWrap: "wrap",
-  };
 
   async function load(options = {}) {
     setErr("");
@@ -227,6 +221,34 @@ export default function MovieDetailPage() {
     }
   }
 
+  function startAnnotationEdit() {
+    setAnnotationEditForm({
+      time_hms: formatSecondsToHms(selected.time_seconds, { fallback: "00:00:00" }),
+    });
+    setAnnotationEditFile(null);
+    setAnnotationEditMode(true);
+  }
+
+  function cancelAnnotationEdit() {
+    setAnnotationEditMode(false);
+    setAnnotationEditForm({ time_hms: "" });
+    setAnnotationEditFile(null);
+  }
+
+  async function deleteSelectedAnnotation() {
+    if (!window.confirm("Delete this annotation?")) return;
+    try {
+      const nextSelectedId =
+        annotations[selectedIndex - 1]?.id ||
+        annotations[selectedIndex + 1]?.id ||
+        "";
+      await deleteImageAnnotation(id, selected.id);
+      await load({ annotationId: nextSelectedId });
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
   async function saveScriptPdf() {
     if (!scriptFile) return;
     setErr("");
@@ -344,335 +366,202 @@ export default function MovieDetailPage() {
     };
   }, [currentScript?.id, id, selected?.id, selected?.time_seconds]);
 
+  function openScript() {
+    if (currentScript) nav(`/movies/${id}/scripts/${currentScript.id}`);
+  }
+
+  function openSceneInScript() {
+    if (!sceneLookupResult?.scene_id || !sceneLookupResult?.script_id) return;
+    const params = new URLSearchParams();
+    params.set("sceneId", sceneLookupResult.scene_id);
+    const page = Number(sceneLookupResult.page_start || sceneLookupResult.page_end || 1);
+    params.set("page", String(Number.isInteger(page) && page > 0 ? page : 1));
+    nav(`/movies/${id}/scripts/${sceneLookupResult.script_id}?${params.toString()}`);
+  }
+
+  const sceneButtonTitle = canOpenSceneInScript
+    ? "Open matching scene annotation in script"
+    : sceneLookupStatus === "loading"
+      ? "Finding scene annotation for this timestamp..."
+      : sceneLookupMessage || "No scene annotation for this timestamp.";
+
   return (
-    <div style={{ padding: "2rem", background: "#fdfdfd" }}>
-      <FeedbackMessage tone="error">{err}</FeedbackMessage>
+    <div className={styles.page}>
+      {err && <Callout tone="error">{err}</Callout>}
 
       {!movie ? (
-        <LoadingState />
+        !err && <LoadingState>Loading project…</LoadingState>
       ) : (
         <>
-          <MovieTitleBlock coverUrl={coverUrl} movie={movie} />
-
-          {!editMode && (
-            <>
-              <MovieReadOnlyDetails movie={movie} />
-              <MovieScriptPanel
-                btnPrimary={btnPrimary}
-                btnSecondary={btnSecondary}
-                currentScript={currentScript}
-                onChoosePdf={() => document.getElementById("scriptPdfInput")?.click()}
-                onSaveScript={saveScriptPdf}
-                onScriptFileChange={(e) => setScriptFile(e.target.files?.[0] ?? null)}
-                onViewPdf={() =>
-                  currentScript && nav(`/movies/${id}/scripts/${currentScript.id}`)
-                }
-                savingScript={savingScript}
-                scriptFile={scriptFile}
-              />
-            </>
-          )}
+          <MovieHeader
+            movie={movie}
+            coverUrl={coverUrl}
+            actions={
+              <>
+                <Button
+                  variant="primary"
+                  disabled={!currentScript}
+                  title={currentScript ? undefined : "Upload a script PDF first"}
+                  onClick={openScript}
+                >
+                  Open script
+                </Button>
+                <Button onClick={() => (editMode ? cancelMovieEdits() : setEditMode(true))}>
+                  {editMode ? "Close editor" : "Edit details"}
+                </Button>
+              </>
+            }
+          />
 
           {editMode && (
             <MovieEditPanel
-              btnPrimary={btnPrimary}
-              btnSecondary={btnSecondary}
               editForm={editForm}
+              setEditForm={setEditForm}
               onCancel={cancelMovieEdits}
               onSave={saveMovieEdits}
-              setEditForm={setEditForm}
             />
           )}
 
-          {/* Toggle button (label change): "Toggle edit mode" -> "Edit" */}
-          <button
-            type="button"
-            onClick={() => setEditMode((v) => !v)}
-            style={{
-              ...btnPrimary,
-              marginTop: 4,
-              marginBottom: 18,
-            }}
-          >
-            {editMode ? "Exit Edit Mode" : "Edit"}
-          </button>
-
-          <h2 style={{ marginTop: 0 }}>Annotations Timeline</h2>
-          <AnnotationTimeline
-            annotations={annotations}
-            onSelect={setSelectedIndex}
-            runtimeSeconds={runtimeSeconds}
-            selectedIndex={selectedIndex}
+          <MovieScriptPanel
+            currentScript={currentScript}
+            scriptFile={scriptFile}
+            savingScript={savingScript}
+            onScriptFileChange={setScriptFile}
+            onSaveScript={saveScriptPdf}
           />
 
-          {/* Add annotation */}
-          <form onSubmit={addAnnotation} style={{ maxWidth: 900 }}>
-            <input
-              type="text"
-              placeholder="Time (HH:MM:SS)"
-              value={form.time_hms}
-              onChange={(e) => setForm((f) => ({ ...f, time_hms: e.target.value }))}
-              onBlur={(e) => {
-                const parsed = parseTimeInputToSeconds(e.target.value);
-                if (parsed !== null) {
-                  setForm((f) => ({
-                    ...f,
-                    time_hms: formatSecondsToHms(parsed, { fallback: "00:00:00" }),
-                  }));
-                }
-              }}
-              required
-              style={{ width: "100%", padding: 8, marginBottom: 10 }}
+          <Panel
+            title={
+              <>
+                Annotations
+                <Badge tone="accent">{annotations.length}</Badge>
+              </>
+            }
+          >
+            <AnnotationTimeline
+              annotations={annotations}
+              onSelect={setSelectedIndex}
+              runtimeSeconds={runtimeSeconds}
+              selectedIndex={selectedIndex}
             />
 
-            <div style={{ marginBottom: 10 }}>
-              <button
-                type="button"
-                onClick={() =>
-                  document.getElementById("annotationImageInput")?.click()
-                }
-                style={{ ...btnPrimary, marginRight: 8 }}
-              >
-                Add Image
-              </button>
+            <form className={styles.addForm} onSubmit={addAnnotation}>
+              <Field label="Timestamp" className={styles.timeField}>
+                <Input
+                  placeholder="HH:MM:SS"
+                  value={form.time_hms}
+                  onChange={(e) => setForm((f) => ({ ...f, time_hms: e.target.value }))}
+                  onBlur={(e) => setForm((f) => ({ ...f, time_hms: normalizeHms(e.target.value) }))}
+                  required
+                />
+              </Field>
+              <Field as="div" label="Still image" className={styles.imageField}>
+                <FileInput accept="image/*" file={annotationFile} onChange={setAnnotationFile} label="Choose image" />
+              </Field>
+              <Button type="submit" variant="primary">
+                Add annotation
+              </Button>
+            </form>
 
-              <button type="submit" style={btnPrimary}>
-                Add Annotation
-              </button>
+            {!selected ? (
+              <EmptyState compact title="No annotations yet" className={styles.viewerEmpty}>
+                Add a timestamp and a still image to start the timeline.
+              </EmptyState>
+            ) : (
+              <div className={styles.viewer}>
+                <div className={styles.viewerBar}>
+                  <div className={styles.stepper}>
+                    <IconButton
+                      size="sm"
+                      variant="secondary"
+                      label="Previous annotation"
+                      disabled={selectedIndex <= 0}
+                      onClick={() => setSelectedIndex((i) => Math.max(0, i - 1))}
+                    >
+                      <ChevronLeftIcon />
+                    </IconButton>
+                    <span className={styles.position}>
+                      {selectedIndex + 1} / {annotations.length}
+                    </span>
+                    <IconButton
+                      size="sm"
+                      variant="secondary"
+                      label="Next annotation"
+                      disabled={selectedIndex >= annotations.length - 1}
+                      onClick={() => setSelectedIndex((i) => Math.min(annotations.length - 1, i + 1))}
+                    >
+                      <ChevronRightIcon />
+                    </IconButton>
+                  </div>
 
-              <input
-                id="annotationImageInput"
-                type="file"
-                accept="image/*"
-                style={{ display: "none" }}
-                onChange={(e) =>
-                  setAnnotationFile(e.target.files?.[0] ?? null)
-                }
-              />
-            </div>
+                  <span className={styles.timestamp}>{formatSecondsToHms(selected.time_seconds)}</span>
 
-            {annotationFile && (
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>
-                Selected: {annotationFile.name}
+                  <div className={styles.viewerActions}>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={!canOpenSceneInScript}
+                      title={sceneButtonTitle}
+                      onClick={openSceneInScript}
+                    >
+                      {sceneLookupStatus === "loading" ? "Finding scene…" : "Open scene in script"}
+                    </Button>
+                    <Button size="sm" disabled={annotationEditMode} onClick={startAnnotationEdit}>
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={deleteSelectedAnnotation}>
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+
+                {annotationEditMode && (
+                  <div className={styles.editRow}>
+                    <Field label="Timestamp" className={styles.timeField}>
+                      <Input
+                        placeholder="HH:MM:SS"
+                        value={annotationEditForm.time_hms}
+                        onChange={(e) => setAnnotationEditForm((f) => ({ ...f, time_hms: e.target.value }))}
+                        onBlur={(e) =>
+                          setAnnotationEditForm((f) => ({ ...f, time_hms: normalizeHms(e.target.value) }))
+                        }
+                      />
+                    </Field>
+                    <Field as="div" label="Replace image" className={styles.imageField}>
+                      <FileInput
+                        accept="image/*"
+                        file={annotationEditFile}
+                        onChange={setAnnotationEditFile}
+                        label="Choose image"
+                        placeholder="Keeps the current image"
+                      />
+                    </Field>
+                    <div className={styles.editActions}>
+                      <Button onClick={cancelAnnotationEdit}>Cancel</Button>
+                      <Button variant="primary" onClick={saveEditedAnnotation}>
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedImageUrl && (
+                  <img
+                    className={styles.still}
+                    src={selectedImageUrl}
+                    alt={`Annotation at ${formatSecondsToHms(selected.time_seconds)}`}
+                  />
+                )}
+
+                {(sceneLookupStatus === "no_script" || sceneLookupStatus === "no_scene") && (
+                  <p className={styles.lookupNote}>{sceneLookupMessage}</p>
+                )}
+                {sceneLookupStatus === "error" && sceneLookupMessage && (
+                  <Callout tone="error">{sceneLookupMessage}</Callout>
+                )}
               </div>
             )}
-          </form>
-
-          {/* Divider: thicker / more visible */}
-          <hr
-            style={{
-              border: 0,
-              borderTop: "3px solid #2f2f2f",
-              margin: "1.25rem 0 1.25rem",
-              opacity: 1,
-            }}
-          />
-
-          {/* Annotation viewer */}
-          {!selected ? (
-            <p>No annotations yet.</p>
-          ) : (
-            <div style={{ maxWidth: 900 }}>
-              {/* Annotation image first (as in your screenshot) */}
-              {selectedImageUrl && (
-                <img
-                  src={selectedImageUrl}
-                  alt="Annotation"
-                  style={{
-                    maxWidth: "100%",
-                    display: "block",
-                    marginBottom: 14,
-                  }}
-                />
-              )}
-
-              {/* Inline annotation edit form */}
-              {annotationEditMode ? (
-                <>
-                  <input
-                    value={annotationEditForm.time_hms}
-                    onChange={(e) =>
-                      setAnnotationEditForm((f) => ({
-                        ...f,
-                        time_hms: e.target.value,
-                      }))
-                    }
-                    onBlur={(e) => {
-                      const parsed = parseTimeInputToSeconds(e.target.value);
-                      if (parsed !== null) {
-                        setAnnotationEditForm((f) => ({
-                          ...f,
-                          time_hms: formatSecondsToHms(parsed, { fallback: "00:00:00" }),
-                        }));
-                      }
-                    }}
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      marginBottom: 12,
-                      border: "2px solid #777",
-                      borderRadius: 4,
-                      fontSize: 20,
-                    }}
-                    placeholder="Time (HH:MM:SS)"
-                  />
-
-                  <div style={{ marginBottom: 12 }}>
-                    <input
-                      id="annotationEditImageInput"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) =>
-                        setAnnotationEditFile(e.target.files?.[0] ?? null)
-                      }
-                    />
-                    {annotationEditFile && (
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
-                        New image: {annotationEditFile.name}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={btnRow}>
-                    <button type="button" style={btnPrimary} onClick={saveEditedAnnotation}>
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      style={btnSecondary}
-                      onClick={() => {
-                        setAnnotationEditMode(false);
-                        setAnnotationEditForm({ time_hms: "" });
-                        setAnnotationEditFile(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p style={{ marginTop: 0, marginBottom: 8, color: "#555" }}>
-                    <strong>Time:</strong> {formatSecondsToHms(selected.time_seconds)}
-                  </p>
-                </>
-              )}
-
-              {/* Navigation buttons under the image, matching page styles */}
-              <div style={btnRow}>
-                <button
-                  type="button"
-                  disabled={selectedIndex <= 0}
-                  onClick={() => setSelectedIndex((i) => Math.max(0, i - 1))}
-                  style={{
-                    ...btnPrimary,
-                    opacity: selectedIndex <= 0 ? 0.45 : 1,
-                    cursor: selectedIndex <= 0 ? "not-allowed" : "pointer",
-                  }}
-                >
-                  ← Previous
-                </button>
-
-                <button
-                  type="button"
-                  disabled={selectedIndex >= annotations.length - 1}
-                  onClick={() =>
-                    setSelectedIndex((i) =>
-                      Math.min(annotations.length - 1, i + 1)
-                    )
-                  }
-                  style={{
-                    ...btnPrimary,
-                    opacity: selectedIndex >= annotations.length - 1 ? 0.45 : 1,
-                    cursor:
-                      selectedIndex >= annotations.length - 1
-                        ? "not-allowed"
-                        : "pointer",
-                  }}
-                >
-                  Next →
-                </button>
-
-                {/* Scene navigation + edit/delete controls */}
-                <button
-                  type="button"
-                  disabled={!canOpenSceneInScript}
-                  onClick={() => {
-                    if (!sceneLookupResult?.scene_id || !sceneLookupResult?.script_id) return;
-                    const params = new URLSearchParams();
-                    params.set("sceneId", sceneLookupResult.scene_id);
-                    const page = Number(
-                      sceneLookupResult.page_start || sceneLookupResult.page_end || 1
-                    );
-                    params.set("page", String(Number.isInteger(page) && page > 0 ? page : 1));
-                    nav(
-                      `/movies/${id}/scripts/${sceneLookupResult.script_id}?${params.toString()}`
-                    );
-                  }}
-                  title={
-                    !canOpenSceneInScript
-                      ? sceneLookupStatus === "loading"
-                        ? "Finding scene annotation for this timestamp..."
-                        : sceneLookupMessage || "No scene annotation for this timestamp."
-                      : "Open matching scene annotation in script"
-                  }
-                  style={{
-                    ...btnPrimary,
-                    opacity: canOpenSceneInScript ? 1 : 0.5,
-                    cursor: canOpenSceneInScript ? "pointer" : "not-allowed",
-                  }}
-                >
-                  {sceneLookupStatus === "loading" ? "Finding Scene..." : "Open Scene In Script"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAnnotationEditForm({
-                      time_hms: formatSecondsToHms(selected.time_seconds, { fallback: "00:00:00" }),
-                    });
-                    setAnnotationEditFile(null);
-                    setAnnotationEditMode(true);
-                  }}
-                  style={btnPrimary}
-                >
-                  Edit
-                </button>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!window.confirm("Delete this annotation?")) return;
-                    try {
-                      const nextSelectedId =
-                        annotations[selectedIndex - 1]?.id ||
-                        annotations[selectedIndex + 1]?.id ||
-                        "";
-                      await deleteImageAnnotation(id, selected.id);
-                      await load({ annotationId: nextSelectedId });
-                    } catch (e) {
-                      setErr(e.message);
-                    }
-                  }}
-                  style={btnPrimary}
-                >
-                  Delete
-                </button>
-              </div>
-
-              {sceneLookupStatus === "no_script" && (
-                <p style={{ margin: "10px 0 0", color: "#666" }}>No script available.</p>
-              )}
-              {sceneLookupStatus === "no_scene" && (
-                <p style={{ margin: "10px 0 0", color: "#666" }}>
-                  No scene annotation for this timestamp.
-                </p>
-              )}
-              {sceneLookupStatus === "error" && sceneLookupMessage && (
-                <p style={{ margin: "10px 0 0", color: "crimson" }}>{sceneLookupMessage}</p>
-              )}
-            </div>
-          )}
+          </Panel>
         </>
       )}
     </div>

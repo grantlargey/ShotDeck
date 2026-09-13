@@ -15,7 +15,7 @@ export const SCREENPLAY_ELEMENTS = [
   { type: "centered", label: "Centered", shortcut: "8" },
 ];
 
-export const SCREENPLAY_ELEMENT_TYPES = SCREENPLAY_ELEMENTS.map((element) => element.type);
+const SCREENPLAY_ELEMENT_TYPES = SCREENPLAY_ELEMENTS.map((element) => element.type);
 
 const ELEMENTS_BY_TYPE = new Map(SCREENPLAY_ELEMENTS.map((element) => [element.type, element]));
 

@@ -1,6 +1,7 @@
+import { cx } from "@/shared/lib/cx";
 import { getScreenplaySceneHeading } from "@/shared/lib/screenplay";
 import { formatSecondsToHms } from "@/shared/lib/time";
-import { ScreenplayView } from "@/shared/ui";
+import { Badge, ScreenplayView } from "@/shared/ui";
 import {
   displayScriptSceneText,
   formatScriptScenePages,
@@ -53,7 +54,7 @@ export function SceneCard({
     <div
       role="button"
       tabIndex={0}
-      className={`${styles.card} ${selected ? styles.selected : ""}`}
+      className={cx(styles.card, selected && styles.selected)}
       aria-pressed={onKeyActivate ? selected : undefined}
       aria-haspopup={hasPopup ? "dialog" : undefined}
       aria-label={[cardTitle, pages, heading].filter(Boolean).join(", ")}
@@ -77,15 +78,19 @@ export function SceneCard({
         </div>
         <div className={styles.subRow}>
           <span>{formatTiming(scene)}</span>
-          {status && <span className={styles.status}>{status}</span>}
-          {hasImage && <span className={styles.imageBadge}>Image</span>}
+          {status && <Badge tone="success">{status}</Badge>}
+          {hasImage && (
+            <Badge tone="accent" className={styles.imageBadge}>
+              Image
+            </Badge>
+          )}
         </div>
         {tags.length > 0 && (
           <div className={styles.tags}>
             {tags.slice(0, MAX_CARD_TAGS).map((tag) => (
-              <span key={tag}>{getScriptTagLabel(tag)}</span>
+              <Badge key={tag}>{getScriptTagLabel(tag)}</Badge>
             ))}
-            {tags.length > MAX_CARD_TAGS && <span>+{tags.length - MAX_CARD_TAGS}</span>}
+            {tags.length > MAX_CARD_TAGS && <Badge>+{tags.length - MAX_CARD_TAGS}</Badge>}
           </div>
         )}
       </div>
