@@ -5,8 +5,8 @@
  */
 export const MOVIE_CREDITS = [
   { field: "director", label: "Director", plural: "directors", required: true },
-  { field: "writer", label: "Writer", plural: "writers", required: false },
   { field: "cinematographer", label: "Cinematographer", plural: "cinematographers", required: false },
+  { field: "writer", label: "Writer", plural: "writers", required: false },
 ];
 
 // Separators between people in one credit, e.g. "Todd Phillips & Scott Silver".
