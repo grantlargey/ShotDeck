@@ -1,4 +1,5 @@
 import { annotationsApi } from "./annotations.js";
+import { authApi } from "./auth.js";
 import { screenplayFormatApi } from "./screenplayFormat.js";
 import { moviesApi } from "./movies.js";
 import { scriptsApi } from "./scripts.js";
@@ -12,6 +13,7 @@ import { viewUrlsApi } from "./viewUrls.js";
  * easier to scan and maintain. Callers access them through `api.method()`.
  */
 export const api = {
+  ...authApi,
   ...screenplayFormatApi,
   ...moviesApi,
   ...annotationsApi,

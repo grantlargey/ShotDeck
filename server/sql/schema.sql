@@ -119,3 +119,31 @@ ON script_annotations(script_id, start_time_seconds);
 
 CREATE INDEX IF NOT EXISTS idx_script_annotations_tags_gin
 ON script_annotations USING GIN (tags);
+
+-- Admin accounts. There is no sign-up: the owner is created by the admin CLI
+-- and every other account by the owner from the site.
+CREATE TABLE IF NOT EXISTS admin_users (
+  id UUID PRIMARY KEY,
+  email TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('owner', 'admin')),
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_login_at TIMESTAMPTZ,
+  disabled_at TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email
+ON admin_users (LOWER(email));
+
+-- Browser sessions. The cookie holds a random token; only its SHA-256 is stored.
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_user
+ON admin_sessions(user_id);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getRecentMovies, MovieCard, MovieCardGrid, MovieCardSkeleton } from "@/entities/movie";
+import { useSession } from "@/entities/session";
 import { api } from "@/shared/api";
 import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage } from "@/shared/lib/errors";
@@ -21,6 +22,7 @@ const RECENT_PROJECT_LIMIT = 5;
 export default function HomePage() {
   useDocumentTitle();
   const navigate = useNavigate();
+  const { isAdmin } = useSession();
   const [movies, setMovies] = useState([]);
   const [query, setQuery] = useState("");
   const [err, setErr] = useState("");
@@ -126,12 +128,16 @@ export default function HomePage() {
             <EmptyState
               title="No projects yet"
               action={
-                <Button as={Link} to="/movies/new" variant="primary" size="sm">
-                  Start your first project
-                </Button>
+                isAdmin && (
+                  <Button as={Link} to="/movies/new" variant="primary" size="sm">
+                    Start your first project
+                  </Button>
+                )
               }
             >
-              Create a project to upload a script and start annotating scenes.
+              {isAdmin
+                ? "Create a project to upload a script and start annotating scenes."
+                : "Projects will appear here once they're added."}
             </EmptyState>
           )
         ) : (

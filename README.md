@@ -141,8 +141,9 @@ Common settings include:
 - `OPENAI_API_KEY` - Optional, enables AI formatting proposals. Without it, manual editing and PDF capture remain available.
 - `OPENAI_SCREENPLAY_MODEL` - Model used for screenplay proposals; falls back to `OPENAI_FORMAT_MODEL`, then `gpt-5-nano`.
 - `OPENAI_SCREENPLAY_TIMEOUT_MS` - Screenplay formatter request timeout in milliseconds, defaults to `90000`.
-- `OPENAI_FORMAT_MODEL` - Model for the retained annotation-format endpoint, defaults to `gpt-5-nano`; also a fallback for screenplay formatting.
-- `OPENAI_FORMAT_TIMEOUT_MS` - Retained annotation formatter request timeout, defaults to `10000`.
+- `OPENAI_FORMAT_MODEL` - Fallback model for screenplay formatting when `OPENAI_SCREENPLAY_MODEL` is unset.
+
+Admin sign-in needs no configuration: sessions are stored in Postgres and the cookie is marked `Secure` automatically when the API is reached over HTTPS.
 
 The AWS SDK needs credentials in the environment where the API runs. A host's AWS configuration is not automatically available inside the Compose container; supply credentials to that container as appropriate for your setup.
 
@@ -176,6 +177,34 @@ npm run db:migrate
 
 The migration script reads `DATABASE_URL` from the shell or `server/.env`; use the local connection string above when targeting the Compose database. It applies the schema and incremental alterations, and imports unmatched legacy script annotations through the shared Postgres pool. It currently has no migration-history ledger, so changes to legacy migration behavior require checking existing database state.
 
+## Admin Access
+
+Reading is public. Every route that creates, changes, or deletes data, plus upload presigning and the AI formatter, requires a signed-in admin. Signed-out visitors get the same pages without any editing controls. Admins sign in at `/login` (the "Admin" link in the footer) and get the full site plus an account menu in the header.
+
+There is no sign-up. Accounts live in `admin_users` with two roles:
+
+- `owner` - created once with the admin CLI. Also manages accounts from the Admins page (account menu, then Manage admins).
+- `admin` - created by the owner. Edits content but cannot manage accounts.
+
+Sessions are rows in `admin_sessions`, referenced by an `HttpOnly`, `SameSite=Lax` cookie named `sd_admin` that lasts 30 days and is refreshed on use. Passwords are hashed with Node's built-in scrypt. Sign-in allows 10 failed attempts per email or address per 15 minutes.
+
+Create the owner account after applying the schema:
+
+```bash
+npm run admin -- create-owner --email you@example.com
+```
+
+The command prompts for a password of at least 12 characters, or reads `ADMIN_PASSWORD` from the environment. Where the database is only reachable from inside the deployment, make the hash locally and pass it instead, so no password leaves your machine:
+
+```bash
+npm run admin -- hash
+npm run admin -- create-owner --email you@example.com --password-hash '<hash>'
+```
+
+`npm run admin -- list` shows the accounts, and `npm run admin -- reset-password --email you@example.com` replaces a password and signs that account out everywhere.
+
+From the Admins page, the owner adds an admin with either a generated temporary password, shown once, which the person must replace at first sign-in, or a password the owner types, which the person keeps. The same page resets passwords and disables or re-enables accounts; disabling signs the account out immediately.
+
 ## Available Scripts
 
 From the repository root:
@@ -188,6 +217,7 @@ From the repository root:
 | `npm run db:stop` | Stop Postgres while retaining its data. |
 | `npm run db:logs` | Follow Postgres logs. |
 | `npm run db:migrate` | Apply the schema and existing migration logic using `DATABASE_URL`. |
+| `npm run admin -- <command>` | Manage admin accounts: `hash`, `create-owner`, `reset-password`, `list`. See [Admin Access](#admin-access). |
 
 Client (from `client/`, or append `--prefix client` from the root):
 
@@ -216,11 +246,14 @@ An existing local installation containing both `server/src/importShotdeckShots.j
 node src/importShotdeckShots.js --help
 ```
 
+In API mode the importer signs in first with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from the environment (for example from `server/.env.remote`); the account must be an admin, since every write requires one.
+
 Those local files and the repository/S3 helpers they call have been preserved. The importer's deduplication contract still needs to be reconciled with the current annotation API before relying on repeat imports.
 
 ## Notes
 
 - Large uploads should go through the app's presigned S3 flow rather than through the API as request bodies.
 - The API makes an 800px WebP thumbnail for each film still in a `thumbs/` folder beside the original, in the background: when a still is saved or listed, and at startup for any still without one. Grids, timeline previews, and scene cards use it; the hero and scene viewer keep the full image. Run `npm run db:migrate` after pulling so the `annotations.thumb_key` column exists.
+- `npm run db:migrate` also creates the `admin_users` and `admin_sessions` tables; run it before the first sign-in.
 - Local env files, data imports, generated task definition snapshots, and local reference notes are ignored by git.
 - Production deployment details are intentionally not documented in this public README.

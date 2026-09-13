@@ -10,8 +10,10 @@ import {
   getScriptScenePageRange,
   sortScriptScenes,
 } from "@/entities/script-scene";
+import { useSession } from "@/entities/session";
 import { scriptSceneActions } from "@/features/script-scene-actions";
 import { api } from "@/shared/api";
+import { cx } from "@/shared/lib/cx";
 import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { screenplayToPlainText } from "@/shared/lib/screenplay";
@@ -84,6 +86,8 @@ function ScriptViewerPage() {
   const { movieId, scriptId } = useParams();
   const [searchParams] = useSearchParams();
   const sceneIdFromQuery = searchParams.get("sceneId") || searchParams.get("annotationId") || "";
+  // Visitors read the script and open scenes; only admins capture and edit.
+  const { ready: sessionReady, isAdmin: canEdit } = useSession();
 
   const [movie, setMovie] = useState(null);
   const [script, setScript] = useState(null);
@@ -98,6 +102,8 @@ function ScriptViewerPage() {
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deletingSceneId, setDeletingSceneId] = useState("");
+  // The scene a visitor last opened or followed a link to, marked in the margin.
+  const [focusSceneId, setFocusSceneId] = useState("");
   // Hides the on-page start/end markers for uncluttered reading; anchors stay set.
   const [showAnchorMarkers, setShowAnchorMarkers] = useState(true);
   const [pendingScroll, setPendingScroll] = useState(() => {
@@ -186,14 +192,16 @@ function ScriptViewerPage() {
     });
   }
 
+  // A linked scene is loaded for editing (admins) or scrolled to and marked (visitors).
   useEffect(() => {
-    if (!sceneIdFromQuery || deepLinkedSceneRef.current === sceneIdFromQuery) return;
+    if (!sessionReady || !sceneIdFromQuery || deepLinkedSceneRef.current === sceneIdFromQuery) return;
     const target = scenes.find((scene) => scene.id === sceneIdFromQuery);
     if (!target) return;
     deepLinkedSceneRef.current = sceneIdFromQuery;
-    dispatch({ type: "loadScene", scene: target });
+    if (canEdit) dispatch({ type: "loadScene", scene: target });
+    else setFocusSceneId(target.id);
     setPendingScroll(sceneScrollTarget(target));
-  }, [sceneIdFromQuery, scenes]);
+  }, [sessionReady, canEdit, sceneIdFromQuery, scenes]);
 
   const runPendingScroll = useStableHandler((target) => {
     scrollToPoint(target.page, target.offsetPt, { behavior: "auto", onDone: () => setPendingScroll(null) });
@@ -229,6 +237,18 @@ function ScriptViewerPage() {
     if (!confirmDiscardChanges()) return;
     dispatch({ type: "reset" });
     setActiveTab("capture");
+  }
+
+  // Visitors open a scene in the viewer dialog instead of loading it for editing.
+  function showScene(scene) {
+    setFocusSceneId(scene.id);
+    setModal({ kind: "scene", sceneId: scene.id });
+  }
+
+  function revealScene(scene) {
+    setFocusSceneId(scene.id);
+    const target = sceneScrollTarget(scene);
+    scrollToPoint(target.page, target.offsetPt);
   }
 
   function openStillInProject(still) {
@@ -270,7 +290,9 @@ function ScriptViewerPage() {
   const handleRemoveAnchor = useStableHandler((kind) =>
     dispatch({ type: "removeAnchor", kind, currentAnchors: anchors })
   );
-  const handleSelectSceneFromPage = useStableHandler((scene) => selectScene(scene, { scroll: false }));
+  const handleSelectSceneFromPage = useStableHandler((scene) =>
+    canEdit ? selectScene(scene, { scroll: false }) : showScene(scene)
+  );
 
   const openLineMenu = useStableHandler(({ pageNumber, line, x, y, indexed }) => {
     const scenesAtLine = line
@@ -293,7 +315,7 @@ function ScriptViewerPage() {
   });
 
   const handleKeyDown = useStableHandler((event) => {
-    if (modal || menu || isTypingTarget(event.target)) return;
+    if (!canEdit || modal || menu || isTypingTarget(event.target)) return;
     const modifier = event.metaKey || event.ctrlKey;
 
     if (modifier && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "z") {
@@ -432,6 +454,7 @@ function ScriptViewerPage() {
         title={title}
         pageCount={numPages}
         sceneCount={scenes.length}
+        canEdit={canEdit}
         anchorMarkersVisible={showAnchorMarkers}
         onToggleAnchorMarkers={() => setShowAnchorMarkers((visible) => !visible)}
         onBackToMovie={() => nav(`/movies/${movieId}`)}
@@ -439,7 +462,7 @@ function ScriptViewerPage() {
         onJumpToScenes={jumpToScenes}
       />
 
-      <div className={styles.workspace}>
+      <div className={cx(styles.workspace, !canEdit && styles.workspaceReadOnly)}>
         <section className={styles.viewer} aria-label="Script PDF">
           {!script?.script_url ? (
             <p className={styles.viewerMessage}>This script has no PDF file.</p>
@@ -473,6 +496,7 @@ function ScriptViewerPage() {
                         inWindow ? 0 : windowing.pageHeights[pageNumber] || windowing.defaultPageHeight
                       }
                       compact={windowing.compact}
+                      readOnly={!canEdit}
                       devicePixelRatio={windowing.pixelRatio}
                       startAnchor={showAnchorMarkers && anchors.start?.page === pageNumber ? anchors.start : null}
                       endAnchor={showAnchorMarkers && anchors.end?.page === pageNumber ? anchors.end : null}
@@ -481,7 +505,7 @@ function ScriptViewerPage() {
                         inRange ? (pageNumber === anchors.end.page ? anchors.end.bottom : Infinity) : null
                       }
                       sceneSegments={sceneSegmentsByPage.get(pageNumber) || NO_SEGMENTS}
-                      activeSceneId={draft.sceneId}
+                      activeSceneId={canEdit ? draft.sceneId : focusSceneId}
                       onLineContextMenu={openLineMenu}
                       onHoverLine={handleHoverLine}
                       onRemoveAnchor={handleRemoveAnchor}
@@ -498,60 +522,63 @@ function ScriptViewerPage() {
           )}
         </section>
 
-        <AnnotatorPanel
-          editing={Boolean(draft.sceneId)}
-          sceneLabel={draft.baseline ? formatTiming(draft.baseline) : "Untitled scene"}
-          onNewScene={startNewScene}
-          activeTab={visibleTab}
-          onTabChange={setActiveTab}
-          tagsDisabled={tagsDisabled}
-          anchors={anchors}
-          anchorsSuggested={Boolean(suggestedAnchors)}
-          canUndo={draft.anchorHistory.length > 0}
-          indexStatus={{ complete: textIndex.complete, loaded: textIndex.pages.size, total: numPages }}
-          onJumpToAnchor={jumpToAnchor}
-          onRemoveAnchor={handleRemoveAnchor}
-          onClearAnchors={() => dispatch({ type: "clearAnchors" })}
-          onUndoAnchors={() => dispatch({ type: "undoAnchors" })}
-          overlapScene={overlapScene}
-          onEditOverlapScene={() => overlapScene && selectScene(overlapScene)}
-          startTime={draft.startTime}
-          endTime={draft.endTime}
-          runtimeSeconds={runtimeSeconds}
-          onTimeChange={(field, value) => dispatch({ type: "setTime", field, value })}
-          onTimeBlur={normalizeTime}
-          markdown={markdown}
-          textOrigin={draft.textOrigin}
-          captureStale={captureStale}
-          legacyText={draft.textOrigin === "saved" && !draft.textAnchorKey}
-          draftScene={draftScene}
-          movieTitle={title}
-          proposal={draft.proposal}
-          onRecapture={recapture}
-          onExpandDraft={() => setModal({ kind: "draft" })}
-          onRequestAi={requestAiFormat}
-          onReviewProposal={() => setModal({ kind: "draft" })}
-          onDiscardProposal={() => dispatch({ type: "proposalDiscard" })}
-          tags={draft.tags}
-          onToggleTag={(tag) => dispatch({ type: "toggleTag", tag })}
-          onClearTags={() => dispatch({ type: "clearTags" })}
-          saving={saving}
-          deleting={Boolean(draft.sceneId) && deletingSceneId === draft.sceneId}
-          onSave={saveScene}
-          onDelete={() => deleteScene(draft.baseline)}
-        />
+        {canEdit && (
+          <AnnotatorPanel
+            editing={Boolean(draft.sceneId)}
+            sceneLabel={draft.baseline ? formatTiming(draft.baseline) : "Untitled scene"}
+            onNewScene={startNewScene}
+            activeTab={visibleTab}
+            onTabChange={setActiveTab}
+            tagsDisabled={tagsDisabled}
+            anchors={anchors}
+            anchorsSuggested={Boolean(suggestedAnchors)}
+            canUndo={draft.anchorHistory.length > 0}
+            indexStatus={{ complete: textIndex.complete, loaded: textIndex.pages.size, total: numPages }}
+            onJumpToAnchor={jumpToAnchor}
+            onRemoveAnchor={handleRemoveAnchor}
+            onClearAnchors={() => dispatch({ type: "clearAnchors" })}
+            onUndoAnchors={() => dispatch({ type: "undoAnchors" })}
+            overlapScene={overlapScene}
+            onEditOverlapScene={() => overlapScene && selectScene(overlapScene)}
+            startTime={draft.startTime}
+            endTime={draft.endTime}
+            runtimeSeconds={runtimeSeconds}
+            onTimeChange={(field, value) => dispatch({ type: "setTime", field, value })}
+            onTimeBlur={normalizeTime}
+            markdown={markdown}
+            textOrigin={draft.textOrigin}
+            captureStale={captureStale}
+            legacyText={draft.textOrigin === "saved" && !draft.textAnchorKey}
+            draftScene={draftScene}
+            movieTitle={title}
+            proposal={draft.proposal}
+            onRecapture={recapture}
+            onExpandDraft={() => setModal({ kind: "draft" })}
+            onRequestAi={requestAiFormat}
+            onReviewProposal={() => setModal({ kind: "draft" })}
+            onDiscardProposal={() => dispatch({ type: "proposalDiscard" })}
+            tags={draft.tags}
+            onToggleTag={(tag) => dispatch({ type: "toggleTag", tag })}
+            onClearTags={() => dispatch({ type: "clearTags" })}
+            saving={saving}
+            deleting={Boolean(draft.sceneId) && deletingSceneId === draft.sceneId}
+            onSave={saveScene}
+            onDelete={() => deleteScene(draft.baseline)}
+          />
+        )}
       </div>
 
       <SavedScenesGrid
         ref={scenesSectionRef}
         scenes={scenes}
-        selectedSceneId={draft.sceneId}
+        selectedSceneId={canEdit ? draft.sceneId : focusSceneId}
         title={title}
+        readOnly={!canEdit}
         onSelect={(scene) => selectScene(scene)}
-        onExpand={(scene) => setModal({ kind: "scene", sceneId: scene.id })}
+        onExpand={(scene) => (canEdit ? setModal({ kind: "scene", sceneId: scene.id }) : showScene(scene))}
       />
 
-      {menu && (
+      {menu && canEdit && (
         <AnchorContextMenu
           menu={menu}
           anchors={anchors}
@@ -605,10 +632,11 @@ function ScriptViewerPage() {
           onOpenStill={openStillInProject}
           onOpenScene={(scene) => {
             setModal(null);
-            selectScene(scene);
+            if (canEdit) selectScene(scene);
+            else revealScene(scene);
           }}
-          openSceneLabel="Edit scene"
-          renderActions={({ view, scene }) =>
+          openSceneLabel={canEdit ? "Edit scene" : "Show in script"}
+          renderActions={!canEdit ? undefined : ({ view, scene }) =>
             view === "script" &&
             scene && (
               <SceneModalButton

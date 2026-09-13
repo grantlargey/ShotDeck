@@ -9,8 +9,11 @@ import styles from "./DropdownMenu.module.css";
  * click outside, or on Escape.
  *
  * items: [{ key, label, onSelect, tone?: "danger", disabled? }]
+ * trigger: optional `(props) => element` to render your own button; spread
+ *   `props` onto it so the menu opens and is announced correctly.
+ * header: optional content shown above the items, such as who is signed in.
  */
-export function DropdownMenu({ label = "More actions", items, triggerVariant = "ghost", className }) {
+export function DropdownMenu({ label = "More actions", items, triggerVariant = "ghost", trigger, header, className }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const menuRef = useRef(null);
@@ -35,21 +38,25 @@ export function DropdownMenu({ label = "More actions", items, triggerVariant = "
     };
   }, [open]);
 
+  const triggerProps = {
+    "aria-haspopup": "menu",
+    "aria-expanded": open,
+    onClick: () => setOpen((value) => !value),
+  };
+
   return (
     <div ref={rootRef} className={cx(styles.root, className)}>
-      <IconButton
-        size="sm"
-        variant={triggerVariant}
-        label={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <MoreIcon />
-      </IconButton>
+      {trigger ? (
+        trigger(triggerProps)
+      ) : (
+        <IconButton size="sm" variant={triggerVariant} label={label} {...triggerProps}>
+          <MoreIcon />
+        </IconButton>
+      )}
 
       {open && (
-        <div ref={menuRef} role="menu" className={styles.menu}>
+        <div ref={menuRef} role="menu" aria-label={label} className={styles.menu}>
+          {header && <div className={styles.header}>{header}</div>}
           {items.map((item) => (
             <button
               key={item.key}

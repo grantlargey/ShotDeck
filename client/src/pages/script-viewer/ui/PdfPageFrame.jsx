@@ -46,7 +46,8 @@ function AnchorMarker({ kind, anchor, scale, onRemove }) {
  * One PDF page plus its annotation overlay: anchor markers, the captured
  * range, a snap line under the pointer, and saved-scene bars in the right
  * margin. Props are primitives or stable references so only pages whose
- * overlay actually changes re-render.
+ * overlay actually changes re-render. With `readOnly` (visitors), the page
+ * keeps the scene bars but offers no anchor menu or line highlight.
  */
 export const PdfPageFrame = memo(function PdfPageFrame({
   pageNumber,
@@ -55,6 +56,7 @@ export const PdfPageFrame = memo(function PdfPageFrame({
   inWindow,
   placeholderHeight,
   compact,
+  readOnly = false,
   devicePixelRatio,
   startAnchor,
   endAnchor,
@@ -105,18 +107,18 @@ export const PdfPageFrame = memo(function PdfPageFrame({
     <div
       id={`script-page-${pageNumber}`}
       data-page-number={pageNumber}
-      className={[styles.frame, compact ? "" : styles.interactive, isActive ? styles.active : ""].join(" ")}
+      className={[styles.frame, compact || readOnly ? "" : styles.interactive, isActive ? styles.active : ""].join(" ")}
       onMouseMove={(event) => {
-        if (compact) return;
+        if (compact || readOnly) return;
         setHover(event.target.closest(OVERLAY_CONTROL) ? null : lineAtPointer(event));
       }}
       onMouseLeave={() => setHover(null)}
       onContextMenu={(event) => {
-        if (!event.target.closest(OVERLAY_CONTROL)) openMenu(event);
+        if (!readOnly && !event.target.closest(OVERLAY_CONTROL)) openMenu(event);
       }}
       onClick={(event) => {
         // Touch devices have no right click; a tap opens the anchor menu.
-        if (compact && !event.target.closest(OVERLAY_CONTROL)) openMenu(event);
+        if (compact && !readOnly && !event.target.closest(OVERLAY_CONTROL)) openMenu(event);
       }}
     >
       {inWindow ? (
@@ -170,7 +172,7 @@ export const PdfPageFrame = memo(function PdfPageFrame({
                 ].join(" ")}
                 style={{ top, height: Math.max(10, bottom - top), right: 8 + segment.lane * 10 }}
                 title={`Scene ${timing}${segment.approximate ? " · page range only" : ""}`}
-                aria-label={`Edit scene ${timing}`}
+                aria-label={`${readOnly ? "View" : "Edit"} scene ${timing}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelectScene(scene);

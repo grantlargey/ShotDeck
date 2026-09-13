@@ -4,11 +4,14 @@ import { BrowserRouter } from "react-router-dom";
 // Global tokens and base styles load before any component CSS.
 import "@/app/styles/index.css";
 import { App } from "@/app";
+import { SessionProvider } from "@/entities/session";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <SessionProvider>
+        <App />
+      </SessionProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

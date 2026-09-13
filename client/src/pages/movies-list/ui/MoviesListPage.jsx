@@ -10,6 +10,7 @@ import {
   MovieCardGrid,
   MovieCardSkeleton,
 } from "@/entities/movie";
+import { useSession } from "@/entities/session";
 import { movieActions } from "@/features/movie-actions";
 import { api } from "@/shared/api";
 import { cx } from "@/shared/lib/cx";
@@ -44,6 +45,7 @@ const SKELETON_CARDS = 6;
 export default function MoviesListPage() {
   useDocumentTitle("My Projects");
   const nav = useNavigate();
+  const { isAdmin } = useSession();
   const [searchParams] = useSearchParams();
   const queryFromUrl = searchParams.get("query") || "";
 
@@ -212,12 +214,16 @@ export default function MoviesListPage() {
             <EmptyState
               title="No projects yet"
               action={
-                <Button as={Link} to="/movies/new" variant="primary" size="sm">
-                  Start a project
-                </Button>
+                isAdmin && (
+                  <Button as={Link} to="/movies/new" variant="primary" size="sm">
+                    Start a project
+                  </Button>
+                )
               }
             >
-              Create a project to upload a script and start annotating scenes.
+              {isAdmin
+                ? "Create a project to upload a script and start annotating scenes."
+                : "Projects will appear here once they're added."}
             </EmptyState>
           )
         )
@@ -229,24 +235,26 @@ export default function MoviesListPage() {
                 movie={movie}
                 headingLevel={2}
                 menu={
-                  <DropdownMenu
-                    label={`Actions for ${movie.title}`}
-                    triggerVariant="overlay"
-                    items={[
-                      {
-                        key: "edit",
-                        label: "Edit details",
-                        onSelect: () => nav(`/movies/${movie.id}/edit`),
-                      },
-                      {
-                        key: "delete",
-                        label: deletingId === movie.id ? "Deleting…" : "Delete",
-                        tone: "danger",
-                        disabled: deletingId === movie.id,
-                        onSelect: () => onDeleteMovie(movie),
-                      },
-                    ]}
-                  />
+                  isAdmin ? (
+                    <DropdownMenu
+                      label={`Actions for ${movie.title}`}
+                      triggerVariant="overlay"
+                      items={[
+                        {
+                          key: "edit",
+                          label: "Edit details",
+                          onSelect: () => nav(`/movies/${movie.id}/edit`),
+                        },
+                        {
+                          key: "delete",
+                          label: deletingId === movie.id ? "Deleting…" : "Delete",
+                          tone: "danger",
+                          disabled: deletingId === movie.id,
+                          onSelect: () => onDeleteMovie(movie),
+                        },
+                      ]}
+                    />
+                  ) : undefined
                 }
               />
             </li>

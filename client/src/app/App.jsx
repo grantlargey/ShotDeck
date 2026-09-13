@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { matchPath, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { HomePage } from "@/pages/home";
+import { LoginPage } from "@/pages/login";
 import { MovieDetailPage } from "@/pages/movie-detail";
 import { MovieFormPage } from "@/pages/movie-form";
 import { MoviesListPage } from "@/pages/movies-list";
@@ -8,11 +9,16 @@ import { ScriptSearchPage } from "@/pages/script-search";
 import { LoadingState } from "@/shared/ui";
 import { SiteHeader } from "@/widgets/site-header";
 import { ErrorBoundary } from "./ErrorBoundary.jsx";
+import { RequireAdmin } from "./RequireAdmin.jsx";
 import page from "./styles/page.module.css";
 
 // Load the PDF renderer and editor when their route is opened.
 const ScriptViewerPage = lazy(() =>
   import("@/pages/script-viewer").then((module) => ({ default: module.ScriptViewerPage }))
+);
+// Only the owner opens this, so visitors never download it.
+const AdminUsersPage = lazy(() =>
+  import("@/pages/admin-users").then((module) => ({ default: module.AdminUsersPage }))
 );
 
 const SCRIPT_VIEWER_PATH = "/movies/:movieId/scripts/:scriptId";
@@ -35,9 +41,24 @@ export default function App() {
         <ErrorBoundary resetKey={pathname}>
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/login" element={<LoginPage />} />
             <Route path="/movies" element={<MoviesListPage />} />
-            <Route path="/movies/new" element={<MovieFormPage mode="create" />} />
-            <Route path="/movies/:id/edit" element={<MovieFormPage mode="edit" />} />
+            <Route
+              path="/movies/new"
+              element={
+                <RequireAdmin>
+                  <MovieFormPage mode="create" />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/movies/:id/edit"
+              element={
+                <RequireAdmin>
+                  <MovieFormPage mode="edit" />
+                </RequireAdmin>
+              }
+            />
             <Route path="/movies/:id" element={<MovieDetailPage />} />
             <Route
               path={SCRIPT_VIEWER_PATH}
@@ -48,6 +69,16 @@ export default function App() {
               }
             />
             <Route path="/script-search" element={<ScriptSearchPage />} />
+            <Route
+              path="/admin/users"
+              element={
+                <RequireAdmin owner>
+                  <Suspense fallback={<LoadingState>Loading admins…</LoadingState>}>
+                    <AdminUsersPage />
+                  </Suspense>
+                </RequireAdmin>
+              }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ErrorBoundary>

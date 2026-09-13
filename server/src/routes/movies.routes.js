@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as moviesController from "../controllers/movies.controller.js";
+import { requireAdmin } from "../middleware/require-admin.js";
 
 /**
  * Movie catalog routes.
@@ -9,10 +10,10 @@ import * as moviesController from "../controllers/movies.controller.js";
  */
 const router = Router();
 
-router.post("/movies", moviesController.createMovie);
+router.post("/movies", requireAdmin, moviesController.createMovie);
 router.get("/movies", moviesController.listMovies);
 router.get("/movies/:id", moviesController.getMovie);
-router.put("/movies/:id", moviesController.updateMovie);
-router.delete("/movies/:id", moviesController.deleteMovie);
+router.put("/movies/:id", requireAdmin, moviesController.updateMovie);
+router.delete("/movies/:id", requireAdmin, moviesController.deleteMovie);
 
 export default router;

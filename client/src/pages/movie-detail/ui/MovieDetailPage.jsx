@@ -5,6 +5,7 @@ import { getStillThumbnail, sortAnnotationsByTime } from "@/entities/annotation"
 import { buildMovieSavePayload, createMovieEditForm, getMovieCoverUrl } from "@/entities/movie";
 import { getCurrentScript } from "@/entities/script";
 import { getSceneScriptPath } from "@/entities/script-scene";
+import { useSession } from "@/entities/session";
 import {
   createImageAnnotation,
   deleteImageAnnotation,
@@ -110,6 +111,8 @@ export default function MovieDetailPage() {
   const nav = useNavigate();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
+  // Visitors get the same page without any of the editing controls.
+  const { isAdmin: canEdit } = useSession();
   const [movie, setMovie] = useState(null);
   // The project's stills sorted by time; null until they load.
   const [stillRows, setStillRows] = useState(null);
@@ -375,9 +378,11 @@ export default function MovieDetailPage() {
                 Open script
               </Button>
             )}
-            <Button onClick={() => (editMode ? cancelMovieEdits() : setEditMode(true))}>
-              {editMode ? "Close editor" : "Edit details"}
-            </Button>
+            {canEdit && (
+              <Button onClick={() => (editMode ? cancelMovieEdits() : setEditMode(true))}>
+                {editMode ? "Close editor" : "Edit details"}
+              </Button>
+            )}
           </>
         }
       />
@@ -385,7 +390,7 @@ export default function MovieDetailPage() {
       <div className={styles.content}>
         {err && !viewerStillId && <Callout tone="error">{err}</Callout>}
 
-        {editMode && (
+        {editMode && canEdit && (
           <MovieEditPanel
             editForm={editForm}
             setEditForm={setEditForm}
@@ -396,6 +401,7 @@ export default function MovieDetailPage() {
 
         <MovieScriptPanel
           currentScript={currentScript}
+          canEdit={canEdit}
           scriptFile={scriptFile}
           savingScript={savingScript}
           onScriptFileChange={setScriptFile}
@@ -408,6 +414,7 @@ export default function MovieDetailPage() {
             title="Film stills"
             count={stillsLoading ? undefined : annotations.length}
             actions={
+              canEdit &&
               annotations.length > 0 && (
                 <Button size="sm" onClick={openAddDialog}>
                   <PlusIcon size={14} />
@@ -424,13 +431,17 @@ export default function MovieDetailPage() {
               className={styles.stillsEmpty}
               title="No stills yet"
               action={
-                <Button size="sm" variant="primary" onClick={openAddDialog}>
-                  <PlusIcon size={14} />
-                  Add the first still
-                </Button>
+                canEdit && (
+                  <Button size="sm" variant="primary" onClick={openAddDialog}>
+                    <PlusIcon size={14} />
+                    Add the first still
+                  </Button>
+                )
               }
             >
-              Add frames from the film at their timestamps. A still inside a captured scene appears on that scene.
+              {canEdit
+                ? "Add frames from the film at their timestamps. A still inside a captured scene appears on that scene."
+                : "No film stills have been added to this project yet."}
             </EmptyState>
           ) : (
             <>
@@ -464,7 +475,7 @@ export default function MovieDetailPage() {
           onClose={closeViewer}
           onSelectTag={(tag) => nav(`/script-search?tag=${encodeURIComponent(tag)}`)}
           onOpenScene={(scene) => nav(getSceneScriptPath(scene))}
-          renderActions={({ view, still }) =>
+          renderActions={!canEdit ? undefined : ({ view, still }) =>
             view === "still" &&
             still && (
               <>
@@ -479,7 +490,7 @@ export default function MovieDetailPage() {
               </>
             )
           }
-          renderStillTools={(still) => (
+          renderStillTools={!canEdit ? undefined : (still) => (
             <>
               {err && <Callout tone="error">{err}</Callout>}
               {stillEdit?.stillId === still.id && (

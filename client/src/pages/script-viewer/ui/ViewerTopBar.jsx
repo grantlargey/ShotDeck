@@ -14,12 +14,14 @@ import styles from "./ScriptViewerPage.module.css";
 /**
  * The viewer's only header. It stands in for the site header on this page so
  * the script gets the height: home link, back to the project, the title, and
- * viewer actions, in one sticky row at every width.
+ * viewer actions, in one sticky row at every width. The anchor-marker toggle
+ * only matters while capturing, so visitors don't get it.
  */
 export function ViewerTopBar({
   title,
   pageCount,
   sceneCount,
+  canEdit,
   anchorMarkersVisible,
   onToggleAnchorMarkers,
   onBackToMovie,
@@ -45,9 +47,11 @@ export function ViewerTopBar({
       </div>
 
       <div className={styles.topActions}>
-        <IconButton size="sm" label={markersLabel} title={markersLabel} onClick={onToggleAnchorMarkers}>
-          {anchorMarkersVisible ? <EyeIcon /> : <EyeOffIcon />}
-        </IconButton>
+        {canEdit && (
+          <IconButton size="sm" label={markersLabel} title={markersLabel} onClick={onToggleAnchorMarkers}>
+            {anchorMarkersVisible ? <EyeIcon /> : <EyeOffIcon />}
+          </IconButton>
+        )}
         <Button size="sm" onClick={onJumpToScenes}>
           Scenes
           <Badge tone="accent">{sceneCount}</Badge>

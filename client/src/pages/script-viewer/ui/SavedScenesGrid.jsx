@@ -2,7 +2,11 @@ import { SceneCard } from "@/entities/script-scene";
 import { Badge, EmptyState } from "@/shared/ui";
 import styles from "./ScriptViewerPage.module.css";
 
-export function SavedScenesGrid({ ref, scenes, selectedSceneId, title, onSelect, onExpand }) {
+/**
+ * The script's captured scenes. Admins click a card to edit it and
+ * double-click to expand; visitors (`readOnly`) click to open the scene.
+ */
+export function SavedScenesGrid({ ref, scenes, selectedSceneId, title, readOnly = false, onSelect, onExpand }) {
   return (
     <section ref={ref} className={styles.scenes} aria-labelledby="saved-scenes-title">
       <div className={styles.scenesHeader}>
@@ -10,17 +14,35 @@ export function SavedScenesGrid({ ref, scenes, selectedSceneId, title, onSelect,
           Scenes in this script
           <Badge tone="accent">{scenes.length}</Badge>
         </h2>
-        <p className={styles.scenesHint}>Click a card to edit it · Double-click to expand</p>
+        <p className={styles.scenesHint}>
+          {readOnly ? "Click a card to open the scene" : "Click a card to edit it · Double-click to expand"}
+        </p>
       </div>
 
       {scenes.length === 0 ? (
         <EmptyState compact title="No scenes yet">
-          Right-click a line in the script to place a start anchor and begin one.
+          {readOnly
+            ? "No scenes have been captured for this script yet."
+            : "Right-click a line in the script to place a start anchor and begin one."}
         </EmptyState>
       ) : (
         <ul className={styles.sceneGrid}>
           {scenes.map((scene) => {
             const selected = scene.id === selectedSceneId;
+            if (readOnly) {
+              return (
+                <li key={scene.id}>
+                  <SceneCard
+                    scene={scene}
+                    title={title}
+                    selected={selected}
+                    tooltip="Open the scene"
+                    hasPopup
+                    onClick={() => onExpand(scene)}
+                  />
+                </li>
+              );
+            }
             return (
               <li key={scene.id}>
                 <SceneCard

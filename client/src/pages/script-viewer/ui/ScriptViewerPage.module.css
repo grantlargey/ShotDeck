@@ -241,3 +241,8 @@
     max-width: none;
   }
 }
+
+/* Visitors read without the annotator, so the script takes the full width. */
+.workspaceReadOnly {
+  grid-template-columns: minmax(0, 1fr);
+}
