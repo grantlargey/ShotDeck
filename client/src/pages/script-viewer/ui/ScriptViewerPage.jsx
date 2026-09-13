@@ -4,6 +4,7 @@ import { Document, pdfjs } from "react-pdf";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
+import { getStillProjectPath } from "@/entities/annotation";
 import {
   formatScriptScenePages,
   getScriptScenePageRange,
@@ -16,6 +17,7 @@ import { getErrorMessage } from "@/shared/lib/errors";
 import { screenplayToPlainText } from "@/shared/lib/screenplay";
 import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
 import { CloseIcon, IconButton, LoadingState } from "@/shared/ui";
+import { SceneModalButton, SceneViewerModal } from "@/widgets/scene-detail-modal";
 import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
 import { isTypingTarget } from "../lib/pdfViewport.js";
 import {
@@ -34,7 +36,6 @@ import { AnchorContextMenu } from "./AnchorContextMenu.jsx";
 import { AnnotatorPanel } from "./AnnotatorPanel.jsx";
 import { DraftEditorModal } from "./DraftEditorModal.jsx";
 import { PdfPageFrame } from "./PdfPageFrame.jsx";
-import { SavedSceneModal } from "./SavedSceneModal.jsx";
 import { SavedScenesGrid } from "./SavedScenesGrid.jsx";
 import { ViewerTopBar } from "./ViewerTopBar.jsx";
 import styles from "./ScriptViewerPage.module.css";
@@ -153,7 +154,6 @@ function ScriptViewerPage() {
   const tagsDisabled = !markdown.trim();
   const visibleTab = tagsDisabled ? "capture" : activeTab;
   const dirty = isDraftDirty(draft, markdown);
-  const modalSceneIndex = modal?.kind === "scene" ? scenes.findIndex((scene) => scene.id === modal.sceneId) : -1;
   const title = movie?.title || "Script";
   const runtimeSeconds = movie?.runtime_minutes ? Number(movie.runtime_minutes) * 60 : 0;
   useDocumentTitle(movie ? `${movie.title} script` : "Script");
@@ -231,12 +231,9 @@ function ScriptViewerPage() {
     setActiveTab("capture");
   }
 
-  function openFirstImageAnnotation(scene) {
-    const annotationId = scene?.first_image_annotation?.id;
-    if (!annotationId || !confirmDiscardChanges()) return;
-    const params = new URLSearchParams();
-    params.set("annotationId", annotationId);
-    nav(`/movies/${movieId}?${params.toString()}`);
+  function openStillInProject(still) {
+    if (!still?.id || !confirmDiscardChanges()) return;
+    nav(getStillProjectPath(movieId, still.id));
   }
 
   function showScenesWithTag(tag) {
@@ -407,7 +404,8 @@ function ScriptViewerPage() {
       await scriptSceneActions.delete(movieId, scriptId, scene.id);
       setScenes((prev) => prev.filter((row) => row.id !== scene.id));
       if (draft.sceneId === scene.id) dispatch({ type: "reset" });
-      setModal((current) => (current?.sceneId === scene.id ? null : current));
+      // Deleting from the scene viewer closes it, whichever scene it had stepped to.
+      setModal((current) => (current?.kind === "scene" ? null : current));
       setNotice({ tone: "info", text: "Scene deleted." });
     } catch (deleteError) {
       setNotice({ tone: "error", text: getErrorMessage(deleteError, "Failed to delete the scene.") });
@@ -593,25 +591,35 @@ function ScriptViewerPage() {
         />
       )}
 
-      {modalSceneIndex >= 0 && (
-        <SavedSceneModal
-          scene={scenes[modalSceneIndex]}
-          index={modalSceneIndex}
-          total={scenes.length}
-          title={title}
-          deleting={deletingSceneId === scenes[modalSceneIndex].id}
-          onStep={(delta) => {
-            const next = scenes[modalSceneIndex + delta];
-            if (next) setModal({ kind: "scene", sceneId: next.id });
-          }}
+      {modal?.kind === "scene" && (
+        <SceneViewerModal
+          key={modal.sceneId}
+          initialView="script"
+          initialSceneId={modal.sceneId}
+          scenes={scenes}
+          scriptScenes={scenes}
+          movie={{ id: movieId, title }}
+          scriptId={scriptId}
           onClose={closeModal}
+          onSelectTag={showScenesWithTag}
+          onOpenStill={openStillInProject}
           onOpenScene={(scene) => {
             setModal(null);
             selectScene(scene);
           }}
-          onOpenFirstImage={openFirstImageAnnotation}
-          onSelectTag={showScenesWithTag}
-          onDelete={deleteScene}
+          openSceneLabel="Edit scene"
+          renderActions={({ view, scene }) =>
+            view === "script" &&
+            scene && (
+              <SceneModalButton
+                variant="danger"
+                disabled={deletingSceneId === scene.id}
+                onClick={() => deleteScene(scene)}
+              >
+                {deletingSceneId === scene.id ? "Deleting…" : "Delete"}
+              </SceneModalButton>
+            )
+          }
         />
       )}
 

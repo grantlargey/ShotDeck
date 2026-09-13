@@ -11,6 +11,7 @@ export {
   safeScriptSceneTags,
 } from "./model/scriptSceneText.js";
 export { sortScriptScenes } from "./model/scriptSceneSorting.js";
-export { getSceneFirstStill } from "./model/sceneStill.js";
+export { findFirstStillInScene, findSceneAtTime, getSceneFirstStill } from "./model/sceneStill.js";
+export { getSceneScriptPath } from "./model/sceneLinks.js";
 export { SceneCard, SceneCardSkeleton } from "./ui/SceneCard.jsx";
 export { TagCategoryList } from "./ui/TagCategoryList.jsx";

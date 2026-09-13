@@ -237,30 +237,7 @@
   margin-top: 20px;
 }
 
-/* ---------- Still lightbox and dialogs ---------- */
-
-.lightboxBody {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.lightboxStill {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  display: block;
-  object-fit: contain;
-}
-
-.lookupNote {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
+/* ---------- Still editing and dialogs ---------- */
 
 .editRow {
   padding: 16px;

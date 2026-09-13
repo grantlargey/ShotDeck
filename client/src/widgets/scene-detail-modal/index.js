@@ -3,7 +3,5 @@ export {
   SceneModalActions,
   SceneModalButton,
   SceneModalPaper,
-  SceneModalStill,
-  SceneModalTags,
-  SceneModalViewToggle,
 } from "./ui/SceneDetailModal.jsx";
+export { SceneViewerModal } from "./ui/SceneViewerModal.jsx";

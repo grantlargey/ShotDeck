@@ -1,18 +1,6 @@
 import { useEffect, useRef } from "react";
-import { getSceneFirstStill, groupScriptTagsByCategory } from "@/entities/script-scene";
 import { cx } from "@/shared/lib/cx";
-import { useSignedMediaUrl } from "@/shared/lib/media";
-import { formatSecondsToHms } from "@/shared/lib/time";
-import {
-  Button,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CloseIcon,
-  IconButton,
-  ImageIcon,
-  ScriptIcon,
-  SegmentedControl,
-} from "@/shared/ui";
+import { Button, ChevronLeftIcon, ChevronRightIcon, CloseIcon, IconButton } from "@/shared/ui";
 import styles from "./SceneDetailModal.module.css";
 
 function isTypingTarget(target) {
@@ -20,10 +8,9 @@ function isTypingTarget(target) {
 }
 
 /**
- * Full-screen scene dialog: a header (with an optional `toolbar`, such as the
- * view toggle), a tall stage for script paper, a still, or an editor, and a
- * footer beneath for metadata and actions. Stepping arrows appear when
- * `onStep` is provided.
+ * Full-screen dialog frame shared by the scene viewer and the draft editor: a
+ * header (with an optional `toolbar`), a tall stage, and a footer beneath for
+ * metadata and actions. Stepping arrows appear when `onStep` is provided.
  */
 export function SceneDetailModal({
   title,
@@ -135,92 +122,6 @@ export function SceneModalPaper({ label = "Scene text", heading, toolbar, childr
         {children}
       </div>
     </section>
-  );
-}
-
-/**
- * Switches a scene dialog between its script and its first film still. The
- * still option is unavailable when no still falls inside the scene's timing.
- */
-export function SceneModalViewToggle({ value, onChange, hasStill }) {
-  return (
-    <SegmentedControl
-      label="Scene view"
-      value={hasStill ? value : "script"}
-      onChange={onChange}
-      options={[
-        { value: "script", label: "Script", icon: <ScriptIcon size={14} /> },
-        {
-          value: "still",
-          label: "Film still",
-          icon: <ImageIcon size={14} />,
-          disabled: !hasStill,
-          title: hasStill ? undefined : "No film still falls inside this scene's timing",
-        },
-      ]}
-    />
-  );
-}
-
-/**
- * The scene's first film still, filling the stage in place of the script at
- * the same scale as the project page's still viewer.
- */
-export function SceneModalStill({ scene }) {
-  const still = getSceneFirstStill(scene);
-  const url = useSignedMediaUrl(still?.image_key || null);
-  if (!still) return null;
-  const time = formatSecondsToHms(still.time_seconds);
-
-  return (
-    <figure className={styles.stillView}>
-      {url ? (
-        <img className={styles.stillImage} src={url} alt={`First film still in this scene, at ${time}`} />
-      ) : (
-        <span className={styles.stillPending}>Loading still…</span>
-      )}
-      <figcaption className={styles.stillCaption}>First still in this scene · {time}</figcaption>
-    </figure>
-  );
-}
-
-/**
- * The scene's tags grouped by category, for the footer beneath the stage.
- * Tags link back to Script Search when `onSelectTag` is given.
- */
-export function SceneModalTags({ scene, onSelectTag }) {
-  const groups = groupScriptTagsByCategory(scene?.tags);
-  if (groups.length === 0) {
-    return <p className={styles.noTags}>No tags on this scene yet.</p>;
-  }
-
-  return (
-    <dl className={styles.tagGroups}>
-      {groups.map((group) => (
-        <div key={group.label} className={styles.tagGroup}>
-          <dt>{group.label}</dt>
-          <dd>
-            {group.tags.map((tag, index) => (
-              <span key={tag.value}>
-                {onSelectTag ? (
-                  <button
-                    type="button"
-                    className={styles.tagLink}
-                    onClick={() => onSelectTag(tag.value)}
-                    title={`Find scenes tagged ${tag.label}`}
-                  >
-                    {tag.label}
-                  </button>
-                ) : (
-                  tag.label
-                )}
-                {index < group.tags.length - 1 && ", "}
-              </span>
-            ))}
-          </dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 

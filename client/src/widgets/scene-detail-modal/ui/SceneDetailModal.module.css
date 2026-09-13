@@ -141,14 +141,13 @@
 
 /* ---------- Film still: takes the paper's place at full size ---------- */
 
-.stillView {
+.stillStage {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .stillImage {
@@ -159,19 +158,15 @@
   object-fit: contain;
 }
 
-.stillPending {
+/* Shown in place of the script or still when that tab has nothing to show. */
+.stageMessage {
   flex: 1;
+  margin: 0;
   display: grid;
   place-items: center;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-}
-
-.stillCaption {
-  flex: none;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 /* ---------- Footer: metadata beneath the stage, actions on the right ---------- */

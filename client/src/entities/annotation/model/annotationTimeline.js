@@ -2,11 +2,6 @@ export function sortAnnotationsByTime(rows) {
   return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => a.time_seconds - b.time_seconds);
 }
 
-export function getAnnotationIndexById(annotations, annotationId) {
-  if (!annotationId) return -1;
-  return annotations.findIndex((row) => row.id === annotationId);
-}
-
 export function getTimelinePositionPercent(annotation, runtimeSeconds) {
   const runtime = Number(runtimeSeconds);
   if (!annotation || !Number.isFinite(runtime) || runtime <= 0) return 0;
