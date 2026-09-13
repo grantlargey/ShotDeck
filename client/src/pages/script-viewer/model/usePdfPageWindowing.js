@@ -8,10 +8,18 @@ const RENDER_BEHIND = 4;
 const RENDER_AHEAD = 8;
 const DEFAULT_ASPECT_RATIO = 11 / 8.5;
 const MAX_PAGE_WIDTH = 880;
+// Compact layouts keep a window of up to ~16 page canvases alive, so each is
+// capped to stay well inside mobile browsers' canvas memory limits.
+const MAX_COMPACT_PIXEL_RATIO = 3;
+const MAX_COMPACT_CANVAS_PIXELS = 4_000_000;
 const SCROLL_WAIT_MS = 4500;
 
 function isCompactViewport() {
   return typeof window !== "undefined" && window.innerWidth <= COMPACT_BREAKPOINT;
+}
+
+function currentDevicePixelRatio() {
+  return typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
 }
 
 function chunkStartFor(pageNumber) {
@@ -27,6 +35,7 @@ export function usePdfPageWindowing(numPages) {
   const [wrap, setWrap] = useState(null);
   const [sentinel, setSentinel] = useState(null);
   const [compact, setCompact] = useState(isCompactViewport);
+  const [deviceRatio, setDeviceRatio] = useState(currentDevicePixelRatio);
   const [loadedCount, setLoadedCount] = useState(BATCH_SIZE);
   const [chunkStart, setChunkStart] = useState(1);
   const [pageHeights, setPageHeights] = useState({});
@@ -40,9 +49,24 @@ export function usePdfPageWindowing(numPages) {
     : renderedPageCount;
   const knownHeight = Object.values(pageHeights).find((height) => height > 10);
   const defaultPageHeight = Math.round(knownHeight || pageWidth * DEFAULT_ASPECT_RATIO);
+  // Desktop leaves this to react-pdf (the screen's full ratio). Compact pages
+  // also match the screen so text stays sharp, within the per-canvas cap.
+  const pixelRatio = compact
+    ? Math.max(
+        1,
+        Math.min(
+          deviceRatio,
+          MAX_COMPACT_PIXEL_RATIO,
+          Math.sqrt(MAX_COMPACT_CANVAS_PIXELS / (pageWidth * pageWidth * DEFAULT_ASPECT_RATIO))
+        )
+      )
+    : undefined;
 
   useEffect(() => {
-    const update = () => setCompact(isCompactViewport());
+    const update = () => {
+      setCompact(isCompactViewport());
+      setDeviceRatio(currentDevicePixelRatio());
+    };
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
   }, []);
@@ -184,6 +208,7 @@ export function usePdfPageWindowing(numPages) {
     sentinelRef: setSentinel,
     compact,
     pageWidth,
+    pixelRatio,
     renderedPageCount,
     renderStart,
     renderEnd,

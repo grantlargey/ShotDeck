@@ -55,6 +55,7 @@ export const PdfPageFrame = memo(function PdfPageFrame({
   inWindow,
   placeholderHeight,
   compact,
+  devicePixelRatio,
   startAnchor,
   endAnchor,
   rangeTop,
@@ -122,7 +123,7 @@ export const PdfPageFrame = memo(function PdfPageFrame({
         <Page
           pageNumber={pageNumber}
           width={pageWidth}
-          devicePixelRatio={compact ? 1 : undefined}
+          devicePixelRatio={devicePixelRatio}
           renderTextLayer={!compact}
           renderAnnotationLayer={!compact}
           loading={<div className={styles.placeholder} style={{ width: pageWidth, height: loadingHeight }} />}

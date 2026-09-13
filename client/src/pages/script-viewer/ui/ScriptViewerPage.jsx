@@ -473,6 +473,7 @@ function ScriptViewerPage() {
                         inWindow ? 0 : windowing.pageHeights[pageNumber] || windowing.defaultPageHeight
                       }
                       compact={windowing.compact}
+                      devicePixelRatio={windowing.pixelRatio}
                       startAnchor={showAnchorMarkers && anchors.start?.page === pageNumber ? anchors.start : null}
                       endAnchor={showAnchorMarkers && anchors.end?.page === pageNumber ? anchors.end : null}
                       rangeTop={inRange ? (pageNumber === anchors.start.page ? anchors.start.top : 0) : null}
