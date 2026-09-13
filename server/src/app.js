@@ -7,6 +7,7 @@ import moviesRoutes from "./routes/movies.routes.js";
 import annotationsRoutes from "./routes/annotations.routes.js";
 import scriptsRoutes from "./routes/scripts.routes.js";
 import scriptScenesRoutes from "./routes/script-scenes.routes.js";
+import screenplayFormatRoutes from "./routes/screenplay-format.routes.js";
 import uploadsRoutes from "./routes/uploads.routes.js";
 
 /**
@@ -19,6 +20,7 @@ import uploadsRoutes from "./routes/uploads.routes.js";
 export const app = express();
 
 app.use(cors(createCorsOptions()));
+app.use(screenplayFormatRoutes); // parses its own larger body (page images)
 app.use(express.json({ limit: "2mb" })); // metadata only; no big file uploads
 
 app.use(healthRoutes);

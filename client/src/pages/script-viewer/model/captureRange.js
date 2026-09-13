@@ -1,0 +1,69 @@
+import {
+  estimateActionMargin,
+  screenplayElementsFromLayout,
+  screenplayToPlainText,
+  serializeScreenplayMarkdown,
+} from "@/shared/lib/screenplay";
+import { anchorPairKey, resolveAnchorLine } from "./anchors.js";
+
+const CONTEXT_LENGTH = 180;
+
+/**
+ * Captures the script text between two line anchors from the PDF text index
+ * and converts it to screenplay markdown by page layout. Returns null until
+ * both anchors are placed and every page in the range has been indexed.
+ */
+export function captureAnchoredRange(textIndex, anchors) {
+  const { start, end } = anchors || {};
+  if (!start || !end) return null;
+
+  const pages = [];
+  for (let pageNumber = start.page; pageNumber <= end.page; pageNumber += 1) {
+    const page = textIndex.pages.get(pageNumber);
+    if (!page) return null;
+    pages.push(page);
+  }
+
+  const firstPage = pages[0];
+  const lastPage = pages[pages.length - 1];
+  const startLine = resolveAnchorLine(firstPage, start);
+  const endLine = resolveAnchorLine(lastPage, end);
+  if (!startLine || !endLine) return null;
+
+  const segments = pages.map((page) => ({
+    ...page,
+    lines: page.lines.filter(
+      (line) =>
+        (page.pageNumber !== start.page || line.index >= startLine.index) &&
+        (page.pageNumber !== end.page || line.index <= endLine.index)
+    ),
+  }));
+
+  const elements = screenplayElementsFromLayout(segments, {
+    actionMargin: textIndex.actionMargin ?? estimateActionMargin(pages),
+  });
+  const plainText = screenplayToPlainText(elements);
+  const startPageOffset = textIndex.pageOffsets?.get(start.page);
+  const endPageOffset = textIndex.pageOffsets?.get(end.page);
+
+  return {
+    key: anchorPairKey(anchors),
+    markdown: serializeScreenplayMarkdown(elements),
+    plainText,
+    wordCount: plainText ? plainText.split(/\s+/).filter(Boolean).length : 0,
+    pageStart: start.page,
+    pageEnd: end.page,
+    startOffset: Number.isInteger(startPageOffset) ? startPageOffset + startLine.offset : null,
+    endOffset: Number.isInteger(endPageOffset) ? endPageOffset + endLine.offset + endLine.text.length : null,
+    contextPrefix: firstPage.lines
+      .slice(0, startLine.index)
+      .map((line) => line.text)
+      .join("\n")
+      .slice(-CONTEXT_LENGTH),
+    contextSuffix: lastPage.lines
+      .slice(endLine.index + 1)
+      .map((line) => line.text)
+      .join("\n")
+      .slice(0, CONTEXT_LENGTH),
+  };
+}

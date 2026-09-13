@@ -1,883 +1,617 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Document, Page, pdfjs } from "react-pdf";
+import { Document, pdfjs } from "react-pdf";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import {
-  displayScriptSceneText,
-  findOverlappingScriptScene,
-  groupScriptScenesByPage,
+  formatScriptScenePages,
+  getScriptScenePageRange,
   sortScriptScenes,
 } from "@/entities/script-scene";
 import { scriptSceneActions } from "@/features/script-scene-actions";
 import { api } from "@/shared/api";
-import { formatSecondsToHms } from "@/shared/lib/time";
+import { screenplayToPlainText } from "@/shared/lib/screenplay";
+import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
+import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
+import { isTypingTarget } from "../lib/pdfViewport.js";
 import {
-  extractSelectionContext,
-  isPageRendered,
-  pageFromNode,
-  scrollPageInWrap,
-  selectionBelongsToRoot,
-} from "../lib/pdfDom.js";
-import {
-  buildScriptScenePayload,
-  createSceneFormFromScene,
-  EMPTY_SCENE_FORM,
-  getSelectedCountText,
-  getSelectedTextPreview,
-} from "../model/sceneForm.js";
-import { SavedScenesList } from "./SavedScenesList.jsx";
-import { SceneAnnotationForm } from "./SceneAnnotationForm.jsx";
-import { ScriptViewerTopBar } from "./ScriptViewerTopBar.jsx";
+  anchorsFromGeometry,
+  buildSceneSegmentsByPage,
+  createLineAnchor,
+  findOverlappingSavedScene,
+  hasAnyAnchor,
+  suggestAnchorsFromSavedText,
+} from "../model/anchors.js";
+import { captureAnchoredRange } from "../model/captureRange.js";
+import { buildScenePayload, createEmptyDraft, draftReducer, isDraftDirty } from "../model/sceneDraft.js";
+import { usePdfPageWindowing } from "../model/usePdfPageWindowing.js";
+import { useScriptTextIndex } from "../model/useScriptTextIndex.js";
+import { AnchorContextMenu } from "./AnchorContextMenu.jsx";
+import { AnnotatorPanel } from "./AnnotatorPanel.jsx";
+import { DraftEditorModal } from "./DraftEditorModal.jsx";
+import { PdfPageFrame } from "./PdfPageFrame.jsx";
+import { SavedSceneModal } from "./SavedSceneModal.jsx";
+import { SavedScenesGrid } from "./SavedScenesGrid.jsx";
+import { ViewerTopBar } from "./ViewerTopBar.jsx";
 import styles from "./ScriptViewerPage.module.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-const MOBILE_PDF_BATCH_SIZE = 4;
-const MOBILE_PDF_BREAKPOINT = 900;
-const MOBILE_PDF_ROOT_MARGIN = "900px 0px";
-const MOBILE_DEVICE_PIXEL_RATIO = 1;
-const MOBILE_PDF_DEFAULT_ASPECT_RATIO = 11 / 8.5;
-const MOBILE_RENDER_BEHIND_PAGES = 4;
-const MOBILE_RENDER_AHEAD_PAGES = 8;
+const NO_SEGMENTS = [];
+const MENU_WIDTH = 296;
+const MENU_HEIGHT = 360;
 
-export default function ScriptViewerPage() {
+function parsePageParam(value) {
+  const page = Number(value);
+  return value !== null && Number.isInteger(page) && page > 0 ? page : null;
+}
+
+function sceneScrollTarget(scene) {
+  const anchors = anchorsFromGeometry(scene?.anchor_geometry);
+  if (anchors) return { page: anchors.start.page, offsetPt: anchors.start.top };
+  return { page: getScriptScenePageRange(scene).pageStart, offsetPt: null };
+}
+
+function formatTiming(scene) {
+  return `${formatSecondsToHms(scene.start_time_seconds)} – ${formatSecondsToHms(scene.end_time_seconds)}`;
+}
+
+/**
+ * Keeps a handler's identity stable while always calling its latest version,
+ * so memoized PDF pages don't re-render when unrelated state changes.
+ */
+function useStableHandler(handler) {
+  const handlerRef = useRef(handler);
+  useLayoutEffect(() => {
+    handlerRef.current = handler;
+  });
+  return useCallback((...args) => handlerRef.current(...args), []);
+}
+
+export default function ScriptViewerRoute() {
+  const { scriptId } = useParams();
+  // Keyed so switching scripts starts from a clean draft and viewer state.
+  return <ScriptViewerPage key={scriptId} />;
+}
+
+function ScriptViewerPage() {
   const nav = useNavigate();
   const { movieId, scriptId } = useParams();
   const [searchParams] = useSearchParams();
+  const sceneIdFromQuery = searchParams.get("sceneId") || searchParams.get("annotationId") || "";
 
   const [movie, setMovie] = useState(null);
   const [script, setScript] = useState(null);
   const [scenes, setScenes] = useState([]);
-  const [err, setErr] = useState("");
-  const [info, setInfo] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState(null);
+  const [pdfDocument, setPdfDocument] = useState(null);
+  const [pdfLoadError, setPdfLoadError] = useState("");
+  const [draft, dispatch] = useReducer(draftReducer, undefined, createEmptyDraft);
+  const [activeTab, setActiveTab] = useState("capture");
+  const [menu, setMenu] = useState(null);
+  const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deletingSceneId, setDeletingSceneId] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [numPages, setNumPages] = useState(0);
-  const [visiblePageCount, setVisiblePageCount] = useState(0);
-  const [pageWidth, setPageWidth] = useState(700);
-  const [compactPdfMode, setCompactPdfMode] = useState(false);
-  const [pdfLoadError, setPdfLoadError] = useState("");
-  const [pageHeightsByNumber, setPageHeightsByNumber] = useState({});
-  const [mobileRenderChunkStart, setMobileRenderChunkStart] = useState(1);
-  const [activeSceneId, setActiveSceneId] = useState("");
-  const [editingSceneId, setEditingSceneId] = useState("");
-  const [expandedSceneById, setExpandedSceneById] = useState({});
-  const [, setPendingDeepLinkSceneId] = useState("");
-  const [pendingScrollPage, setPendingScrollPage] = useState(null);
-  const [form, setForm] = useState(() => ({ ...EMPTY_SCENE_FORM }));
-  const [formatStatus, setFormatStatus] = useState("idle");
-  const [formatAccepted, setFormatAccepted] = useState(false);
-  const [formatMessage, setFormatMessage] = useState("");
+  const [pendingScroll, setPendingScroll] = useState(() => {
+    const page = parsePageParam(searchParams.get("page"));
+    return page ? { page, offsetPt: null } : null;
+  });
 
-  const pagesWrapRef = useRef(null);
-  const savedScenesRef = useRef(null);
-  const loadMoreSentinelRef = useRef(null);
-  const formatRequestRef = useRef(0);
-  const savedScenesJumpRunRef = useRef(0);
-  const savedScenesJumpTimeoutRef = useRef(null);
-  const scrollRunRef = useRef(0);
-  const lastDeepLinkedSceneRef = useRef("");
-  const lastDeepLinkedPageRef = useRef("");
-  const sceneIdFromQuery = searchParams.get("sceneId") || searchParams.get("annotationId");
-  const pageFromQueryRaw = searchParams.get("page");
-  const pageFromQuery =
-    pageFromQueryRaw !== null &&
-    Number.isInteger(Number(pageFromQueryRaw)) &&
-    Number(pageFromQueryRaw) > 0
-      ? Number(pageFromQueryRaw)
-      : null;
+  const hoverRef = useRef(null);
+  const scenesSectionRef = useRef(null);
+  const aiRequestRef = useRef(0);
+  const deepLinkedSceneRef = useRef("");
 
-  function measureRenderedPageHeight(pageNum) {
-    if (typeof window === "undefined" || !Number.isInteger(pageNum)) return;
+  const numPages = pdfDocument?.numPages ?? 0;
+  const windowing = usePdfPageWindowing(numPages);
+  const textIndex = useScriptTextIndex(pdfDocument);
 
-    window.requestAnimationFrame(() => {
-      const pageElement = document.getElementById(`script-page-${pageNum}`);
-      if (!pageElement) return;
-
-      const renderedPage = pageElement.querySelector(".react-pdf__Page");
-      const canvas = pageElement.querySelector("canvas");
-      const measuredHeight = Math.round(
-        Number(
-          renderedPage?.getBoundingClientRect?.().height ||
-            canvas?.getBoundingClientRect?.().height ||
-            0
-        )
-      );
-
-      if (!Number.isFinite(measuredHeight) || measuredHeight < 10) return;
-
-      setPageHeightsByNumber((prev) => {
-        if (prev[pageNum] === measuredHeight) return prev;
-        return { ...prev, [pageNum]: measuredHeight };
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api.getMovie(movieId), api.getScript(movieId, scriptId), api.listScriptScenes(movieId, scriptId)])
+      .then(([movieData, scriptData, sceneData]) => {
+        if (cancelled) return;
+        setMovie(movieData);
+        setScript(scriptData);
+        setScenes(sortScriptScenes(Array.isArray(sceneData) ? sceneData : []));
+      })
+      .catch((error) => {
+        if (!cancelled) setNotice({ tone: "error", text: error.message || "Failed to load the script viewer." });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [movieId, scriptId]);
+
+  // ---------- Derived draft state ----------
+
+  const suggestedAnchors = useMemo(() => {
+    if (!draft.baseline || draft.suggestionsDismissed || hasAnyAnchor(draft.anchors)) return null;
+    return suggestAnchorsFromSavedText(draft.baseline, textIndex.pages);
+  }, [draft.baseline, draft.suggestionsDismissed, draft.anchors, textIndex.pages]);
+
+  const anchors = suggestedAnchors || draft.anchors;
+  const capture = useMemo(() => captureAnchoredRange(textIndex, anchors), [textIndex, anchors]);
+  const markdown = draft.textOrigin === "capture" ? capture?.markdown ?? "" : draft.markdown;
+  const captureStale = Boolean(capture) && draft.textOrigin !== "capture" && capture.key !== draft.textAnchorKey;
+  const editorSeed = draft.textOrigin === "capture" ? capture?.key ?? "" : draft.textAnchorKey;
+  const sceneSegmentsByPage = useMemo(() => buildSceneSegmentsByPage(scenes), [scenes]);
+  const overlapScene = useMemo(
+    () => findOverlappingSavedScene(scenes, anchors, draft.sceneId),
+    [scenes, anchors, draft.sceneId]
+  );
+  const tagsDisabled = !markdown.trim();
+  const visibleTab = tagsDisabled ? "capture" : activeTab;
+  const dirty = isDraftDirty(draft, markdown);
+  const modalSceneIndex = modal?.kind === "scene" ? scenes.findIndex((scene) => scene.id === modal.sceneId) : -1;
+  const title = movie?.title || "Script";
+
+  const draftScene = useMemo(
+    () => ({
+      id: draft.sceneId || "draft",
+      start_time_seconds: parseTimeInputToSeconds(draft.startTime),
+      end_time_seconds: parseTimeInputToSeconds(draft.endTime),
+      page_start: capture?.pageStart ?? draft.baseline?.page_start ?? null,
+      page_end: capture?.pageEnd ?? draft.baseline?.page_end ?? null,
+      tags: draft.tags,
+      formatted_selected_text: markdown,
+      first_image_annotation: draft.baseline?.first_image_annotation ?? null,
+    }),
+    [draft.sceneId, draft.startTime, draft.endTime, draft.baseline, draft.tags, capture, markdown]
+  );
+
+  // ---------- Navigation and scrolling ----------
+
+  function pageScale(pageNumber) {
+    return windowing.pageWidth / (textIndex.pages.get(pageNumber)?.width || 612);
+  }
+
+  function scrollToPoint(pageNumber, offsetPt, options = {}) {
+    windowing.scrollToPage(pageNumber, {
+      behavior: "smooth",
+      ...options,
+      offsetPx: offsetPt === null ? null : offsetPt * pageScale(pageNumber),
     });
   }
 
-  function setFormFromScene(scene) {
-    setForm(createSceneFormFromScene(scene));
-    setFormatStatus("ready");
-    setFormatAccepted(
-      Boolean(
-        typeof scene?.formatted_selected_text === "string" &&
-          scene.formatted_selected_text.trim()
-      )
-    );
-    setFormatMessage("");
+  useEffect(() => {
+    if (!sceneIdFromQuery || deepLinkedSceneRef.current === sceneIdFromQuery) return;
+    const target = scenes.find((scene) => scene.id === sceneIdFromQuery);
+    if (!target) return;
+    deepLinkedSceneRef.current = sceneIdFromQuery;
+    dispatch({ type: "loadScene", scene: target });
+    setPendingScroll(sceneScrollTarget(target));
+  }, [sceneIdFromQuery, scenes]);
+
+  const runPendingScroll = useStableHandler((target) => {
+    scrollToPoint(target.page, target.offsetPt, { behavior: "auto", onDone: () => setPendingScroll(null) });
+  });
+
+  useEffect(() => {
+    if (pendingScroll && numPages > 0) runPendingScroll(pendingScroll);
+  }, [pendingScroll, numPages, runPendingScroll]);
+
+  useEffect(() => {
+    if (notice?.tone !== "info") return undefined;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  function confirmDiscardChanges() {
+    return !dirty || window.confirm("Discard unsaved changes to the current scene?");
   }
 
-  function scrollToPageNumber(page, behavior = "auto", onDone) {
-    const safePage = Number(page);
-    if (!Number.isInteger(safePage) || safePage < 1) {
-      if (typeof onDone === "function") onDone(false);
-      return;
+  function selectScene(scene, { scroll = true } = {}) {
+    if (draft.sceneId !== scene.id) {
+      if (!confirmDiscardChanges()) return;
+      dispatch({ type: "loadScene", scene });
+      setActiveTab("capture");
     }
-
-    if (compactPdfMode) {
-      setMobileRenderChunkStart(
-        Math.floor(Math.max(0, safePage - 1) / MOBILE_PDF_BATCH_SIZE) * MOBILE_PDF_BATCH_SIZE + 1
-      );
-      setVisiblePageCount((prev) => {
-        const current = Math.max(prev, MOBILE_PDF_BATCH_SIZE);
-        const next = Math.max(current, safePage);
-        return numPages > 0 ? Math.min(numPages, next) : next;
-      });
+    if (scroll) {
+      const target = sceneScrollTarget(scene);
+      scrollToPoint(target.page, target.offsetPt);
     }
-
-    const runId = ++scrollRunRef.current;
-    const startedAt = Date.now();
-    const maxWaitMs = 4500;
-
-    const tryScroll = () => {
-      if (runId !== scrollRunRef.current) return;
-
-      const wrap = pagesWrapRef.current;
-      const pageElement = document.getElementById(`script-page-${safePage}`);
-      if (!wrap || !pageElement) {
-        if (Date.now() - startedAt < maxWaitMs) {
-          window.requestAnimationFrame(tryScroll);
-          return;
-        }
-        if (typeof onDone === "function") onDone(false);
-        return;
-      }
-
-      if (!isPageRendered(pageElement)) {
-        if (Date.now() - startedAt < maxWaitMs) {
-          window.requestAnimationFrame(tryScroll);
-          return;
-        }
-        if (typeof onDone === "function") onDone(false);
-        return;
-      }
-
-      scrollPageInWrap(wrap, pageElement, behavior);
-
-      // Run one correction after layout settles to account for late PDF page sizing.
-      window.setTimeout(() => {
-        if (runId !== scrollRunRef.current) return;
-        const currentWrap = pagesWrapRef.current;
-        const currentPage = document.getElementById(`script-page-${safePage}`);
-        if (!currentWrap || !currentPage) {
-          if (typeof onDone === "function") onDone(false);
-          return;
-        }
-        scrollPageInWrap(currentWrap, currentPage, "auto");
-        if (typeof onDone === "function") onDone(true);
-      }, 260);
-    };
-
-    tryScroll();
   }
 
-  function scrollToScene(scene, behavior = "auto", onDone) {
-    const page = Number(scene?.page_start || scene?.page_end || 1);
-    scrollToPageNumber(page, behavior, onDone);
-  }
-
-  function activateScene(scene, options = {}) {
-    const shouldScroll = options.scroll ?? true;
-    const behavior = options.behavior || "auto";
-
-    setActiveSceneId(scene.id);
-    setEditingSceneId(scene.id);
-    setExpandedSceneById((prev) => ({ ...prev, [scene.id]: true }));
-    setFormFromScene(scene);
-    setErr("");
-
-    if (shouldScroll) {
-      setTimeout(() => scrollToScene(scene, behavior), 60);
-    }
+  function startNewScene() {
+    if (!confirmDiscardChanges()) return;
+    dispatch({ type: "reset" });
+    setActiveTab("capture");
   }
 
   function openFirstImageAnnotation(scene) {
     const annotationId = scene?.first_image_annotation?.id;
-    if (!annotationId) return;
-
+    if (!annotationId || !confirmDiscardChanges()) return;
     const params = new URLSearchParams();
     params.set("annotationId", annotationId);
     nav(`/movies/${movieId}?${params.toString()}`);
   }
 
-  function scrollSavedScenesIntoView(behavior = "smooth") {
-    const target = savedScenesRef.current;
-    if (!target || typeof window === "undefined") return false;
-
-    const targetTop = window.scrollY + target.getBoundingClientRect().top - 12;
-    window.scrollTo({
-      top: Math.max(0, targetTop),
-      behavior,
-    });
-    return true;
-  }
-
-  function scheduleSavedScenesJump() {
-    if (typeof window === "undefined") return;
-
-    const runId = ++savedScenesJumpRunRef.current;
-    if (savedScenesJumpTimeoutRef.current) {
-      window.clearTimeout(savedScenesJumpTimeoutRef.current);
-      savedScenesJumpTimeoutRef.current = null;
-    }
-
-    const jumpOnce = (behavior = "auto") => {
-      if (runId !== savedScenesJumpRunRef.current) return;
-      scrollSavedScenesIntoView(behavior);
-    };
-
-    window.requestAnimationFrame(() => {
-      jumpOnce("smooth");
-      window.requestAnimationFrame(() => {
-        jumpOnce("auto");
-      });
-    });
-
-    savedScenesJumpTimeoutRef.current = window.setTimeout(() => {
-      savedScenesJumpTimeoutRef.current = null;
-      jumpOnce("auto");
-    }, 360);
-  }
-
-  function jumpToSavedScenes() {
-    if (compactPdfMode && numPages > 0) {
-      setVisiblePageCount(numPages);
-      scheduleSavedScenesJump();
-      return;
-    }
-
-    scrollSavedScenesIntoView("smooth");
-  }
-
-  async function load() {
-    setErr("");
-    setPdfLoadError("");
-    setLoading(true);
-    setNumPages(0);
-    setVisiblePageCount(0);
-    setPageHeightsByNumber({});
-    setMobileRenderChunkStart(1);
-    try {
-      const [movieData, scriptData, sceneData] = await Promise.all([
-        api.getMovie(movieId),
-        api.getScript(movieId, scriptId),
-        api.listScriptScenes(movieId, scriptId),
-      ]);
-
-      const sortedScenes = sortScriptScenes(Array.isArray(sceneData) ? sceneData : []);
-
-      setMovie(movieData);
-      setScript(scriptData);
-      setScenes(sortedScenes);
-    } catch (e) {
-      setErr(e.message || "Failed to load script viewer");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [movieId, scriptId]);
-
-  useEffect(() => {
-    if (!sceneIdFromQuery) {
-      lastDeepLinkedSceneRef.current = "";
-      setPendingDeepLinkSceneId("");
-      return;
-    }
-    if (lastDeepLinkedSceneRef.current === sceneIdFromQuery) return;
-
-    const target = scenes.find((row) => row.id === sceneIdFromQuery);
-    if (!target) return;
-
-    lastDeepLinkedSceneRef.current = sceneIdFromQuery;
-    setPendingDeepLinkSceneId(target.id);
-    setPendingScrollPage(Number(target.page_start || target.page_end || pageFromQuery || 1));
-    activateScene(target, { scroll: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneIdFromQuery, pageFromQuery, scenes]);
-
-  useEffect(() => {
-    const nextPageKey = pageFromQuery ? String(pageFromQuery) : "";
-    if (!nextPageKey) {
-      lastDeepLinkedPageRef.current = "";
-      return;
-    }
-    if (lastDeepLinkedPageRef.current === nextPageKey) return;
-    lastDeepLinkedPageRef.current = nextPageKey;
-    setPendingScrollPage(pageFromQuery);
-  }, [pageFromQuery]);
-
-  useEffect(() => {
-    if (!pendingScrollPage || numPages < 1) return;
-    scrollToPageNumber(pendingScrollPage, "auto", () => {
-      setPendingScrollPage(null);
-      setPendingDeepLinkSceneId("");
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingScrollPage, numPages]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const updateCompactPdfMode = () => {
-      setCompactPdfMode(window.innerWidth <= MOBILE_PDF_BREAKPOINT);
-    };
-
-    updateCompactPdfMode();
-    window.addEventListener("resize", updateCompactPdfMode);
-    return () => window.removeEventListener("resize", updateCompactPdfMode);
-  }, []);
-
-  useEffect(() => {
-    if (numPages < 1) {
-      setVisiblePageCount(0);
-      setMobileRenderChunkStart(1);
-      return;
-    }
-
-    if (!compactPdfMode) {
-      setVisiblePageCount(numPages);
-      setMobileRenderChunkStart(1);
-      return;
-    }
-
-    setVisiblePageCount((prev) => {
-      const base = prev > 0 ? prev : MOBILE_PDF_BATCH_SIZE;
-      return Math.min(numPages, Math.max(base, MOBILE_PDF_BATCH_SIZE));
-    });
-  }, [compactPdfMode, numPages]);
-
-  useEffect(() => {
-    if (!compactPdfMode) return undefined;
-    if (typeof window === "undefined") return undefined;
-
-    let rafId = 0;
-
-    const updateRenderChunk = () => {
-      rafId = 0;
-      const wrap = pagesWrapRef.current;
-      if (!wrap) return;
-
-      const pageNodes = Array.from(wrap.querySelectorAll("[data-page-number]"));
-      if (pageNodes.length === 0) return;
-
-      const targetY = window.innerHeight * 0.45;
-      let closestPage = Number(pageNodes[0].dataset.pageNumber || 1);
-      let bestDistance = Number.POSITIVE_INFINITY;
-
-      for (const node of pageNodes) {
-        const pageNum = Number(node.dataset.pageNumber);
-        if (!Number.isInteger(pageNum)) continue;
-
-        const rect = node.getBoundingClientRect();
-        const centerY = rect.top + rect.height / 2;
-        const distance = Math.abs(centerY - targetY);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          closestPage = pageNum;
-        }
-      }
-
-      const nextChunkStart =
-        Math.floor(Math.max(0, closestPage - 1) / MOBILE_PDF_BATCH_SIZE) * MOBILE_PDF_BATCH_SIZE + 1;
-      setMobileRenderChunkStart((prev) => (prev === nextChunkStart ? prev : nextChunkStart));
-    };
-
-    const queueUpdate = () => {
-      if (rafId) return;
-      rafId = window.requestAnimationFrame(updateRenderChunk);
-    };
-
-    queueUpdate();
-    window.addEventListener("scroll", queueUpdate, { passive: true });
-    window.addEventListener("resize", queueUpdate);
-    return () => {
-      if (rafId) window.cancelAnimationFrame(rafId);
-      window.removeEventListener("scroll", queueUpdate);
-      window.removeEventListener("resize", queueUpdate);
-    };
-  }, [compactPdfMode, visiblePageCount]);
-
-  useEffect(() => {
-    if (!compactPdfMode || visiblePageCount >= numPages) return undefined;
-
-    const sentinel = loadMoreSentinelRef.current;
-    if (!sentinel) return undefined;
-
-    if (typeof IntersectionObserver === "undefined") {
-      setVisiblePageCount((prev) =>
-        Math.min(numPages, Math.max(prev, MOBILE_PDF_BATCH_SIZE) + MOBILE_PDF_BATCH_SIZE)
-      );
-      return undefined;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        setVisiblePageCount((prev) =>
-          Math.min(numPages, Math.max(prev, MOBILE_PDF_BATCH_SIZE) + MOBILE_PDF_BATCH_SIZE)
-        );
-      },
-      {
-        root: null,
-        rootMargin: MOBILE_PDF_ROOT_MARGIN,
-        threshold: 0.01,
-      }
+  function jumpToScenes() {
+    if (windowing.compact) windowing.revealAllPages();
+    window.requestAnimationFrame(() =>
+      scenesSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
     );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [compactPdfMode, numPages, visiblePageCount]);
-
-  useEffect(() => {
-    if (!pagesWrapRef.current) return;
-    const el = pagesWrapRef.current;
-
-    const update = () => {
-      const horizontalPadding = compactPdfMode ? 8 : 24;
-      const minWidth = compactPdfMode ? 220 : 280;
-      const next = Math.max(minWidth, Math.floor(el.clientWidth - horizontalPadding));
-      setPageWidth(next);
-    };
-    update();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", update);
-      return () => window.removeEventListener("resize", update);
-    }
-
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [compactPdfMode]);
-
-  useEffect(() => {
-    const el = pagesWrapRef.current;
-    if (!el) return;
-
-    const cancelAutoScroll = () => {
-      scrollRunRef.current += 1;
-      setPendingScrollPage(null);
-    };
-
-    el.addEventListener("wheel", cancelAutoScroll, { passive: true });
-    el.addEventListener("touchstart", cancelAutoScroll, { passive: true });
-    return () => {
-      el.removeEventListener("wheel", cancelAutoScroll);
-      el.removeEventListener("touchstart", cancelAutoScroll);
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (savedScenesJumpTimeoutRef.current && typeof window !== "undefined") {
-        window.clearTimeout(savedScenesJumpTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  async function requestFormattedAnnotationText(rawText) {
-    const requestId = ++formatRequestRef.current;
-    setFormatStatus("loading");
-    setFormatAccepted(false);
-    setFormatMessage("");
-
-    setForm((prev) => ({
-      ...prev,
-      raw_selected_text: rawText,
-      formatted_selected_text: "",
-      text_source: "raw",
-    }));
-
-    try {
-      const result = await api.formatAnnotationText(rawText);
-      if (requestId !== formatRequestRef.current) return;
-
-      const formattedText =
-        typeof result?.formattedText === "string" && result.formattedText.length > 0
-          ? result.formattedText
-          : rawText;
-      const accepted = Boolean(result?.accepted) && Boolean(formattedText.trim());
-
-      setForm((prev) => ({
-        ...prev,
-        raw_selected_text: rawText,
-        formatted_selected_text: formattedText,
-        text_source: accepted ? "formatted" : "raw",
-      }));
-
-      setFormatAccepted(accepted);
-      setFormatStatus("ready");
-      if (!accepted) {
-        setFormatMessage("Formatter returned fallback text. Raw text will remain available.");
-      }
-    } catch {
-      if (requestId !== formatRequestRef.current) return;
-      setFormatStatus("failed");
-      setFormatAccepted(false);
-      setFormatMessage("Formatting failed. You can still save the raw selection.");
-      setForm((prev) => ({
-        ...prev,
-        raw_selected_text: rawText,
-        formatted_selected_text: "",
-        text_source: "raw",
-      }));
-    }
   }
 
-  function handleSelectFormattedText() {
-    const rawText = String(form.raw_selected_text || "");
-    if (!form.formatted_selected_text && rawText.trim() && formatStatus !== "loading") {
-      void requestFormattedAnnotationText(rawText);
+  // ---------- Anchors ----------
+
+  function setAnchorAtLine(kind, pageNumber, line) {
+    const page = textIndex.pages.get(pageNumber);
+    if (!page || !line) return;
+    dispatch({ type: "setAnchor", kind, anchor: createLineAnchor(page, line), currentAnchors: anchors });
+  }
+
+  function jumpToAnchor(kind) {
+    const anchor = anchors[kind];
+    if (anchor) scrollToPoint(anchor.page, anchor.top);
+  }
+
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const closeModal = useCallback(() => setModal(null), []);
+  const handleHoverLine = useCallback((hover) => {
+    hoverRef.current = hover;
+  }, []);
+  const handlePageRendered = useStableHandler((pageNumber) => windowing.onPageRendered(pageNumber));
+  const handleRemoveAnchor = useStableHandler((kind) =>
+    dispatch({ type: "removeAnchor", kind, currentAnchors: anchors })
+  );
+  const handleSelectSceneFromPage = useStableHandler((scene) => selectScene(scene, { scroll: false }));
+
+  const openLineMenu = useStableHandler(({ pageNumber, line, x, y, indexed }) => {
+    const scenesAtLine = line
+      ? (sceneSegmentsByPage.get(pageNumber) || [])
+          .filter(
+            (segment) =>
+              (segment.top === null || segment.top <= line.bottom) &&
+              (segment.bottom === null || segment.bottom >= line.top)
+          )
+          .map((segment) => segment.scene)
+      : [];
+    setMenu({
+      pageNumber,
+      line,
+      indexed,
+      scenes: scenesAtLine,
+      x: Math.max(8, Math.min(x, window.innerWidth - MENU_WIDTH)),
+      y: Math.max(8, Math.min(y, window.innerHeight - MENU_HEIGHT)),
+    });
+  });
+
+  const handleKeyDown = useStableHandler((event) => {
+    if (modal || menu || isTypingTarget(event.target)) return;
+    const modifier = event.metaKey || event.ctrlKey;
+
+    if (modifier && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "z") {
+      if (draft.anchorHistory.length === 0) return;
+      event.preventDefault();
+      dispatch({ type: "undoAnchors" });
       return;
     }
 
-    setForm((prev) => ({
-      ...prev,
-      text_source: "formatted",
-      formatted_selected_text: prev.formatted_selected_text || prev.raw_selected_text,
-    }));
+    if (modifier || event.altKey || (event.key !== "[" && event.key !== "]")) return;
+    const hover = hoverRef.current;
+    if (!hover) return;
+    event.preventDefault();
+    setAnchorAtLine(event.key === "[" ? "start" : "end", hover.pageNumber, hover.line);
+  });
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
+  // ---------- Draft text ----------
+
+  function normalizeTime(field) {
+    const seconds = parseTimeInputToSeconds(draft[field]);
+    if (seconds !== null) {
+      dispatch({ type: "setTime", field, value: formatSecondsToHms(seconds, { fallback: "00:00:00" }) });
+    }
   }
 
-  function onPdfSelectionComplete() {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
-    if (!selectionBelongsToRoot(selection, pagesWrapRef.current)) return;
-
-    const rawText = selection.toString();
-    if (!rawText.trim()) return;
-
-    let pageStart = pageFromNode(selection.anchorNode);
-    let pageEnd = pageFromNode(selection.focusNode);
-
-    if (!pageStart && pageEnd) pageStart = pageEnd;
-    if (!pageEnd && pageStart) pageEnd = pageStart;
-
-    if (pageStart && pageEnd && pageStart > pageEnd) {
-      const prevStart = pageStart;
-      pageStart = pageEnd;
-      pageEnd = prevStart;
-    }
-
-    const context = extractSelectionContext(selection);
-    const selectionPayload = {
-      raw_selected_text: rawText,
-      page_start: pageStart || null,
-      page_end: pageEnd || null,
-    };
-
-    const overlap = findOverlappingScriptScene(scenes, selectionPayload);
-    if (overlap) {
-      activateScene(overlap, { scroll: false });
-      setInfo("Selection overlaps an existing scene. Editing that scene instead of creating a duplicate.");
-      selection.removeAllRanges();
+  function recapture() {
+    if (!capture) return;
+    const replacesEdits = draft.textOrigin === "edited" || draft.textOrigin === "ai";
+    if (
+      replacesEdits &&
+      !window.confirm("Replace the current text with a fresh capture from the anchors? Your text edits will be lost.")
+    ) {
       return;
     }
-
-    setActiveSceneId("");
-    setEditingSceneId("");
-    setInfo("New scene range selected. Add metadata and save.");
-    setForm((prev) => ({
-      ...EMPTY_SCENE_FORM,
-      start_time_seconds: prev.start_time_seconds,
-      end_time_seconds: prev.end_time_seconds,
-      raw_selected_text: rawText,
-      page_start: pageStart ? String(pageStart) : "",
-      page_end: pageEnd ? String(pageEnd) : "",
-      context_prefix: context.contextPrefix,
-      context_suffix: context.contextSuffix,
-      start_offset: Number.isInteger(context.startOffset) ? String(context.startOffset) : "",
-      end_offset: Number.isInteger(context.endOffset) ? String(context.endOffset) : "",
-      anchor_geometry: context.geometry,
-    }));
-    setFormatStatus("idle");
-    setFormatAccepted(false);
-    setFormatMessage("");
-    void requestFormattedAnnotationText(rawText);
-    selection.removeAllRanges();
+    dispatch({ type: "applyCapture", anchors, capture });
   }
 
-  function toggleTag(tag) {
-    setForm((prev) => {
-      const hasTag = prev.tags.includes(tag);
-      return {
-        ...prev,
-        tags: hasTag ? prev.tags.filter((t) => t !== tag) : [...prev.tags, tag],
-      };
+  function editMarkdown(nextMarkdown) {
+    dispatch({
+      type: "editMarkdown",
+      markdown: nextMarkdown,
+      anchorKey: draft.textOrigin === "capture" ? capture?.key : undefined,
     });
   }
 
-  function resetForNewScene() {
-    setEditingSceneId("");
-    setActiveSceneId("");
-    setInfo("");
-    setForm({ ...EMPTY_SCENE_FORM });
-    setFormatStatus("idle");
-    setFormatAccepted(false);
-    setFormatMessage("");
+  async function requestAiFormat() {
+    const capturedText = capture?.plainText || screenplayToPlainText(markdown);
+    if (!capturedText.trim()) return;
+
+    aiRequestRef.current += 1;
+    const requestId = aiRequestRef.current;
+    dispatch({ type: "proposalStart", requestId });
+
+    try {
+      const snapshots =
+        capture && pdfDocument
+          ? await renderSelectionSnapshots(pdfDocument, anchors)
+          : { pageImages: [], omittedPageCount: 0 };
+      const result = await api.formatScreenplaySelection({
+        capturedText,
+        draftMarkdown: markdown,
+        pageStart: capture?.pageStart ?? draft.baseline?.page_start ?? null,
+        pageEnd: capture?.pageEnd ?? draft.baseline?.page_end ?? null,
+        ...snapshots,
+      });
+      dispatch({ type: "proposalReady", requestId, markdown: result?.markdown || "" });
+    } catch (error) {
+      dispatch({ type: "proposalError", requestId, error: error.message || "AI formatting failed." });
+    }
   }
 
-  async function onSubmitScene(e) {
-    e.preventDefault();
-    setErr("");
-    setInfo("");
+  // ---------- Persistence ----------
 
-    const { error, payload } = buildScriptScenePayload(form);
+  async function saveScene() {
+    const { error, payload } = buildScenePayload({ draft, capture, markdown });
     if (error) {
-      setErr(error);
+      setNotice({ tone: "error", text: error });
       return;
     }
 
+    const wasEditing = Boolean(draft.sceneId);
     setSaving(true);
-    const wasEditing = Boolean(editingSceneId);
-
+    setNotice(null);
     try {
       const saved = wasEditing
-        ? await scriptSceneActions.update(movieId, scriptId, editingSceneId, payload)
+        ? await scriptSceneActions.update(movieId, scriptId, draft.sceneId, payload)
         : await scriptSceneActions.create(movieId, scriptId, payload);
-
-      setScenes((prev) => sortScriptScenes([...prev.filter((row) => row.id !== saved.id), saved]));
-      setActiveSceneId(saved.id);
-      setEditingSceneId(saved.id);
-      setExpandedSceneById((prev) => ({ ...prev, [saved.id]: true }));
-      setFormFromScene(saved);
-      setInfo(wasEditing ? "Scene annotation updated." : "Scene annotation saved.");
-    } catch (e2) {
-      setErr(e2.message || "Failed to save scene annotation");
+      setScenes((prev) => sortScriptScenes([...prev.filter((scene) => scene.id !== saved.id), saved]));
+      dispatch({ type: "loadScene", scene: saved });
+      setNotice({ tone: "info", text: wasEditing ? "Scene updated." : "Scene saved." });
+    } catch (saveError) {
+      setNotice({ tone: "error", text: saveError.message || "Failed to save the scene." });
     } finally {
       setSaving(false);
     }
   }
 
-  async function onDeleteScene(sceneId) {
-    if (!sceneId) return;
-    setErr("");
-    setInfo("");
+  async function deleteScene(scene) {
+    if (!scene || !window.confirm(`Delete the scene at ${formatTiming(scene)}? This can't be undone.`)) return;
 
-    const scene = scenes.find((row) => row.id === sceneId);
-    const label = displayScriptSceneText(scene).slice(0, 32) || "this scene";
-    const ok = window.confirm(`Delete ${label}?`);
-    if (!ok) return;
-
-    setDeletingSceneId(sceneId);
+    setDeletingSceneId(scene.id);
     try {
-      await scriptSceneActions.delete(movieId, scriptId, sceneId);
-      setScenes((prev) => prev.filter((row) => row.id !== sceneId));
-      setExpandedSceneById((prev) => {
-        if (!prev[sceneId]) return prev;
-        const next = { ...prev };
-        delete next[sceneId];
-        return next;
-      });
-      if (activeSceneId === sceneId || editingSceneId === sceneId) {
-        resetForNewScene();
-      }
-      setInfo("Scene annotation deleted.");
-    } catch (e) {
-      setErr(e.message || "Failed to delete scene annotation");
+      await scriptSceneActions.delete(movieId, scriptId, scene.id);
+      setScenes((prev) => prev.filter((row) => row.id !== scene.id));
+      if (draft.sceneId === scene.id) dispatch({ type: "reset" });
+      setModal((current) => (current?.sceneId === scene.id ? null : current));
+      setNotice({ tone: "info", text: "Scene deleted." });
+    } catch (deleteError) {
+      setNotice({ tone: "error", text: deleteError.message || "Failed to delete the scene." });
     } finally {
       setDeletingSceneId("");
     }
   }
 
-  const selectedCountText = useMemo(() => getSelectedCountText(form), [form]);
-  const selectedTextPreview = getSelectedTextPreview(form);
-  const scenesByPage = useMemo(() => groupScriptScenesByPage(scenes), [scenes]);
-
-  const renderedPageCount = compactPdfMode ? visiblePageCount : numPages;
-  const mobileRenderStart = compactPdfMode
-    ? Math.max(1, mobileRenderChunkStart - MOBILE_RENDER_BEHIND_PAGES)
-    : 1;
-  const mobileRenderEnd = compactPdfMode
-    ? Math.min(
-        renderedPageCount,
-        mobileRenderChunkStart + MOBILE_PDF_BATCH_SIZE + MOBILE_RENDER_AHEAD_PAGES - 1
-      )
-    : renderedPageCount;
-  const defaultMobilePageHeight = (() => {
-    const knownHeights = Object.values(pageHeightsByNumber).filter(
-      (value) => Number.isFinite(value) && value > 10
-    );
-    if (knownHeights.length > 0) return Math.round(Number(knownHeights[0]));
-    return Math.round(pageWidth * MOBILE_PDF_DEFAULT_ASPECT_RATIO);
-  })();
+  // ---------- Render ----------
 
   if (loading) {
     return (
-      <div className={styles.wrap}>
-        <p>Loading script viewer...</p>
+      <div className={styles.page}>
+        <p className={styles.loading}>Loading script viewer…</p>
       </div>
     );
   }
 
+  const pageNumbers = Array.from({ length: windowing.renderedPageCount }, (_, index) => index + 1);
+
   return (
-    <div className={styles.wrap}>
-      <ScriptViewerTopBar
-        title={`${movie?.title || "Movie"} Script`}
+    <div className={styles.page}>
+      <ViewerTopBar
+        title={title}
+        pageCount={numPages}
+        sceneCount={scenes.length}
         onBackToMovie={() => nav(`/movies/${movieId}`)}
         onSearchScripts={() => nav("/script-search")}
+        onJumpToScenes={jumpToScenes}
       />
 
-      {err && <div className={styles.error}>{err}</div>}
-      {info && <div className={styles.info}>{info}</div>}
-
-      <div className={styles.layout}>
-        <section className={styles.viewerPanel}>
+      <div className={styles.workspace}>
+        <section className={styles.viewer} aria-label="Script PDF">
           {!script?.script_url ? (
-            <p>No script URL available.</p>
+            <p className={styles.viewerMessage}>This script has no PDF file.</p>
           ) : pdfLoadError ? (
-            <div className={styles.viewerFallback}>
-              <p>{pdfLoadError}</p>
-            </div>
+            <p className={styles.viewerMessage}>{pdfLoadError}</p>
           ) : (
-            <div
-              ref={pagesWrapRef}
-              className={styles.pagesWrap}
-              onMouseUp={!compactPdfMode ? onPdfSelectionComplete : undefined}
-            >
+            <div ref={windowing.wrapRef} className={styles.pagesWrap}>
               <Document
-                key={`${scriptId}:${script.script_url || ""}`}
                 file={script.script_url}
-                loading={<p>Loading PDF...</p>}
-                onLoadSuccess={({ numPages: totalPages }) => {
-                  setPdfLoadError("");
-                  setNumPages(totalPages);
-                }}
-                onLoadError={(loadErr) => {
-                  const message = loadErr?.message || "Unable to load this PDF.";
-                  setPdfLoadError(message);
-                  setErr(message);
-                }}
+                loading={<p className={styles.viewerMessage}>Loading PDF…</p>}
+                onLoadSuccess={setPdfDocument}
+                onLoadError={(error) => setPdfLoadError(error?.message || "Unable to load this PDF.")}
               >
-                {Array.from({ length: renderedPageCount }, (_, idx) => idx + 1).map((pageNum) => {
-                  const pageScenes = scenesByPage.get(pageNum) || [];
-                  const shouldRenderPage =
-                    !compactPdfMode ||
-                    (pageNum >= mobileRenderStart && pageNum <= mobileRenderEnd);
-                  const estimatedPageHeight = pageHeightsByNumber[pageNum] || defaultMobilePageHeight;
+                {pageNumbers.map((pageNumber) => {
+                  const inWindow =
+                    !windowing.compact ||
+                    (pageNumber >= windowing.renderStart && pageNumber <= windowing.renderEnd);
+                  const inRange =
+                    Boolean(anchors.start && anchors.end) &&
+                    pageNumber >= anchors.start.page &&
+                    pageNumber <= anchors.end.page;
+
                   return (
-                    <div
-                      id={`script-page-${pageNum}`}
-                      key={pageNum}
-                      data-page-number={String(pageNum)}
-                      className={`${styles.pageCard} ${
-                        pageScenes.some((row) => row.id === activeSceneId) ? styles.pageCardActive : ""
-                      }`}
-                    >
-                      {pageScenes.length > 0 && (
-                        <div className={styles.pageSceneBlocks}>
-                          {pageScenes.map((scene) => {
-                            const isActive = scene.id === activeSceneId;
-                            const label = displayScriptSceneText(scene).slice(0, 72);
-                            return (
-                              <button
-                                key={`${pageNum}-${scene.id}`}
-                                type="button"
-                                className={`${styles.pageSceneBlock} ${
-                                  isActive ? styles.pageSceneBlockActive : ""
-                                }`}
-                                onClick={() => activateScene(scene, { scroll: false })}
-                              >
-                                <span className={styles.pageSceneTime}>
-                                  {formatSecondsToHms(scene.start_time_seconds)}-{formatSecondsToHms(scene.end_time_seconds)}
-                                </span>
-                                <span className={styles.pageSceneLabel}>{label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {shouldRenderPage ? (
-                        <Page
-                          pageNumber={pageNum}
-                          width={pageWidth}
-                          devicePixelRatio={compactPdfMode ? MOBILE_DEVICE_PIXEL_RATIO : undefined}
-                          renderTextLayer={!compactPdfMode}
-                          renderAnnotationLayer={!compactPdfMode}
-                          onRenderSuccess={() => measureRenderedPageHeight(pageNum)}
-                        />
-                      ) : (
-                        <div
-                          className={styles.pagePlaceholder}
-                          style={{ height: `${estimatedPageHeight}px` }}
-                        />
-                      )}
-                    </div>
+                    <PdfPageFrame
+                      key={pageNumber}
+                      pageNumber={pageNumber}
+                      pageIndex={textIndex.pages.get(pageNumber) || null}
+                      pageWidth={windowing.pageWidth}
+                      inWindow={inWindow}
+                      placeholderHeight={
+                        inWindow ? 0 : windowing.pageHeights[pageNumber] || windowing.defaultPageHeight
+                      }
+                      compact={windowing.compact}
+                      startAnchor={anchors.start?.page === pageNumber ? anchors.start : null}
+                      endAnchor={anchors.end?.page === pageNumber ? anchors.end : null}
+                      rangeTop={inRange ? (pageNumber === anchors.start.page ? anchors.start.top : 0) : null}
+                      rangeBottom={
+                        inRange ? (pageNumber === anchors.end.page ? anchors.end.bottom : Infinity) : null
+                      }
+                      sceneSegments={sceneSegmentsByPage.get(pageNumber) || NO_SEGMENTS}
+                      activeSceneId={draft.sceneId}
+                      onLineContextMenu={openLineMenu}
+                      onHoverLine={handleHoverLine}
+                      onRemoveAnchor={handleRemoveAnchor}
+                      onSelectScene={handleSelectSceneFromPage}
+                      onRendered={handlePageRendered}
+                    />
                   );
                 })}
               </Document>
-              {compactPdfMode && renderedPageCount < numPages && (
-                <div ref={loadMoreSentinelRef} className={styles.pagesSentinel} aria-hidden="true" />
+              {windowing.compact && windowing.renderedPageCount < numPages && (
+                <div ref={windowing.sentinelRef} className={styles.sentinel} aria-hidden="true" />
               )}
             </div>
           )}
         </section>
 
-        <aside className={styles.sidebar}>
-          <SceneAnnotationForm
-            deletingSceneId={deletingSceneId}
-            editingSceneId={editingSceneId}
-            form={form}
-            formatAccepted={formatAccepted}
-            formatMessage={formatMessage}
-            formatStatus={formatStatus}
-            onDeleteScene={onDeleteScene}
-            onNewScene={resetForNewScene}
-            onSelectFormattedText={handleSelectFormattedText}
-            onSubmitScene={onSubmitScene}
-            onToggleTag={toggleTag}
-            saving={saving}
-            selectedCountText={selectedCountText}
-            selectedTextPreview={selectedTextPreview}
-            setForm={setForm}
-          />
-
-          <SavedScenesList
-            ref={savedScenesRef}
-            activeSceneId={activeSceneId}
-            deletingSceneId={deletingSceneId}
-            expandedSceneById={expandedSceneById}
-            onDeleteScene={onDeleteScene}
-            onOpenFirstImageAnnotation={openFirstImageAnnotation}
-            onOpenScene={(scene) => activateScene(scene, { scroll: true })}
-            onSelectScene={(scene) => {
-              setActiveSceneId(scene.id);
-              setEditingSceneId(scene.id);
-              setFormFromScene(scene);
-              setExpandedSceneById((prev) => ({
-                ...prev,
-                [scene.id]: !prev[scene.id],
-              }));
-            }}
-            scenes={scenes}
-          />
-        </aside>
+        <AnnotatorPanel
+          editing={Boolean(draft.sceneId)}
+          sceneLabel={draft.baseline ? formatTiming(draft.baseline) : "Untitled scene"}
+          onNewScene={startNewScene}
+          activeTab={visibleTab}
+          onTabChange={setActiveTab}
+          tagsDisabled={tagsDisabled}
+          anchors={anchors}
+          anchorsSuggested={Boolean(suggestedAnchors)}
+          canUndo={draft.anchorHistory.length > 0}
+          indexStatus={{ complete: textIndex.complete, loaded: textIndex.pages.size, total: numPages }}
+          onJumpToAnchor={jumpToAnchor}
+          onRemoveAnchor={handleRemoveAnchor}
+          onClearAnchors={() => dispatch({ type: "clearAnchors" })}
+          onUndoAnchors={() => dispatch({ type: "undoAnchors" })}
+          overlapScene={overlapScene}
+          onEditOverlapScene={() => overlapScene && selectScene(overlapScene)}
+          startTime={draft.startTime}
+          endTime={draft.endTime}
+          onTimeChange={(field, value) => dispatch({ type: "setTime", field, value })}
+          onTimeBlur={normalizeTime}
+          capture={capture}
+          markdown={markdown}
+          textOrigin={draft.textOrigin}
+          captureStale={captureStale}
+          legacyText={draft.textOrigin === "saved" && !draft.textAnchorKey}
+          draftScene={draftScene}
+          movieTitle={title}
+          proposal={draft.proposal}
+          onRecapture={recapture}
+          onExpandDraft={() => setModal({ kind: "draft" })}
+          onRequestAi={requestAiFormat}
+          onReviewProposal={() => setModal({ kind: "draft" })}
+          onDiscardProposal={() => dispatch({ type: "proposalDiscard" })}
+          tags={draft.tags}
+          onToggleTag={(tag) => dispatch({ type: "toggleTag", tag })}
+          onClearTags={() => dispatch({ type: "clearTags" })}
+          saving={saving}
+          deleting={Boolean(draft.sceneId) && deletingSceneId === draft.sceneId}
+          onSave={saveScene}
+          onDelete={() => deleteScene(draft.baseline)}
+        />
       </div>
-      <button type="button" className={styles.mobileJumpBtn} onClick={jumpToSavedScenes}>
+
+      <SavedScenesGrid
+        ref={scenesSectionRef}
+        scenes={scenes}
+        selectedSceneId={draft.sceneId}
+        title={title}
+        onSelect={(scene) => selectScene(scene)}
+        onExpand={(scene) => setModal({ kind: "scene", sceneId: scene.id })}
+      />
+
+      {menu && (
+        <AnchorContextMenu
+          menu={menu}
+          anchors={anchors}
+          canUndo={draft.anchorHistory.length > 0}
+          onSetAnchor={setAnchorAtLine}
+          onRemoveAnchor={handleRemoveAnchor}
+          onClearAnchors={() => dispatch({ type: "clearAnchors" })}
+          onUndo={() => dispatch({ type: "undoAnchors" })}
+          onSelectScene={(scene) => selectScene(scene, { scroll: false })}
+          onClose={closeMenu}
+        />
+      )}
+
+      {modal?.kind === "draft" && (
+        <DraftEditorModal
+          title={title}
+          meta={`${draft.sceneId ? "Editing saved scene" : "New scene draft"} · ${formatScriptScenePages(draftScene)}`}
+          editorKey={`${draft.editorRevision}:${editorSeed}`}
+          markdown={markdown}
+          onChangeMarkdown={editMarkdown}
+          baselineText={capture && !captureStale ? capture.plainText : ""}
+          proposal={draft.proposal}
+          onRequestAi={requestAiFormat}
+          onAcceptProposal={() => dispatch({ type: "proposalAccept", anchorKey: capture?.key })}
+          onDiscardProposal={() => dispatch({ type: "proposalDiscard" })}
+          recaptureLabel={
+            !capture
+              ? ""
+              : captureStale
+                ? "Re-capture from anchors"
+                : draft.textOrigin !== "capture"
+                  ? "Revert to captured text"
+                  : ""
+          }
+          onRecapture={recapture}
+          onClose={closeModal}
+        />
+      )}
+
+      {modalSceneIndex >= 0 && (
+        <SavedSceneModal
+          scene={scenes[modalSceneIndex]}
+          index={modalSceneIndex}
+          total={scenes.length}
+          title={title}
+          deleting={deletingSceneId === scenes[modalSceneIndex].id}
+          onStep={(delta) => {
+            const next = scenes[modalSceneIndex + delta];
+            if (next) setModal({ kind: "scene", sceneId: next.id });
+          }}
+          onClose={closeModal}
+          onOpenScene={(scene) => {
+            setModal(null);
+            selectScene(scene);
+          }}
+          onOpenFirstImage={openFirstImageAnnotation}
+          onDelete={deleteScene}
+        />
+      )}
+
+      {notice && (
+        <div
+          className={`${styles.toast} ${notice.tone === "error" ? styles.toastError : styles.toastInfo}`}
+          role={notice.tone === "error" ? "alert" : "status"}
+        >
+          <span>{notice.text}</span>
+          <button type="button" className={styles.toastClose} onClick={() => setNotice(null)} aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
+
+      <button type="button" className={styles.mobileJump} onClick={jumpToScenes}>
         Scenes
       </button>
     </div>

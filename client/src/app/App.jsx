@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { matchPath, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { HomePage } from "@/pages/home";
 import { MovieDetailPage } from "@/pages/movie-detail";
 import { MovieFormPage } from "@/pages/movie-form";
@@ -8,11 +8,12 @@ import { ScriptViewerPage } from "@/pages/script-viewer";
 import { SiteHeader } from "@/widgets/site-header";
 import page from "./styles/page.module.css";
 
-const FULL_BLEED_PATHS = new Set(["/", "/script-search"]);
+const FULL_BLEED_PATHS = ["/", "/script-search", "/movies/:movieId/scripts/:scriptId"];
 
 export default function App() {
   const { pathname } = useLocation();
-  const mainClassName = FULL_BLEED_PATHS.has(pathname) ? page.mainFullBleed : page.main;
+  const isFullBleed = FULL_BLEED_PATHS.some((path) => matchPath(path, pathname));
+  const mainClassName = isFullBleed ? page.mainFullBleed : page.main;
 
   return (
     <>

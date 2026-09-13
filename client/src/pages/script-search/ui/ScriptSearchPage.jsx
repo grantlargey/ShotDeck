@@ -1,7 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getScriptScenePageRange, getScriptTagLabel } from "@/entities/script-scene";
+import {
+  displayScriptSceneText,
+  formatScriptScenePages,
+  getScriptScenePageRange,
+  getScriptTagLabel,
+  groupScriptTagsByCategory,
+  SceneCard,
+} from "@/entities/script-scene";
 import { api } from "@/shared/api";
+import { formatSecondsToHms } from "@/shared/lib/time";
+import { ScreenplayView } from "@/shared/ui";
+import {
+  SceneDetailModal,
+  SceneFirstImageThumb,
+  SceneModalActions,
+  SceneModalButton,
+  SceneModalPaper,
+  SceneModalTagGroups,
+} from "@/widgets/scene-detail-modal";
 import {
   buildFilterGroups,
   countSceneTags,
@@ -9,8 +26,6 @@ import {
   sortScenes,
 } from "../model/sceneBrowse.js";
 import FilterSidebar from "./FilterSidebar.jsx";
-import SceneCard from "./SceneCard.jsx";
-import SceneDetailModal from "./SceneDetailModal.jsx";
 import styles from "./ScriptSearchPage.module.css";
 
 export default function ScriptSearchPage() {
@@ -167,7 +182,7 @@ export default function ScriptSearchPage() {
           <ul className={`${styles.grid} ${loading ? styles.gridLoading : ""}`}>
             {results.map((scene) => (
               <li key={scene.id}>
-                <SceneCard scene={scene} onOpen={() => setActiveSceneId(scene.id)} />
+                <SceneCard scene={scene} hasPopup onClick={() => setActiveSceneId(scene.id)} />
               </li>
             ))}
           </ul>
@@ -176,14 +191,48 @@ export default function ScriptSearchPage() {
 
       {activeScene && (
         <SceneDetailModal
-          scene={activeScene}
-          index={activeIndex}
-          total={results.length}
-          onClose={() => setActiveSceneId(null)}
+          title={activeScene.movie_title || "Unknown title"}
+          meta={`${formatScriptScenePages(activeScene)} · ${formatSecondsToHms(
+            activeScene.start_time_seconds
+          )} – ${formatSecondsToHms(activeScene.end_time_seconds)}`}
+          counter={`${activeIndex + 1} / ${results.length}`}
+          hasPrev={activeIndex > 0}
+          hasNext={activeIndex < results.length - 1}
           onStep={stepScene}
-          onOpenInScript={openSceneInScript}
-          onOpenFirstImage={openFirstImageAnnotation}
-        />
+          onClose={() => setActiveSceneId(null)}
+          stageKey={activeScene.id}
+          footer={
+            <>
+              <SceneModalTagGroups groups={groupScriptTagsByCategory(activeScene.tags)} />
+              <SceneModalActions>
+                <SceneFirstImageThumb scene={activeScene} onOpen={openFirstImageAnnotation} />
+                <SceneModalButton variant="primary" onClick={() => openSceneInScript(activeScene)}>
+                  Open Scene In Script
+                </SceneModalButton>
+                <SceneModalButton
+                  disabled={!activeScene.first_image_annotation?.id}
+                  title={
+                    activeScene.first_image_annotation?.id
+                      ? `Open first image annotation at ${formatSecondsToHms(
+                          activeScene.first_image_annotation.time_seconds
+                        )}`
+                      : "No image annotation falls inside this scene's timeframe."
+                  }
+                  onClick={() => openFirstImageAnnotation(activeScene)}
+                >
+                  Open First Image
+                </SceneModalButton>
+              </SceneModalActions>
+            </>
+          }
+        >
+          <SceneModalPaper>
+            <ScreenplayView
+              source={displayScriptSceneText(activeScene)}
+              emptyText="No script text captured for this scene."
+            />
+          </SceneModalPaper>
+        </SceneDetailModal>
       )}
     </div>
   );

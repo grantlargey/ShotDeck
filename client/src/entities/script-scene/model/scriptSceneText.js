@@ -30,3 +30,8 @@ export function getScriptScenePageRange(scene) {
     pageEnd: Number.isFinite(end) ? end : Number.isFinite(start) ? start : 1,
   };
 }
+
+export function formatScriptScenePages(scene) {
+  const { pageStart, pageEnd } = getScriptScenePageRange(scene);
+  return pageEnd > pageStart ? `Pages ${pageStart}–${pageEnd}` : `Page ${pageStart}`;
+}

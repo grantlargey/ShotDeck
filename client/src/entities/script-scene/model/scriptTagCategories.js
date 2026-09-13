@@ -123,3 +123,23 @@ export const SCRIPT_TAG_LABELS = Object.fromEntries(
 export function getScriptTagLabel(tagValue) {
   return SCRIPT_TAG_LABELS[tagValue] || tagValue;
 }
+
+const TAG_CATEGORY_INDEX = new Map(
+  SCRIPT_TAG_CATEGORIES.flatMap((group, index) => group.tags.map((tag) => [tag.value, index]))
+);
+
+/**
+ * Groups a scene's tags under their taxonomy category labels, in taxonomy
+ * order, with unknown tags collected under "Other".
+ */
+export function groupScriptTagsByCategory(tags) {
+  const groups = new Map();
+  for (const tag of Array.isArray(tags) ? tags.map(String) : []) {
+    const index = TAG_CATEGORY_INDEX.get(tag) ?? SCRIPT_TAG_CATEGORIES.length;
+    if (!groups.has(index)) {
+      groups.set(index, { label: SCRIPT_TAG_CATEGORIES[index]?.label || "Other", values: [] });
+    }
+    groups.get(index).values.push(getScriptTagLabel(tag));
+  }
+  return [...groups.entries()].sort(([a], [b]) => a - b).map(([, group]) => group);
+}

@@ -29,7 +29,7 @@ export async function formatAnnotationText(rawText) {
         return { formattedText: rawText, accepted: false };
     }
 
-    const model = process.env.OPENAI_FORMAT_MODEL || "gpt-4.1-mini";
+    const model = process.env.OPENAI_FORMAT_MODEL || "gpt-5-nano";
     const timeoutMs = Number(process.env.OPENAI_FORMAT_TIMEOUT_MS || 10000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);

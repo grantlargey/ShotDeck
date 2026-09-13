@@ -1,0 +1,140 @@
+.card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--sb-line, rgba(255, 255, 255, 0.09));
+  border-radius: 6px;
+  background: var(--sb-panel, #161923);
+  color: var(--sb-text, #f3f4f8);
+  font-family: "Inter", Arial, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--sb-accent, #5c9dff);
+  outline-offset: 2px;
+}
+
+.selected,
+.selected:hover {
+  border-color: var(--sb-accent, #5c9dff);
+  box-shadow:
+    0 0 0 1px var(--sb-accent, #5c9dff),
+    0 14px 30px rgba(0, 0, 0, 0.35);
+}
+
+.paper {
+  position: relative;
+  height: 196px;
+  padding: 14px 14px 0;
+  overflow: hidden;
+  background: var(--sb-paper, #f3f0e8);
+  color: var(--sb-ink, #1f1d1a);
+}
+
+.paper::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 64px;
+  background: linear-gradient(rgba(243, 240, 232, 0), var(--sb-paper, #f3f0e8));
+}
+
+.empty {
+  margin: 0;
+  color: #8a857a;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.meta {
+  flex: 1;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.title {
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pages,
+.subRow {
+  color: var(--sb-muted, rgba(243, 244, 248, 0.56));
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pages {
+  flex: none;
+}
+
+.subRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.status,
+.imageBadge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.status {
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+}
+
+.imageBadge {
+  margin-left: auto;
+  background: rgba(92, 157, 255, 0.14);
+  color: var(--sb-accent, #5c9dff);
+}
+
+.tags {
+  margin-top: auto;
+  padding-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tags span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(243, 244, 248, 0.8);
+  font-size: 0.72rem;
+}
