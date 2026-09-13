@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   findNearestAnnotationIndex,
+  getStillThumbnail,
   getTimelineBins,
   getTimelinePositionPercent,
   getTimelineScale,
@@ -50,7 +51,8 @@ const DensityBars = memo(function DensityBars({ bins, className }) {
 });
 
 function StillPreview({ annotation, index, percent, total }) {
-  const url = useSignedMediaUrl(annotation.image_key || null, annotation.image_url || null);
+  const thumbnail = getStillThumbnail(annotation);
+  const url = useSignedMediaUrl(thumbnail.key, thumbnail.url);
 
   return (
     <div className={styles.preview} style={{ "--pos": `${percent}%` }} aria-hidden="true">

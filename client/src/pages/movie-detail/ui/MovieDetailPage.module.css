@@ -17,14 +17,22 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.backdropLoaded {
   opacity: 0.55;
 }
 
 /* Without a still, a heavily blurred cover gives the hero color without detail. */
 .backdropBlurred {
-  opacity: 0.4;
   filter: blur(48px) saturate(1.2);
   transform: scale(1.2);
+}
+
+.backdropBlurred.backdropLoaded {
+  opacity: 0.4;
 }
 
 /* Darkens the side the text sits on and fades the bottom into the page. */
@@ -235,6 +243,17 @@
 
 .stillsEmpty {
   margin-top: 20px;
+}
+
+/* Same footprint as the timeline strip and its scale. */
+.skeletonTimeline {
+  height: 28px;
+  margin: 4px 0 34px;
+}
+
+.skeletonFrame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
 }
 
 /* ---------- Still editing and dialogs ---------- */

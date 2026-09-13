@@ -10,6 +10,7 @@ export function mapScriptSceneRow(row) {
             id: row.first_image_annotation_id,
             time_seconds: row.first_image_annotation_time_seconds,
             image_key: row.first_image_annotation_image_key,
+            thumb_key: row.first_image_annotation_thumb_key ?? null,
             created_at: row.first_image_annotation_created_at,
         }
         : null;

@@ -11,6 +11,10 @@ const schemaPath = path.resolve(__dirname, "../sql/schema.sql");
 const sql = fs.readFileSync(schemaPath, "utf8");
 await pool.query(sql);
 await pool.query(`
+  ALTER TABLE annotations
+  ADD COLUMN IF NOT EXISTS thumb_key TEXT
+`);
+await pool.query(`
   ALTER TABLE movies
   ADD COLUMN IF NOT EXISTS links JSONB NOT NULL DEFAULT '[]'::jsonb
 `);

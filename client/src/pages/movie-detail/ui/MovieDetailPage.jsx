@@ -1,7 +1,7 @@
 // client/src/pages/movie-detail/ui/MovieDetailPage.jsx
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { sortAnnotationsByTime } from "@/entities/annotation";
+import { getStillThumbnail, sortAnnotationsByTime } from "@/entities/annotation";
 import { buildMovieSavePayload, createMovieEditForm, getMovieCoverUrl } from "@/entities/movie";
 import { getCurrentScript } from "@/entities/script";
 import { getSceneScriptPath } from "@/entities/script-scene";
@@ -32,6 +32,7 @@ import {
   Input,
   PlusIcon,
   SectionHeading,
+  Skeleton,
 } from "@/shared/ui";
 import { SceneModalButton, SceneViewerModal } from "@/widgets/scene-detail-modal";
 import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
@@ -65,7 +66,8 @@ function parseStillTime(text, runtimeSeconds) {
  * stable setters and hovering one still doesn't re-render the rest.
  */
 const StillFrameButton = memo(function StillFrameButton({ annotation, onHover, onOpen }) {
-  const url = useSignedMediaUrl(annotation.image_key || null, annotation.image_url || null);
+  const thumbnail = getStillThumbnail(annotation);
+  const url = useSignedMediaUrl(thumbnail.key, thumbnail.url);
   const time = formatSecondsToHms(annotation.time_seconds);
 
   return (
@@ -85,12 +87,32 @@ const StillFrameButton = memo(function StillFrameButton({ annotation, onHover, o
   );
 });
 
+const NO_STILLS = [];
+const SKELETON_FRAME_COUNT = 8;
+
+/** Placeholder timeline and grid, shown while the stills list loads. */
+function StillsSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <Skeleton className={styles.skeletonTimeline} />
+      <ul className={styles.stillGrid}>
+        {Array.from({ length: SKELETON_FRAME_COUNT }, (_, i) => (
+          <li key={i}>
+            <Skeleton className={styles.skeletonFrame} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function MovieDetailPage() {
   const nav = useNavigate();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const [movie, setMovie] = useState(null);
-  const [annotations, setAnnotations] = useState([]);
+  // The project's stills sorted by time; null until they load.
+  const [stillRows, setStillRows] = useState(null);
   const [scripts, setScripts] = useState([]);
   const [err, setErr] = useState("");
 
@@ -127,37 +149,49 @@ export default function MovieDetailPage() {
   // stepping to another still never applies it to the wrong one.
   const [stillEdit, setStillEdit] = useState(null);
   const lastDeepLinkedAnnotationRef = useRef("");
+  const loadIdRef = useRef(0);
   const annotationIdFromQuery = searchParams.get("annotationId") || "";
+
+  const annotations = stillRows ?? NO_STILLS;
+  const stillsLoading = stillRows === null;
 
   useDocumentTitle(movie?.title || "Project");
 
   /**
-   * Reloads the project. The scene viewer stays open across reloads (moving to
-   * the nearest still if its still was deleted) and closes once no stills remain.
-   * The hero keeps its random still across reloads unless that still was deleted.
+   * Reloads the project. The details and the stills list are applied as each
+   * arrives, so the header and script panel don't wait for the slower stills.
+   * Only the latest load's responses apply.
+   * The scene viewer stays open across reloads (moving to the nearest still if
+   * its still was deleted) and closes once no stills remain. The hero keeps its
+   * random still across reloads unless that still was deleted.
    */
   async function load() {
+    const loadId = ++loadIdRef.current;
+    const isLatest = () => loadIdRef.current === loadId;
     setErr("");
-    try {
-      const [m, annotationRows, scriptRows] = await Promise.all([
-        api.getMovie(id),
-        api.listAnnotations(id),
-        api.listScripts(id),
-      ]);
-      const a = sortAnnotationsByTime(annotationRows);
 
+    const details = Promise.all([api.getMovie(id), api.listScripts(id)]).then(([m, scriptRows]) => {
+      if (!isLatest()) return;
       setMovie(m);
-      setAnnotations(a);
       setScripts(Array.isArray(scriptRows) ? scriptRows : []);
+      // Keep edit form in sync with loaded movie
+      setEditForm(createMovieEditForm(m));
+    });
+
+    const stills = api.listAnnotations(id).then((annotationRows) => {
+      if (!isLatest()) return;
+      const a = sortAnnotationsByTime(annotationRows);
+      setStillRows(a);
       if (a.length === 0) setViewerStillId(null);
       setBackdropStillId((prev) =>
         a.some((row) => row.id === prev) ? prev : (a[Math.floor(Math.random() * a.length)]?.id ?? null)
       );
+    });
 
-      // Keep edit form in sync with loaded movie
-      setEditForm(createMovieEditForm(m));
+    try {
+      await Promise.all([details, stills]);
     } catch (e) {
-      setErr(getErrorMessage(e, "Failed to load project."));
+      if (isLatest()) setErr(getErrorMessage(e, "Failed to load project."));
     }
   }
 
@@ -368,11 +402,11 @@ export default function MovieDetailPage() {
           onSaveScript={saveScriptPdf}
         />
 
-        <section aria-labelledby="project-stills-heading">
+        <section aria-labelledby="project-stills-heading" aria-busy={stillsLoading}>
           <SectionHeading
             id="project-stills-heading"
             title="Film stills"
-            count={annotations.length}
+            count={stillsLoading ? undefined : annotations.length}
             actions={
               annotations.length > 0 && (
                 <Button size="sm" onClick={openAddDialog}>
@@ -383,7 +417,9 @@ export default function MovieDetailPage() {
             }
           />
 
-          {annotations.length === 0 ? (
+          {stillsLoading ? (
+            !err && <StillsSkeleton />
+          ) : annotations.length === 0 ? (
             <EmptyState
               className={styles.stillsEmpty}
               title="No stills yet"

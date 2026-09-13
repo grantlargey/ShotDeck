@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { MOVIE_CREDITS } from "@/entities/movie";
 import { cx } from "@/shared/lib/cx";
 import { formatMinutesToHms } from "@/shared/lib/time";
@@ -15,11 +16,23 @@ export function MovieHeader({ movie, coverUrl, backdropUrl, actions }) {
     ...MOVIE_CREDITS.map(({ field, label }) => ({ label, value: movie[field] })),
   ].filter((fact) => fact.value);
   const backdrop = backdropUrl || coverUrl;
+  // The stills load after the header, so the backdrop fades in rather than popping when a still replaces the cover.
+  const [loadedBackdrop, setLoadedBackdrop] = useState(null);
 
   return (
     <section className={styles.hero}>
       {backdrop && (
-        <img className={cx(styles.backdrop, !backdropUrl && styles.backdropBlurred)} src={backdrop} alt="" />
+        <img
+          key={backdrop}
+          className={cx(
+            styles.backdrop,
+            !backdropUrl && styles.backdropBlurred,
+            loadedBackdrop === backdrop && styles.backdropLoaded
+          )}
+          src={backdrop}
+          alt=""
+          onLoad={() => setLoadedBackdrop(backdrop)}
+        />
       )}
 
       <div className={styles.heroInner}>

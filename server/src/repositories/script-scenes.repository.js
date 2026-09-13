@@ -31,6 +31,7 @@ export const SCRIPT_SCENE_SELECT_FIELDS_SQL = `
       first_image_ann.first_image_annotation_id,
       first_image_ann.first_image_annotation_time_seconds,
       first_image_ann.first_image_annotation_image_key,
+      first_image_ann.first_image_annotation_thumb_key,
       first_image_ann.first_image_annotation_created_at
 `;
 
@@ -42,6 +43,7 @@ export const SCRIPT_SCENE_FROM_SQL = `
         ann.id AS first_image_annotation_id,
         ann.time_seconds AS first_image_annotation_time_seconds,
         ann.image_key AS first_image_annotation_image_key,
+        ann.thumb_key AS first_image_annotation_thumb_key,
         ann.created_at AS first_image_annotation_created_at
       FROM annotations ann
       WHERE ann.movie_id = sc.movie_id

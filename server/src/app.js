@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import { createCorsOptions } from "./config/cors.js";
 import { errorHandler } from "./middleware/error-handler.js";
@@ -19,6 +20,7 @@ import uploadsRoutes from "./routes/uploads.routes.js";
  */
 export const app = express();
 
+app.use(compression()); // a project's stills list is mostly signed URLs and gzips ~7x smaller
 app.use(cors(createCorsOptions()));
 app.use(screenplayFormatRoutes); // parses its own larger body (page images)
 app.use(express.json({ limit: "2mb" })); // metadata only; no big file uploads

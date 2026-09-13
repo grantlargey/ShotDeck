@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS annotations (
   title TEXT NOT NULL,
   body TEXT,
   image_key TEXT,
+  thumb_key TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

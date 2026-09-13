@@ -69,7 +69,8 @@ export async function updateAnnotationImageKey(db, { movieId, annotationId, imag
     const result = await db.query(
         `
         UPDATE annotations
-        SET image_key = $1
+        SET image_key = $1,
+            thumb_key = CASE WHEN image_key IS NOT DISTINCT FROM $1 THEN thumb_key END
         WHERE id = $2
           AND movie_id = $3
         RETURNING *
@@ -90,7 +91,9 @@ export async function updateAnnotationRecord(
         SET time_seconds = $1,
             title = $2,
             body = $3,
-            image_key = $4
+            image_key = $4,
+            -- A replaced image needs a new thumbnail.
+            thumb_key = CASE WHEN image_key IS NOT DISTINCT FROM $4 THEN thumb_key END
         WHERE id = $5 AND movie_id = $6
         RETURNING *
       `,
@@ -98,6 +101,32 @@ export async function updateAnnotationRecord(
     );
 
     return result.rows[0] || null;
+}
+
+export async function listImageKeysWithoutThumbnails(db) {
+    const result = await db.query(
+        `
+        SELECT DISTINCT image_key
+        FROM annotations
+        WHERE COALESCE(image_key, '') <> ''
+          AND thumb_key IS NULL
+      `
+    );
+
+    return result.rows.map((row) => row.image_key);
+}
+
+/** Only rows still showing that image take the thumbnail, so a replaced image never gets a stale one. */
+export async function setThumbnailKeyForImage(db, { imageKey, thumbKey }) {
+    await db.query(
+        `
+        UPDATE annotations
+        SET thumb_key = $2
+        WHERE image_key = $1
+          AND thumb_key IS DISTINCT FROM $2
+      `,
+        [imageKey, thumbKey]
+    );
 }
 
 export async function deleteAnnotationRecord(db, { movieId, annotationId }) {

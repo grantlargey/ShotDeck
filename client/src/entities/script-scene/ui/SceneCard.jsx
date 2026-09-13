@@ -45,7 +45,9 @@ export function SceneCard({
   const text = displayScriptSceneText(scene);
   const heading = getScreenplaySceneHeading(text);
   const tags = safeScriptSceneTags(scene?.tags);
-  const imageKey = split ? scene?.first_image_annotation?.image_key || null : null;
+  // The card shows the still's thumbnail once the API has made one.
+  const still = split ? scene?.first_image_annotation : null;
+  const imageKey = still?.thumb_key || still?.image_key || null;
   const imageUrl = useSignedMediaUrl(imageKey);
   const cardTitle = title ?? (scene?.movie_title || "Unknown title");
   const pages = formatScriptScenePages(scene);

@@ -1,6 +1,7 @@
 import { HttpError } from "../utils/http-error.js";
 import * as annotationsRepository from "../repositories/annotations.repository.js";
-import { mapImageAnnotationRow, withAnnotationImageUrl } from "../serializers/annotations.serializer.js";
+import { mapImageAnnotationRow, withAnnotationImageUrls } from "../serializers/annotations.serializer.js";
+import { queueThumbnailsForRows } from "./thumbnails.service.js";
 
 function validateAnnotationPayload({ time_seconds, title, body, image_key }, { allowTitleBody = false } = {}) {
     return (
@@ -14,7 +15,7 @@ function validateAnnotationPayload({ time_seconds, title, body, image_key }, { a
 }
 
 async function toImageAnnotationResponse(row) {
-    return mapImageAnnotationRow(await withAnnotationImageUrl(row));
+    return mapImageAnnotationRow(await withAnnotationImageUrls(row));
 }
 
 export async function createAnnotation(db, movieId, body) {
@@ -38,11 +39,13 @@ export async function createAnnotation(db, movieId, body) {
         imageKey: image_key,
     });
 
+    queueThumbnailsForRows(db, [row]);
     return toImageAnnotationResponse(row);
 }
 
 export async function listAnnotations(db, movieId) {
     const rows = await annotationsRepository.listAnnotationsForMovie(db, movieId);
+    queueThumbnailsForRows(db, rows);
     return Promise.all(rows.map(toImageAnnotationResponse));
 }
 
@@ -68,6 +71,7 @@ export async function updateAnnotation(db, { movieId, annotationId, body }) {
         imageKey: image_key === undefined ? existing.image_key : image_key ?? null,
     });
 
+    queueThumbnailsForRows(db, [row]);
     return toImageAnnotationResponse(row);
 }
 
