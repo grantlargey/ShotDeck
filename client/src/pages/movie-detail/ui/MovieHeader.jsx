@@ -5,7 +5,7 @@ import { Skeleton } from "@/shared/ui";
 import styles from "./MovieDetailPage.module.css";
 
 /**
- * Full-width project hero. The first film still is the backdrop; without one,
+ * Full-width project hero. A random film still is the backdrop; without one,
  * a blurred copy of the cover stands in. Only credits that are filled in show.
  */
 export function MovieHeader({ movie, coverUrl, backdropUrl, actions }) {

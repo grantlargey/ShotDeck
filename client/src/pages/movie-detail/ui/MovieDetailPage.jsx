@@ -1,5 +1,5 @@
 // client/src/pages/movie-detail/ui/MovieDetailPage.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { sortAnnotationsByTime } from "@/entities/annotation";
 import { buildMovieSavePayload, createMovieEditForm, getMovieCoverUrl } from "@/entities/movie";
@@ -60,17 +60,30 @@ function parseStillTime(text, runtimeSeconds) {
   return seconds;
 }
 
-function StillFrameButton({ annotation, onOpen }) {
+/**
+ * A still in the grid. The callbacks take the still's id, so the page can pass
+ * stable setters and hovering one still doesn't re-render the rest.
+ */
+const StillFrameButton = memo(function StillFrameButton({ annotation, onHover, onOpen }) {
   const url = useSignedMediaUrl(annotation.image_key || null, annotation.image_url || null);
   const time = formatSecondsToHms(annotation.time_seconds);
 
   return (
-    <button type="button" className={styles.frame} onClick={onOpen} aria-label={`Open still at ${time}`}>
+    <button
+      type="button"
+      className={styles.frame}
+      onClick={() => onOpen(annotation.id)}
+      onMouseEnter={() => onHover(annotation.id)}
+      onMouseLeave={() => onHover(null)}
+      onFocus={() => onHover(annotation.id)}
+      onBlur={() => onHover(null)}
+      aria-label={`Open still at ${time}`}
+    >
       {url && <img src={url} alt="" loading="lazy" />}
       <span className={styles.frameTime}>{time}</span>
     </button>
   );
-}
+});
 
 export default function MovieDetailPage() {
   const nav = useNavigate();
@@ -83,6 +96,11 @@ export default function MovieDetailPage() {
 
   // The still the scene viewer opened on; null while it's closed.
   const [viewerStillId, setViewerStillId] = useState(null);
+  // The grid still under the pointer or keyboard focus, marked on the timeline.
+  const [hoveredStillId, setHoveredStillId] = useState(null);
+
+  // A random still backs the hero, picked when the page loads.
+  const [backdropStillId, setBackdropStillId] = useState(null);
 
   const [adding, setAdding] = useState(false);
   const [addForm, setAddForm] = useState({ time_hms: "" });
@@ -116,6 +134,7 @@ export default function MovieDetailPage() {
   /**
    * Reloads the project. The scene viewer stays open across reloads (moving to
    * the nearest still if its still was deleted) and closes once no stills remain.
+   * The hero keeps its random still across reloads unless that still was deleted.
    */
   async function load() {
     setErr("");
@@ -131,6 +150,9 @@ export default function MovieDetailPage() {
       setAnnotations(a);
       setScripts(Array.isArray(scriptRows) ? scriptRows : []);
       if (a.length === 0) setViewerStillId(null);
+      setBackdropStillId((prev) =>
+        a.some((row) => row.id === prev) ? prev : (a[Math.floor(Math.random() * a.length)]?.id ?? null)
+      );
 
       // Keep edit form in sync with loaded movie
       setEditForm(createMovieEditForm(m));
@@ -162,7 +184,8 @@ export default function MovieDetailPage() {
     return Number(movie.runtime_minutes) * 60;
   }, [movie]);
 
-  const backdropUrl = useSignedMediaUrl(annotations[0]?.image_key || null, annotations[0]?.image_url || null);
+  const backdropStill = annotations.find((row) => row.id === backdropStillId);
+  const backdropUrl = useSignedMediaUrl(backdropStill?.image_key || null, backdropStill?.image_url || null);
 
   function openAddDialog() {
     setAddForm({ time_hms: "" });
@@ -377,6 +400,7 @@ export default function MovieDetailPage() {
             <>
               <AnnotationTimeline
                 annotations={annotations}
+                highlightedIndex={annotations.findIndex((row) => row.id === hoveredStillId)}
                 onSelect={(index) => setViewerStillId(annotations[index]?.id ?? null)}
                 runtimeSeconds={runtimeSeconds}
                 selectedIndex={annotations.findIndex((row) => row.id === viewerStillId)}
@@ -384,7 +408,7 @@ export default function MovieDetailPage() {
               <ul className={styles.stillGrid}>
                 {annotations.map((annotation) => (
                   <li key={annotation.id}>
-                    <StillFrameButton annotation={annotation} onOpen={() => setViewerStillId(annotation.id)} />
+                    <StillFrameButton annotation={annotation} onHover={setHoveredStillId} onOpen={setViewerStillId} />
                   </li>
                 ))}
               </ul>
