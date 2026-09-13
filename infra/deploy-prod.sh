@@ -544,7 +544,6 @@ if [[ "$deploy_frontend" -eq 1 ]]; then
   aws s3 sync "$ROOT_DIR/client/dist/" "s3://$FRONTEND_BUCKET/" \
     --delete \
     --exclude "index.html" \
-    --exclude "vite.svg" \
     --cache-control "public,max-age=31536000,immutable" \
     --region "$AWS_REGION"
 
@@ -553,18 +552,11 @@ if [[ "$deploy_frontend" -eq 1 ]]; then
     --content-type "text/html; charset=utf-8" \
     --region "$AWS_REGION"
 
-  if [[ -f "$ROOT_DIR/client/dist/vite.svg" ]]; then
-    aws s3 cp "$ROOT_DIR/client/dist/vite.svg" "s3://$FRONTEND_BUCKET/vite.svg" \
-      --cache-control "public,max-age=300" \
-      --content-type "image/svg+xml" \
-      --region "$AWS_REGION"
-  fi
-
   if [[ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]]; then
     echo "[INFO] Invalidating CloudFront paths"
     aws cloudfront create-invalidation \
       --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
-      --paths "/" "/index.html" "/vite.svg" \
+      --paths "/" "/index.html" \
       --region "$AWS_REGION" >/dev/null
   fi
 

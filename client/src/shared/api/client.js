@@ -6,10 +6,10 @@ import { scriptScenesApi } from "./scriptScenes.js";
 import { viewUrlsApi } from "./viewUrls.js";
 
 /**
- * Backward-compatible facade used by page slices.
+ * Shared API entry point used by page slices and feature actions.
  *
  * Endpoint implementations are split by backend domain so the REST contract is
- * easier to scan and maintain, while callers can keep using `api.method()`.
+ * easier to scan and maintain. Callers access them through `api.method()`.
  */
 export const api = {
   ...screenplayFormatApi,

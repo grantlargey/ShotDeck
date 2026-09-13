@@ -1,6 +1,5 @@
 export {
   findNearestAnnotationIndex,
-  getAnnotationImageUrl,
   getTimelineBins,
   getTimelinePositionPercent,
   getTimelineScale,

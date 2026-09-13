@@ -74,10 +74,3 @@ export function getTimelineScale(runtimeSeconds) {
   const labels = ticks.filter((tick) => tick.major && runtime - tick.seconds >= step.label / 2);
   return { ticks, labels };
 }
-
-export function getAnnotationImageUrl(annotation, viewUrlByKey = {}) {
-  return (
-    annotation?.image_url ||
-    (annotation?.image_key ? viewUrlByKey[annotation.image_key] : null)
-  );
-}

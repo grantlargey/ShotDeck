@@ -29,7 +29,6 @@ export {
 export { Input, Select } from "./Input.jsx";
 export { LoadingState } from "./LoadingState.jsx";
 export { PageHeader } from "./PageHeader.jsx";
-export { Panel } from "./Panel.jsx";
 export { ScreenplayElementIcon } from "./ScreenplayElementIcon.jsx";
 export { ScreenplayView } from "./ScreenplayView.jsx";
 export { SectionHeading } from "./SectionHeading.jsx";

@@ -27,7 +27,7 @@ function FidelitySummary({ subject, fidelity }) {
   if (fidelity.exact) {
     return (
       <p className={styles.fidelityOk}>
-        {subject}: all {fidelity.baselineCount.toLocaleString()} captured words preserved
+        {subject}: {fidelity.baselineCount.toLocaleString()} captured words match by count; order isn't checked
       </p>
     );
   }
@@ -54,7 +54,8 @@ function FidelitySummary({ subject, fidelity }) {
 /**
  * Expanded draft editor. Edits apply to the draft immediately; an AI proposal
  * is shown side by side with the draft and only replaces it when accepted.
- * Both are checked word-for-word against the text captured from the PDF.
+ * Both are checked against the captured text by word count, ignoring word
+ * order, whitespace, and normalized punctuation styles.
  */
 export function DraftEditorModal({
   title,
@@ -167,7 +168,7 @@ export function DraftEditorModal({
           {proposalReady ? (
             <ScreenplayView source={proposalMarkdown} />
           ) : (
-            <p className={styles.loading}>Formatting with AI… long scenes can take up to a minute.</p>
+            <p className={styles.loading}>Formatting with AI… longer scenes take more time.</p>
           )}
         </SceneModalPaper>
       )}

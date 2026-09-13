@@ -1,13 +1,19 @@
+import { lazy, Suspense } from "react";
 import { matchPath, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { HomePage } from "@/pages/home";
 import { MovieDetailPage } from "@/pages/movie-detail";
 import { MovieFormPage } from "@/pages/movie-form";
 import { MoviesListPage } from "@/pages/movies-list";
 import { ScriptSearchPage } from "@/pages/script-search";
-import { ScriptViewerPage } from "@/pages/script-viewer";
+import { LoadingState } from "@/shared/ui";
 import { SiteHeader } from "@/widgets/site-header";
 import { ErrorBoundary } from "./ErrorBoundary.jsx";
 import page from "./styles/page.module.css";
+
+// Load the PDF renderer and editor when their route is opened.
+const ScriptViewerPage = lazy(() =>
+  import("@/pages/script-viewer").then((module) => ({ default: module.ScriptViewerPage }))
+);
 
 const SCRIPT_VIEWER_PATH = "/movies/:movieId/scripts/:scriptId";
 const FULL_BLEED_PATHS = ["/", "/script-search", SCRIPT_VIEWER_PATH];
@@ -33,7 +39,14 @@ export default function App() {
             <Route path="/movies/new" element={<MovieFormPage mode="create" />} />
             <Route path="/movies/:id/edit" element={<MovieFormPage mode="edit" />} />
             <Route path="/movies/:id" element={<MovieDetailPage />} />
-            <Route path="/movies/:movieId/scripts/:scriptId" element={<ScriptViewerPage />} />
+            <Route
+              path={SCRIPT_VIEWER_PATH}
+              element={
+                <Suspense fallback={<LoadingState>Loading script viewer…</LoadingState>}>
+                  <ScriptViewerPage />
+                </Suspense>
+              }
+            />
             <Route path="/script-search" element={<ScriptSearchPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
