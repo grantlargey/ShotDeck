@@ -520,7 +520,6 @@ function ScriptViewerPage() {
           runtimeSeconds={runtimeSeconds}
           onTimeChange={(field, value) => dispatch({ type: "setTime", field, value })}
           onTimeBlur={normalizeTime}
-          capture={capture}
           markdown={markdown}
           textOrigin={draft.textOrigin}
           captureStale={captureStale}

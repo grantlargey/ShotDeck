@@ -236,52 +236,6 @@
   margin-top: 10px;
 }
 
-.details {
-  margin-top: 12px;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-}
-
-.details summary {
-  cursor: pointer;
-}
-
-.detailsList {
-  margin: 8px 0 0;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 14px;
-}
-
-.detailsList dd {
-  margin: 0;
-  color: var(--color-text);
-  font-variant-numeric: tabular-nums;
-}
-
-.context {
-  max-height: 84px;
-  margin: 10px 0 0;
-  padding: 8px 10px;
-  overflow-y: auto;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-soft);
-  font-family: var(--font-script);
-  white-space: pre-wrap;
-}
-
-.context span {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--color-text-muted);
-  font-family: var(--font-sans);
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 /* ---------- Tags ---------- */
 
 .chipList {

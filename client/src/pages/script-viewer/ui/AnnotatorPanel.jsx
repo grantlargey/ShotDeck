@@ -116,7 +116,6 @@ function CaptureTab({
   runtimeSeconds,
   onTimeChange,
   onTimeBlur,
-  capture,
   markdown,
   textOrigin,
   captureStale,
@@ -267,40 +266,6 @@ function CaptureTab({
           <Callout tone="error" className={styles.callout} action="Dismiss" onAction={onDiscardProposal}>
             {proposal.error}
           </Callout>
-        )}
-
-        {capture && (
-          <details className={styles.details}>
-            <summary>Range details</summary>
-            <dl className={styles.detailsList}>
-              <dt>Pages</dt>
-              <dd>
-                {capture.pageStart === capture.pageEnd
-                  ? capture.pageStart
-                  : `${capture.pageStart}–${capture.pageEnd}`}
-              </dd>
-              <dt>Offsets</dt>
-              <dd>
-                {capture.startOffset === null
-                  ? "Available once indexing finishes"
-                  : `${capture.startOffset.toLocaleString()}–${capture.endOffset.toLocaleString()}`}
-              </dd>
-              <dt>Words</dt>
-              <dd>{capture.wordCount.toLocaleString()}</dd>
-            </dl>
-            {capture.contextPrefix && (
-              <p className={styles.context}>
-                <span>Before</span>
-                {capture.contextPrefix}
-              </p>
-            )}
-            {capture.contextSuffix && (
-              <p className={styles.context}>
-                <span>After</span>
-                {capture.contextSuffix}
-              </p>
-            )}
-          </details>
         )}
       </section>
     </>

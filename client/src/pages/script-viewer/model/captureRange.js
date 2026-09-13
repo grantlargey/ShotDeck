@@ -50,7 +50,6 @@ export function captureAnchoredRange(textIndex, anchors) {
     key: anchorPairKey(anchors),
     markdown: serializeScreenplayMarkdown(elements),
     plainText,
-    wordCount: plainText ? plainText.split(/\s+/).filter(Boolean).length : 0,
     pageStart: start.page,
     pageEnd: end.page,
     startOffset: Number.isInteger(startPageOffset) ? startPageOffset + startLine.offset : null,
