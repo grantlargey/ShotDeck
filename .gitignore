@@ -10,10 +10,8 @@ node_modules/
 **/.env
 **/.env.*
 
-# Local Codex reference notes
-CODEX_LOCAL_REFERENCE.md
-server/BACKEND_LEARNING_GUIDE.md
-client/FRONTEND_LEARNING_GUIDE.md
+# Local docs
+docs/
 
 # ShotDeck import artifacts
 /data/sd/
