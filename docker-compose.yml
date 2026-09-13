@@ -6,11 +6,18 @@ services:
       POSTGRES_PASSWORD: app
       POSTGRES_DB: shotdeck
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
 
   api:
+    profiles: [container-api]
     build: ./server
     env_file:
       - ./server/.env
@@ -20,7 +27,8 @@ services:
     ports:
       - "4000:4000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

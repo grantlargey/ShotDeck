@@ -23,7 +23,9 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 - `server/src/serializers/` - API response shaping, including signed S3 view URLs.
 - `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code.
 - `server/sql/schema.sql` - Postgres schema.
-- `docker-compose.yml` - Local Postgres and API services.
+- `package.json` - Root development and database commands.
+- `.nvmrc` - Pinned local Node.js version, matching the server Docker image.
+- `docker-compose.yml` - Local Postgres and an optional containerized API.
 - `infra/` - Deployment utilities.
 
 ## Backend Architecture
@@ -72,9 +74,9 @@ The script-viewer route is loaded on demand so the PDF renderer and editor are k
 
 ## Requirements
 
-- Node.js compatible with the installed Vite toolchain: `^20.19.0 || >=22.12.0`. Use a maintained Node release; the cleanup checks were run on Node 24.
+- Node.js 24.13.1, pinned in `.nvmrc` and `server/Dockerfile`. With nvm installed, run `nvm install` and `nvm use` from the repository root.
 - npm
-- Docker Desktop, if using the local Postgres container
+- Docker Desktop running, or Docker Engine with Compose v2 supporting `up --wait` and `--wait-timeout`
 - AWS credentials and S3 settings for media upload features
 
 ## Local Development
@@ -82,38 +84,48 @@ The script-viewer route is loaded on demand so the PDF renderer and editor are k
 From the repository root, install the locked dependencies:
 
 ```bash
-npm ci --prefix client
-npm ci --prefix server
+npm ci
+npm run setup
 ```
 
 Create `server/.env` with the environment settings described below. For local development, set `DATABASE_URL=postgres://app:app@127.0.0.1:5432/shotdeck`; Compose overrides the database hostname for its API container. Fill in the server's S3 settings and credentials if you need media features. The frontend defaults to the local API; create `client/.env` only if you need to override its URL.
 
-Start Postgres and the API from the repository root:
+Start all three development services from the repository root:
 
 ```bash
-docker compose up --build
+npm run dev
 ```
 
-In another terminal, apply the database schema to the local Compose database:
+This starts the Postgres container, waits up to 60 seconds for its health check, then runs the API with nodemon and the client with Vite on the host. API and client logs share the terminal with `api` and `web` labels. If database startup fails, neither application starts.
+
+The frontend runs on `http://localhost:5173` and the API defaults to `http://localhost:4000`. Vite exits if port `5173` is occupied instead of selecting another port. Both applications reload as their source changes.
+
+Press Ctrl+C to stop the API and client. Postgres stays running between sessions, with data retained in the existing `pgdata` volume. To stop it or inspect its logs:
 
 ```bash
-DATABASE_URL=postgres://app:app@127.0.0.1:5432/shotdeck node server/src/migrate.js
+npm run db:stop
+npm run db:logs
 ```
 
-Alternatively, start only Postgres and run the API directly on the host:
+Schema changes are applied explicitly using the commands in [Database](#database); `npm run dev` does not run migrations. Apply the schema before using a fresh database.
+
+### Optional Containerized API
+
+To run the API in Docker, stop any host API first, then run:
 
 ```bash
-docker compose up -d db
-npm run dev --prefix server
+docker compose --profile container-api up --build
 ```
 
-Start the frontend:
+Start the frontend in another terminal:
 
 ```bash
 npm run dev --prefix client
 ```
 
-By default, the frontend runs on `http://localhost:5173` and the API listens on port `4000`.
+The API container waits for Postgres to become healthy. Its source is copied into the image, so API source changes require rebuilding it. Plain `docker compose up` starts only Postgres; the API requires the `container-api` profile or an explicit service target.
+
+Before returning to `npm run dev`, stop the containerized API with `docker compose --profile container-api stop api` to free port `4000`.
 
 ## Environment
 
@@ -141,7 +153,7 @@ Client configuration:
 
 Restart the Vite dev server after changing client environment files, or rebuild for a deployed frontend. Vite embeds these values in browser assets, so they must not contain secrets.
 
-When running with `docker-compose.yml`, the API service uses the Compose Postgres host:
+When running the optional API container, Compose overrides `DATABASE_URL` to use the Postgres service hostname:
 
 ```text
 postgres://app:app@db:5432/shotdeck
@@ -155,18 +167,29 @@ postgres://app:app@127.0.0.1:5432/shotdeck
 
 ## Database
 
-The schema lives in `server/sql/schema.sql`. Apply it with:
+The schema lives in `server/sql/schema.sql`. Start Postgres and apply it from the repository root:
 
 ```bash
-cd server
-node src/migrate.js
+npm run db:up
+npm run db:migrate
 ```
 
-The migration script reads `DATABASE_URL`, applies the schema and incremental alterations, and imports unmatched legacy script annotations through the shared Postgres pool. It currently has no migration-history ledger, so changes to legacy migration behavior require checking existing database state.
+The migration script reads `DATABASE_URL` from the shell or `server/.env`; use the local connection string above when targeting the Compose database. It applies the schema and incremental alterations, and imports unmatched legacy script annotations through the shared Postgres pool. It currently has no migration-history ledger, so changes to legacy migration behavior require checking existing database state.
 
 ## Available Scripts
 
-Client:
+From the repository root:
+
+| Command | Purpose |
+| --- | --- |
+| `npm run setup` | Install locked server and client dependencies after `npm ci` at the root. |
+| `npm run dev` | Start Postgres, wait for readiness, and run the API and client locally. |
+| `npm run db:up` | Start Postgres and wait for readiness. |
+| `npm run db:stop` | Stop Postgres while retaining its data. |
+| `npm run db:logs` | Follow Postgres logs. |
+| `npm run db:migrate` | Apply the schema and existing migration logic using `DATABASE_URL`. |
+
+Client (from `client/`, or append `--prefix client` from the root):
 
 ```bash
 npm run dev
@@ -175,7 +198,7 @@ npm run lint
 npm run preview
 ```
 
-Server:
+Server (from `server/`, or append `--prefix server` from the root):
 
 ```bash
 npm run dev
