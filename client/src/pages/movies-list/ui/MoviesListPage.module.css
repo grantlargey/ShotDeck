@@ -10,6 +10,15 @@
   grid-column: span 3;
 }
 
+/* On wider screens the selects sit directly in the toolbar grid. */
+.filters {
+  display: contents;
+}
+
+.toolbar .filtersToggle {
+  display: none;
+}
+
 .notice {
   margin-bottom: 16px;
 }
@@ -24,28 +33,36 @@
   }
 }
 
-/*
- * Half-width selects clip the longest labels ("All cinematographers",
- * "Cinematographer A–Z") on phones, so wrap instead: search and the last
- * filter get full rows, and year shrinks to its content beside sort.
- */
+/* Phones: search and a Filters toggle share one row; the selects open beneath. */
 @media (max-width: 600px) {
   .toolbar {
     display: flex;
     flex-wrap: wrap;
   }
 
-  .toolbar > * {
-    flex: 1 1 40%;
+  .search {
+    flex: 1;
+    min-width: 0;
   }
 
-  .toolbar .search,
-  .toolbar > :last-child {
-    flex-basis: 100%;
-  }
-
-  .toolbar .year {
+  .toolbar .filtersToggle {
     flex: none;
-    width: auto;
+    display: inline-flex;
+  }
+
+  .filters {
+    width: 100%;
+    display: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .filtersOpen {
+    display: grid;
+  }
+
+  /* The longest labels ("All cinematographers") get a full row. */
+  .filters > :last-child {
+    grid-column: 1 / -1;
   }
 }

@@ -1,0 +1,114 @@
+.zone {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px dashed var(--color-line-control);
+  border-radius: var(--radius-lg);
+  background: var(--color-well);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.zone:hover:not(.disabled) {
+  border-color: var(--color-line-strong);
+}
+
+.dragging,
+.dragging:hover:not(.disabled) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.trigger {
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  padding: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.trigger:focus-visible {
+  outline-offset: -3px;
+}
+
+.body {
+  max-width: 100%;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.icon {
+  color: var(--color-text-muted);
+}
+
+/* Wraps to two lines in narrow zones; long file names break anywhere. */
+.title {
+  max-width: 100%;
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.native {
+  display: none;
+}
+
+/* With a preview, the image fills the zone and the label sits on a scrim at the bottom. */
+.withPreview {
+  border-style: solid;
+  border-color: var(--color-line);
+}
+
+.withPreview .trigger {
+  position: relative;
+  padding: 0;
+  place-items: end stretch;
+}
+
+.preview {
+  position: absolute;
+  inset: 0;
+}
+
+.preview > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.withPreview .body {
+  position: relative;
+  width: 100%;
+  padding: 32px 12px 12px;
+  background: linear-gradient(transparent, var(--color-scrim));
+}
+
+.withPreview .hint {
+  color: var(--color-text-soft);
+}

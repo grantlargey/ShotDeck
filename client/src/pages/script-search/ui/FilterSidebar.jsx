@@ -1,5 +1,5 @@
 import { TagCategoryList } from "@/entities/script-scene";
-import { Button, CloseIcon, IconButton, Input, SearchIcon, SegmentedControl } from "@/shared/ui";
+import { Button, CloseIcon, IconButton, SegmentedControl } from "@/shared/ui";
 import styles from "./ScriptSearchPage.module.css";
 
 const MATCH_OPTIONS = [
@@ -27,15 +27,7 @@ export default function FilterSidebar({
         aria-label="Scene filters"
       >
         <div className={styles.sidebarTop}>
-          <Input
-            icon={<SearchIcon />}
-            className={styles.searchField}
-            type="search"
-            disabled
-            placeholder="Search coming soon"
-            aria-label="Search scenes (coming soon)"
-          />
-          <IconButton label="Close filters" className={styles.sidebarClose} onClick={onClose}>
+          <IconButton label="Close filters" onClick={onClose}>
             <CloseIcon size={18} />
           </IconButton>
         </div>

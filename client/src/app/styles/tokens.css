@@ -39,8 +39,9 @@
   --color-accent-soft: rgba(var(--accent-rgb), 0.12);
   --color-accent-line: rgba(var(--accent-rgb), 0.35);
   --color-on-accent: #0b0d13;
-  --gradient-accent: linear-gradient(135deg, #458bff 0%, #2f67eb 100%);
-  --gradient-accent-hover: linear-gradient(135deg, #5a99ff 0%, #3b72ef 100%);
+  /* Flat fills for primary actions; white text stays above 4.5:1 in both states. */
+  --color-primary: #2f67eb;
+  --color-primary-hover: #2659d9;
 
   /* Status tones: text, soft fill, border */
   --color-info: #cfe0ff;
@@ -84,6 +85,8 @@
   --shadow-card: 0 14px 30px rgba(0, 0, 0, 0.45);
   --shadow-popover: 0 18px 48px rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.6);
+  /* Keeps light text legible where it sits directly on artwork. */
+  --shadow-text: 0 2px 18px rgba(0, 0, 0, 0.45);
   --transition-fast: 0.16s ease;
 
   /* Layout */

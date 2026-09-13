@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { cx } from "@/shared/lib/cx";
-import { Button } from "@/shared/ui";
+import { BrandLogo, Button, PlusIcon } from "@/shared/ui";
 import styles from "./SiteHeader.module.css";
 
 const NAV_LINKS = [
@@ -22,8 +22,7 @@ export default function SiteHeader() {
     <header className={cx(styles.navbar, isExplore && styles.navbarOverlay)}>
       <div className={styles.navbarInner}>
         <Link className={styles.brand} to="/">
-          <span className={styles.logo} aria-hidden="true" />
-          <span className={styles.brandText}>ScriptDeck</span>
+          <BrandLogo />
         </Link>
 
         <nav className={styles.primaryNav} aria-label="Primary">
@@ -49,7 +48,8 @@ export default function SiteHeader() {
           className={cx(styles.cta, isNew && styles.ctaActive)}
           aria-current={isNew ? "page" : undefined}
         >
-          + New Project
+          <PlusIcon size={14} />
+          New Project
         </Button>
       </div>
     </header>

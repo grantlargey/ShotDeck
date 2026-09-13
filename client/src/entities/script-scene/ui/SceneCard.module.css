@@ -31,13 +31,56 @@
     var(--shadow-card);
 }
 
+/* ---------- Film still (split layout) ---------- */
+
+.still {
+  position: relative;
+  flex: none;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--color-bg-deep);
+}
+
+.stillImage {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transition: transform 0.24s ease;
+}
+
+.card:hover .stillImage {
+  transform: scale(1.03);
+}
+
+.stillEmpty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+
+/* ---------- Script paper ---------- */
+
+/* Grows to fill the card when a neighbouring card in the row is taller. */
 .paper {
   position: relative;
-  height: 196px;
+  flex: 1 0 196px;
   padding: 14px 14px 0;
   overflow: hidden;
   background: var(--color-paper);
   color: var(--color-ink);
+}
+
+/* Half and half: the paper matches the still above it. */
+.split .paper {
+  flex: none;
+  aspect-ratio: 16 / 9;
 }
 
 .paper::after {
@@ -55,12 +98,19 @@
   font-style: italic;
 }
 
+/* ---------- Metadata ---------- */
+
 .meta {
-  flex: 1;
+  flex: none;
   padding: 12px 14px 14px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* With fixed-size halves, the metadata absorbs any extra row height instead. */
+.split .meta {
+  flex: 1;
 }
 
 .titleRow {
@@ -98,14 +148,42 @@
   gap: 6px 8px;
 }
 
-.imageBadge {
-  margin-left: auto;
-}
-
 .tags {
   margin-top: auto;
   padding-top: 4px;
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+}
+
+/* ---------- Loading placeholder ---------- */
+
+.skeletonCard {
+  pointer-events: none;
+}
+
+.skeletonStill {
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+
+.skeletonPaper {
+  height: 196px;
+  border-radius: 0;
+}
+
+.split .skeletonPaper {
+  height: auto;
+  aspect-ratio: 16 / 9;
+  opacity: 0.6;
+}
+
+.skeletonTitle {
+  width: 60%;
+  height: 11px;
+}
+
+.skeletonLine {
+  width: 40%;
+  height: 10px;
 }

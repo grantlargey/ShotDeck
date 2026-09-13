@@ -187,16 +187,44 @@ export function isDraftDirty(draft, markdown) {
 }
 
 /**
+ * Explains what's wrong with a scene's film timing, or returns "" when it's
+ * fine. While typing, pass `{ checkFormat: false }` so half-typed times aren't
+ * flagged; saving uses `{ requireBoth: true }`. A runtime of 0 means unknown.
+ */
+export function getTimingError(startTime, endTime, runtimeSeconds, { checkFormat = true, requireBoth = false } = {}) {
+  const startText = String(startTime ?? "").trim();
+  const endText = String(endTime ?? "").trim();
+  const start = parseTimeInputToSeconds(startText);
+  const end = parseTimeInputToSeconds(endText);
+
+  if (checkFormat && ((startText && start === null) || (endText && end === null))) {
+    return "Use HH:MM:SS (or MM:SS) for the start and end times.";
+  }
+  if (requireBoth && (start === null || end === null)) {
+    return "Enter a start and an end time for this scene.";
+  }
+  if (start !== null && end !== null && end < start) {
+    return "The end time must be at or after the start time.";
+  }
+  const runtime = Number(runtimeSeconds);
+  if (Number.isFinite(runtime) && runtime > 0 && ((start ?? 0) > runtime || (end ?? 0) > runtime)) {
+    return `Times can't be later than the film's runtime (${formatSecondsToHms(runtime)}).`;
+  }
+  return "";
+}
+
+/**
  * Validates the draft and shapes the API payload. Location fields come from
  * the live capture when the user has placed anchors; otherwise a saved scene
  * keeps its stored location.
  */
-export function buildScenePayload({ draft, capture, markdown }) {
+export function buildScenePayload({ draft, capture, markdown, runtimeSeconds = 0 }) {
+  const timingError = getTimingError(draft.startTime, draft.endTime, runtimeSeconds, { requireBoth: true });
+  if (timingError) {
+    return { error: timingError };
+  }
   const start = parseTimeInputToSeconds(draft.startTime);
   const end = parseTimeInputToSeconds(draft.endTime);
-  if (start === null || end === null || end < start) {
-    return { error: "Start and end time must use HH:MM:SS (or MM:SS), with the end at or after the start." };
-  }
   if (!markdown.trim()) {
     return { error: "Place start and end anchors in the script to capture the scene text." };
   }

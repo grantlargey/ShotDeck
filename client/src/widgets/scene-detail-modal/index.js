@@ -1,8 +1,9 @@
 export {
   SceneDetailModal,
-  SceneFirstImageThumb,
   SceneModalActions,
   SceneModalButton,
   SceneModalPaper,
-  SceneModalTagGroups,
+  SceneModalStill,
+  SceneModalTags,
+  SceneModalViewToggle,
 } from "./ui/SceneDetailModal.jsx";

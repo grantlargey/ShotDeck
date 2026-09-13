@@ -1,7 +1,8 @@
 import { cx } from "@/shared/lib/cx";
+import { useSignedMediaUrl } from "@/shared/lib/media";
 import { getScreenplaySceneHeading } from "@/shared/lib/screenplay";
 import { formatSecondsToHms } from "@/shared/lib/time";
-import { Badge, ScreenplayView } from "@/shared/ui";
+import { Badge, ImageIcon, ScreenplayView, Skeleton } from "@/shared/ui";
 import {
   displayScriptSceneText,
   formatScriptScenePages,
@@ -21,13 +22,17 @@ function formatTiming(scene) {
 }
 
 /**
- * Scene preview card: a slice of script paper rendered in screenplay layout,
- * above title, timing, and tag metadata. Shared by script search and the
- * script viewer, which wire click / double-click differently.
+ * Scene preview card: a slice of script paper in screenplay layout above
+ * title, timing, and tag metadata. Shared by script search and the script
+ * viewer, which wire click / double-click differently.
+ *
+ * layout: "script" (paper only) | "split" (the scene's first film still over
+ * an equal slice of paper, with a placeholder when no still falls in the scene)
  */
 export function SceneCard({
   scene,
   title,
+  layout = "script",
   status,
   selected = false,
   tooltip,
@@ -36,10 +41,12 @@ export function SceneCard({
   onDoubleClick,
   onKeyActivate,
 }) {
+  const split = layout === "split";
   const text = displayScriptSceneText(scene);
   const heading = getScreenplaySceneHeading(text);
   const tags = safeScriptSceneTags(scene?.tags);
-  const hasImage = Boolean(scene?.first_image_annotation?.id);
+  const imageKey = split ? scene?.first_image_annotation?.image_key || null : null;
+  const imageUrl = useSignedMediaUrl(imageKey);
   const cardTitle = title ?? (scene?.movie_title || "Unknown title");
   const pages = formatScriptScenePages(scene);
 
@@ -54,7 +61,7 @@ export function SceneCard({
     <div
       role="button"
       tabIndex={0}
-      className={cx(styles.card, selected && styles.selected)}
+      className={cx(styles.card, split && styles.split, selected && styles.selected)}
       aria-pressed={onKeyActivate ? selected : undefined}
       aria-haspopup={hasPopup ? "dialog" : undefined}
       aria-label={[cardTitle, pages, heading].filter(Boolean).join(", ")}
@@ -63,6 +70,19 @@ export function SceneCard({
       onDoubleClick={onDoubleClick}
       onKeyDown={handleKeyDown}
     >
+      {split && (
+        <div className={styles.still}>
+          {imageKey ? (
+            imageUrl && <img className={styles.stillImage} src={imageUrl} alt="" loading="lazy" />
+          ) : (
+            <span className={styles.stillEmpty}>
+              <ImageIcon size={18} />
+              No still in this scene
+            </span>
+          )}
+        </div>
+      )}
+
       <div className={styles.paper}>
         {text.trim() ? (
           <ScreenplayView source={text} variant="card" maxElements={MAX_PREVIEW_ELEMENTS} />
@@ -79,11 +99,6 @@ export function SceneCard({
         <div className={styles.subRow}>
           <span>{formatTiming(scene)}</span>
           {status && <Badge tone="success">{status}</Badge>}
-          {hasImage && (
-            <Badge tone="accent" className={styles.imageBadge}>
-              Image
-            </Badge>
-          )}
         </div>
         {tags.length > 0 && (
           <div className={styles.tags}>
@@ -93,6 +108,21 @@ export function SceneCard({
             {tags.length > MAX_CARD_TAGS && <Badge>+{tags.length - MAX_CARD_TAGS}</Badge>}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder with the card's shape, shown while scenes load. */
+export function SceneCardSkeleton({ layout = "script" }) {
+  const split = layout === "split";
+  return (
+    <div className={cx(styles.card, split && styles.split, styles.skeletonCard)} aria-hidden="true">
+      {split && <Skeleton className={styles.skeletonStill} />}
+      <Skeleton className={styles.skeletonPaper} />
+      <div className={styles.meta}>
+        <Skeleton className={styles.skeletonTitle} />
+        <Skeleton className={styles.skeletonLine} />
       </div>
     </div>
   );

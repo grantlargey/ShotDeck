@@ -1,10 +1,11 @@
 import { MovieDetailsFields } from "@/entities/movie";
-import { Button, Panel } from "@/shared/ui";
+import { Button, SectionHeading } from "@/shared/ui";
 import styles from "./MovieDetailPage.module.css";
 
 export function MovieEditPanel({ editForm, setEditForm, onCancel, onSave }) {
   return (
-    <Panel title="Edit details">
+    <section aria-labelledby="project-edit-heading">
+      <SectionHeading id="project-edit-heading" title="Edit details" />
       <MovieDetailsFields
         values={editForm}
         onChange={(field, value) => setEditForm((f) => ({ ...f, [field]: value }))}
@@ -16,6 +17,6 @@ export function MovieEditPanel({ editForm, setEditForm, onCancel, onSave }) {
           Save changes
         </Button>
       </div>
-    </Panel>
+    </section>
   );
 }

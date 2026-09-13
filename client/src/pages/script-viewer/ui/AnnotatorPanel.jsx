@@ -12,9 +12,11 @@ import {
   Field,
   IconButton,
   Input,
+  PlusIcon,
   SegmentedControl,
 } from "@/shared/ui";
 import { undoShortcutLabel } from "../lib/platform.js";
+import { getTimingError } from "../model/sceneDraft.js";
 import styles from "./AnnotatorPanel.module.css";
 
 const ORIGIN_BADGES = {
@@ -111,6 +113,7 @@ function CaptureTab({
   onEditOverlapScene,
   startTime,
   endTime,
+  runtimeSeconds,
   onTimeChange,
   onTimeBlur,
   capture,
@@ -130,6 +133,7 @@ function CaptureTab({
   const hasAnchors = Boolean(anchors.start || anchors.end);
   const hasText = Boolean(markdown.trim());
   const originBadge = ORIGIN_BADGES[textOrigin];
+  const timingError = getTimingError(startTime, endTime, runtimeSeconds, { checkFormat: false });
 
   return (
     <>
@@ -203,6 +207,11 @@ function CaptureTab({
             onBlur={() => onTimeBlur("endTime")}
           />
         </div>
+        {timingError && (
+          <Callout tone="error" className={styles.callout}>
+            {timingError}
+          </Callout>
+        )}
       </section>
 
       <section className={styles.section} aria-labelledby="annotator-text">
@@ -378,7 +387,8 @@ export function AnnotatorPanel(props) {
           <h2 className={styles.title}>{sceneLabel}</h2>
         </div>
         <Button size="sm" onClick={onNewScene}>
-          + New scene
+          <PlusIcon size={14} />
+          New scene
         </Button>
       </header>
 

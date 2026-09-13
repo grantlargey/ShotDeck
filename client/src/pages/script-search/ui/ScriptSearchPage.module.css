@@ -33,22 +33,13 @@
   display: none;
 }
 
+/* Only the mobile drawer needs the top row, which holds its close button. */
 .sidebarTop {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.searchField {
-  flex: 1;
-}
-
-.sidebarTop .sidebarClose {
   display: none;
 }
 
 .filterHeader {
-  margin: 22px 0 12px;
+  margin: 4px 0 12px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -92,6 +83,14 @@
   margin: 0;
   font-size: var(--text-base);
   font-weight: 600;
+}
+
+/* Card view toggle and sort, kept together at the right of the toolbar. */
+.toolbarControls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
 }
 
 .sortControl {
@@ -173,8 +172,10 @@
     background: var(--color-scrim);
   }
 
-  .sidebarTop .sidebarClose {
-    display: inline-grid;
+  .sidebarTop {
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: flex-end;
   }
 
   .toolbar .filtersButton {

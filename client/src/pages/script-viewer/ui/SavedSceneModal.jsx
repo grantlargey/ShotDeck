@@ -1,19 +1,21 @@
-import {
-  displayScriptSceneText,
-  formatScriptScenePages,
-  groupScriptTagsByCategory,
-} from "@/entities/script-scene";
+import { useState } from "react";
+import { displayScriptSceneText, formatScriptScenePages, getSceneFirstStill } from "@/entities/script-scene";
 import { formatSecondsToHms } from "@/shared/lib/time";
 import { ScreenplayView } from "@/shared/ui";
 import {
   SceneDetailModal,
-  SceneFirstImageThumb,
   SceneModalActions,
   SceneModalButton,
   SceneModalPaper,
-  SceneModalTagGroups,
+  SceneModalStill,
+  SceneModalTags,
+  SceneModalViewToggle,
 } from "@/widgets/scene-detail-modal";
 
+/**
+ * Expanded saved scene in the script viewer. Opens on the script; the scene's
+ * first still can replace it in the same stage, and tags sit beneath.
+ */
 export function SavedSceneModal({
   scene,
   index,
@@ -24,9 +26,12 @@ export function SavedSceneModal({
   onClose,
   onOpenScene,
   onOpenFirstImage,
+  onSelectTag,
   onDelete,
 }) {
-  const firstImage = scene.first_image_annotation;
+  const [view, setView] = useState("script");
+  const firstStill = getSceneFirstStill(scene);
+  const showStill = view === "still" && Boolean(firstStill);
 
   return (
     <SceneDetailModal
@@ -35,43 +40,40 @@ export function SavedSceneModal({
         scene.end_time_seconds
       )}`}
       counter={`${index + 1} / ${total}`}
+      toolbar={<SceneModalViewToggle value={view} onChange={setView} hasStill={Boolean(firstStill)} />}
       hasPrev={index > 0}
       hasNext={index < total - 1}
       onStep={onStep}
       onClose={onClose}
-      stageKey={scene.id}
+      stageKey={`${scene.id}:${showStill ? "still" : "script"}`}
       footer={
         <>
-          <SceneModalTagGroups groups={groupScriptTagsByCategory(scene.tags)} />
+          <SceneModalTags scene={scene} onSelectTag={onSelectTag} />
           <SceneModalActions>
-            <SceneFirstImageThumb scene={scene} onOpen={onOpenFirstImage} />
             <SceneModalButton variant="danger" disabled={deleting} onClick={() => onDelete(scene)}>
               {deleting ? "Deleting…" : "Delete"}
             </SceneModalButton>
-            <SceneModalButton
-              disabled={!firstImage?.id}
-              title={
-                firstImage?.id
-                  ? `Open first image annotation at ${formatSecondsToHms(firstImage.time_seconds)}`
-                  : "No image annotation falls inside this scene's timeframe."
-              }
-              onClick={() => onOpenFirstImage(scene)}
-            >
-              Open First Image
-            </SceneModalButton>
+            {firstStill && (
+              <SceneModalButton onClick={() => onOpenFirstImage(scene)}>Open first still</SceneModalButton>
+            )}
             <SceneModalButton variant="primary" onClick={() => onOpenScene(scene)}>
-              Open Scene
+              Edit scene
             </SceneModalButton>
           </SceneModalActions>
         </>
       }
     >
-      <SceneModalPaper>
-        <ScreenplayView
-          source={displayScriptSceneText(scene)}
-          emptyText="No script text captured for this scene."
-        />
-      </SceneModalPaper>
+      {showStill ? (
+        <SceneModalStill scene={scene} />
+      ) : (
+        <SceneModalPaper>
+          <ScreenplayView
+            variant="reader"
+            source={displayScriptSceneText(scene)}
+            emptyText="No script text captured for this scene."
+          />
+        </SceneModalPaper>
+      )}
     </SceneDetailModal>
   );
 }

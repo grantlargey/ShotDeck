@@ -9,16 +9,21 @@ import { SiteHeader } from "@/widgets/site-header";
 import { ErrorBoundary } from "./ErrorBoundary.jsx";
 import page from "./styles/page.module.css";
 
-const FULL_BLEED_PATHS = ["/", "/script-search", "/movies/:movieId/scripts/:scriptId"];
+const SCRIPT_VIEWER_PATH = "/movies/:movieId/scripts/:scriptId";
+const FULL_BLEED_PATHS = ["/", "/script-search", SCRIPT_VIEWER_PATH];
 
 export default function App() {
   const { pathname } = useLocation();
-  const isFullBleed = FULL_BLEED_PATHS.some((path) => matchPath(path, pathname));
+  // The project page draws its own full-width hero; "/movies/new" also matches ":id".
+  const isProjectPage = pathname !== "/movies/new" && Boolean(matchPath("/movies/:id", pathname));
+  const isFullBleed = isProjectPage || FULL_BLEED_PATHS.some((path) => matchPath(path, pathname));
   const mainClassName = isFullBleed ? page.mainFullBleed : page.main;
+  // The script viewer brings its own compact bar so the script gets the height.
+  const showSiteHeader = !matchPath(SCRIPT_VIEWER_PATH, pathname);
 
   return (
     <>
-      <SiteHeader />
+      {showSiteHeader && <SiteHeader />}
 
       <main className={mainClassName}>
         <ErrorBoundary resetKey={pathname}>

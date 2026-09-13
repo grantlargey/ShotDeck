@@ -6,15 +6,18 @@ import { movieActions } from "@/features/movie-actions";
 import { saveScriptPdf } from "@/features/script-actions";
 import { uploadMediaFile } from "@/features/upload-media";
 import { api } from "@/shared/api";
+import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
+import { useFilePreviewUrl } from "@/shared/lib/media";
 import { parseTimeInputToMinutes } from "@/shared/lib/time";
-import { Button, Callout, Field, FileInput, PageHeader, Panel } from "@/shared/ui";
+import { Badge, Button, Callout, FileDropzone, PageHeader, SectionHeading } from "@/shared/ui";
 import styles from "./MovieFormPage.module.css";
 
 export default function MovieFormPage({ mode }) {
   const { id } = useParams();
   const nav = useNavigate();
   const isEdit = mode === "edit";
+  useDocumentTitle(isEdit ? "Edit project" : "New project");
 
   const [form, setForm] = useState({
     title: "",
@@ -30,19 +33,8 @@ export default function MovieFormPage({ mode }) {
 
   const [coverFile, setCoverFile] = useState(null);
   const [scriptFile, setScriptFile] = useState(null);
-  const [coverPreviewUrl, setCoverPreviewUrl] = useState("");
   const [existingCoverUrl, setExistingCoverUrl] = useState("");
-
-  // local preview like old base64 preview
-  useEffect(() => {
-    if (!coverFile) {
-      setCoverPreviewUrl("");
-      return;
-    }
-    const url = URL.createObjectURL(coverFile);
-    setCoverPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [coverFile]);
+  const coverPreviewUrl = useFilePreviewUrl(coverFile);
 
   useEffect(() => {
     if (mode !== "edit") return;
@@ -150,42 +142,48 @@ export default function MovieFormPage({ mode }) {
       )}
 
       <form className={styles.form} onSubmit={onSubmit}>
-        <Panel title="Film details">
-          <MovieDetailsFields values={form} onChange={updateField} />
-        </Panel>
+        <div className={styles.coverColumn}>
+          <FileDropzone
+            className={styles.coverDrop}
+            accept="image/png, image/jpeg"
+            file={coverFile}
+            onChange={setCoverFile}
+            onReject={() => setErr("The cover image must be a JPG or PNG.")}
+            title={coverToShow ? "Replace cover" : "Add a cover image"}
+            hint={coverToShow ? "Drop or click to change" : "JPG or PNG · drop or click"}
+            preview={coverToShow ? <img src={coverToShow} alt="" /> : null}
+          />
+        </div>
 
-        <Panel title="Files">
-          <div className={styles.files}>
-            <Field as="div" label="Cover image" hint="JPG or PNG">
-              <div className={styles.cover}>
-                {coverToShow ? (
-                  <img className={styles.coverPreview} src={coverToShow} alt="Cover preview" />
-                ) : (
-                  <div className={styles.coverPreview} aria-hidden="true" />
-                )}
-                <FileInput
-                  accept="image/png, image/jpeg"
-                  file={coverFile}
-                  onChange={setCoverFile}
-                  label={coverToShow ? "Replace image" : "Choose image"}
-                  placeholder={existingCoverUrl ? "Current cover" : "No file chosen"}
-                />
-              </div>
-            </Field>
+        <div className={styles.fieldsColumn}>
+          <section aria-labelledby="project-form-details">
+            <SectionHeading id="project-form-details" title="Film details" />
+            <MovieDetailsFields values={form} onChange={updateField} />
+          </section>
 
-            <Field as="div" label="Script PDF" hint="Optional. You can also add it later from the project page.">
-              <FileInput accept="application/pdf" file={scriptFile} onChange={setScriptFile} label="Choose PDF" />
-            </Field>
+          <section aria-labelledby="project-form-script">
+            <SectionHeading id="project-form-script" title="Script" badge={<Badge>Optional</Badge>} />
+            <FileDropzone
+              accept="application/pdf"
+              file={scriptFile}
+              onChange={setScriptFile}
+              onReject={() => setErr("The script must be a PDF file.")}
+              title={isEdit ? "Upload a new script PDF" : "Add the script PDF"}
+              hint="Drop a PDF here or click to choose. You can also add it later from the project page."
+            />
+          </section>
+
+          <div className={styles.actions}>
+            <p className={styles.requiredNote}>
+              <span aria-hidden="true">*</span> Required
+            </p>
+            <Button as={Link} to={isEdit ? `/movies/${id}` : "/movies"}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={saving}>
+              {saving ? "Saving…" : isEdit ? "Save changes" : "Create project"}
+            </Button>
           </div>
-        </Panel>
-
-        <div className={styles.actions}>
-          <Button as={Link} to={isEdit ? `/movies/${id}` : "/movies"}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create project"}
-          </Button>
         </div>
       </form>
     </div>

@@ -1,18 +1,32 @@
 .page {
   --viewer-bar-height: 56px;
 
-  min-height: calc(100vh - var(--sd-nav-height));
+  min-height: 100vh;
 }
 
-/* ---------- Top bar ---------- */
+/* ---------- Top bar (replaces the site header on this page) ---------- */
 
 .topBar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
   height: var(--viewer-bar-height);
-  padding: 0 20px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid var(--color-line);
+  background: var(--color-header);
+  backdrop-filter: blur(8px);
+}
+
+.homeLink {
+  flex: none;
+  padding: 4px 14px 4px 4px;
+  display: inline-flex;
+  border-right: 1px solid var(--color-line);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  color: var(--color-text);
 }
 
 .topBar .backButton {
@@ -46,6 +60,7 @@
 }
 
 .topActions {
+  flex: none;
   display: flex;
   gap: 8px;
 }
@@ -53,7 +68,7 @@
 /* ---------- Workspace: PDF + annotator ---------- */
 
 .workspace {
-  height: calc(100vh - var(--sd-nav-height) - var(--viewer-bar-height));
+  height: calc(100vh - var(--viewer-bar-height));
   min-height: 520px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 400px;
@@ -101,7 +116,7 @@
 
 .scenes {
   padding: 28px 28px 64px;
-  scroll-margin-top: calc(var(--sd-nav-height) + 8px);
+  scroll-margin-top: calc(var(--viewer-bar-height) + 8px);
 }
 
 .scenesHeader {
@@ -166,10 +181,6 @@
   color: var(--color-danger);
 }
 
-.mobileJump {
-  display: none;
-}
-
 @media (max-width: 1200px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr) 360px;
@@ -182,14 +193,30 @@
 
 @media (max-width: 900px) {
   .topBar {
-    height: auto;
-    padding: 10px 12px;
-    flex-wrap: wrap;
+    padding: 0 10px;
+    gap: 8px;
   }
 
-  .titleGroup {
-    order: -1;
-    flex-basis: 100%;
+  .homeLink {
+    padding-right: 10px;
+  }
+
+  .titleMeta {
+    display: none;
+  }
+
+  /* Icon-only buttons on narrow bars; the label stays for screen readers. */
+  .collapsibleLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .topBar .backButton {
+    padding: 0 9px;
   }
 
   .workspace {
@@ -204,30 +231,13 @@
   }
 
   .scenes {
-    padding: 20px 12px 88px;
+    padding: 20px 12px 48px;
   }
 
   .toast {
     left: 12px;
     right: 12px;
-    bottom: 72px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
     max-width: none;
-  }
-
-  .mobileJump {
-    position: fixed;
-    right: 14px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
-    z-index: 30;
-    padding: 9px 14px;
-    display: inline-flex;
-    border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-pill);
-    background: var(--color-header);
-    color: var(--color-text);
-    font-size: var(--text-sm);
-    font-weight: 700;
-    box-shadow: var(--shadow-popover);
-    cursor: pointer;
   }
 }

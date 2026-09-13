@@ -31,6 +31,55 @@ export function SearchIcon(props) {
   );
 }
 
+/** A script page with a folded corner. */
+export function ScriptIcon(props) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M4 1.75h5.5l2.75 2.75v9.75H4z" />
+      <path d="M9.5 1.75V4.5h2.75M6.25 8h3.5M6.25 10.75h3.5" />
+    </StrokeIcon>
+  );
+}
+
+/** A framed picture. */
+export function ImageIcon(props) {
+  return (
+    <StrokeIcon {...props}>
+      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+      <circle cx="5.75" cy="6.25" r="1.1" />
+      <path d="M2.5 11.75l3.25-3.25 2.5 2.5 2-2 3.25 3.25" />
+    </StrokeIcon>
+  );
+}
+
+/** A card split between a picture and lines of text. */
+export function SplitViewIcon(props) {
+  return (
+    <StrokeIcon {...props}>
+      <rect x="2.75" y="1.75" width="10.5" height="12.5" rx="1.5" />
+      <path d="M2.75 8h10.5M5.25 10.5h5.5M5.25 12.25h3.5" />
+      <path d="M4.75 6.25l2-1.75 1.5 1.25 1.25-1 1.75 1.5" />
+    </StrokeIcon>
+  );
+}
+
+export function UploadIcon(props) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M8 10.5v-8M4.75 5.75L8 2.5l3.25 3.25" />
+      <path d="M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" />
+    </StrokeIcon>
+  );
+}
+
+export function PlusIcon(props) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M8 3v10M3 8h10" />
+    </StrokeIcon>
+  );
+}
+
 export function ChevronDownIcon(props) {
   return (
     <StrokeIcon {...props}>

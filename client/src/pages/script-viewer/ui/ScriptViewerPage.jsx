@@ -11,6 +11,7 @@ import {
 } from "@/entities/script-scene";
 import { scriptSceneActions } from "@/features/script-scene-actions";
 import { api } from "@/shared/api";
+import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { screenplayToPlainText } from "@/shared/lib/screenplay";
 import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
@@ -154,6 +155,8 @@ function ScriptViewerPage() {
   const dirty = isDraftDirty(draft, markdown);
   const modalSceneIndex = modal?.kind === "scene" ? scenes.findIndex((scene) => scene.id === modal.sceneId) : -1;
   const title = movie?.title || "Script";
+  const runtimeSeconds = movie?.runtime_minutes ? Number(movie.runtime_minutes) * 60 : 0;
+  useDocumentTitle(movie ? `${movie.title} script` : "Script");
 
   const draftScene = useMemo(
     () => ({
@@ -234,6 +237,11 @@ function ScriptViewerPage() {
     const params = new URLSearchParams();
     params.set("annotationId", annotationId);
     nav(`/movies/${movieId}?${params.toString()}`);
+  }
+
+  function showScenesWithTag(tag) {
+    if (!confirmDiscardChanges()) return;
+    nav(`/script-search?tag=${encodeURIComponent(tag)}`);
   }
 
   function jumpToScenes() {
@@ -368,7 +376,7 @@ function ScriptViewerPage() {
   // ---------- Persistence ----------
 
   async function saveScene() {
-    const { error, payload } = buildScenePayload({ draft, capture, markdown });
+    const { error, payload } = buildScenePayload({ draft, capture, markdown, runtimeSeconds });
     if (error) {
       setNotice({ tone: "error", text: error });
       return;
@@ -510,6 +518,7 @@ function ScriptViewerPage() {
           onEditOverlapScene={() => overlapScene && selectScene(overlapScene)}
           startTime={draft.startTime}
           endTime={draft.endTime}
+          runtimeSeconds={runtimeSeconds}
           onTimeChange={(field, value) => dispatch({ type: "setTime", field, value })}
           onTimeBlur={normalizeTime}
           capture={capture}
@@ -601,6 +610,7 @@ function ScriptViewerPage() {
             selectScene(scene);
           }}
           onOpenFirstImage={openFirstImageAnnotation}
+          onSelectTag={showScenesWithTag}
           onDelete={deleteScene}
         />
       )}
@@ -616,10 +626,6 @@ function ScriptViewerPage() {
           </IconButton>
         </div>
       )}
-
-      <button type="button" className={styles.mobileJump} onClick={jumpToScenes}>
-        Scenes
-      </button>
     </div>
   );
 }

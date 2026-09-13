@@ -7,7 +7,8 @@ import styles from "./SegmentedControl.module.css";
  * each option becomes a tab whose id is `${idPrefix}-${value}` and which
  * controls `panelId`.
  *
- * options: [{ value, label, badge?, disabled?, title? }]
+ * options: [{ value, label, icon?, hideLabel?, badge?, disabled?, title? }]
+ * `hideLabel` shows only the icon; the label stays as the accessible name.
  */
 export function SegmentedControl({
   options,
@@ -35,12 +36,13 @@ export function SegmentedControl({
             aria-selected={isTabs ? active : undefined}
             aria-checked={isTabs ? undefined : active}
             aria-controls={isTabs ? panelId : undefined}
-            className={cx(styles.option, active && styles.active)}
+            className={cx(styles.option, active && styles.active, option.hideLabel && styles.iconOnly)}
             disabled={option.disabled}
             title={option.title}
             onClick={() => onChange(option.value)}
           >
-            {option.label}
+            {option.icon}
+            {option.hideLabel ? <span className={styles.srOnly}>{option.label}</span> : option.label}
             {option.badge ? (
               <Badge tone="accent" solid>
                 {option.badge}

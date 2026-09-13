@@ -1,6 +1,21 @@
-import { Badge, Button, ChevronLeftIcon, EyeIcon, EyeOffIcon, IconButton } from "@/shared/ui";
+import { Link } from "react-router-dom";
+import {
+  Badge,
+  BrandLogo,
+  Button,
+  ChevronLeftIcon,
+  EyeIcon,
+  EyeOffIcon,
+  IconButton,
+  SearchIcon,
+} from "@/shared/ui";
 import styles from "./ScriptViewerPage.module.css";
 
+/**
+ * The viewer's only header. It stands in for the site header on this page so
+ * the script gets the height: home link, back to the project, the title, and
+ * viewer actions, in one sticky row at every width.
+ */
 export function ViewerTopBar({
   title,
   pageCount,
@@ -14,10 +29,14 @@ export function ViewerTopBar({
   const markersLabel = anchorMarkersVisible ? "Hide start and end markers" : "Show start and end markers";
 
   return (
-    <div className={styles.topBar}>
-      <Button size="sm" className={styles.backButton} onClick={onBackToMovie}>
+    <header className={styles.topBar}>
+      <Link to="/" className={styles.homeLink} aria-label="ScriptDeck home">
+        <BrandLogo showWordmark={false} />
+      </Link>
+
+      <Button size="sm" className={styles.backButton} onClick={onBackToMovie} title="Back to project">
         <ChevronLeftIcon size={14} />
-        Project
+        <span className={styles.collapsibleLabel}>Project</span>
       </Button>
 
       <div className={styles.titleGroup}>
@@ -33,10 +52,11 @@ export function ViewerTopBar({
           Scenes
           <Badge tone="accent">{sceneCount}</Badge>
         </Button>
-        <Button size="sm" onClick={onSearchScripts}>
-          Search all scripts
+        <Button size="sm" onClick={onSearchScripts} title="Search all scripts">
+          <SearchIcon size={14} />
+          <span className={styles.collapsibleLabel}>Search all scripts</span>
         </Button>
       </div>
-    </div>
+    </header>
   );
 }

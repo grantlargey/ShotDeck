@@ -9,12 +9,18 @@ import styles from "./ScreenplayView.module.css";
  *
  * - `page` scales the type to the container so a full 60-character action
  *   line fits, like a real script page.
+ * - `reader` is `page` with roomier type, for full-size dialogs.
  * - `card` uses compact indents and small type for preview cards.
  */
 export function ScreenplayView({ source, variant = "page", maxElements, emptyText = "", className = "" }) {
   const elements = useMemo(() => parseScreenplayMarkdown(source), [source]);
   const visible = maxElements ? elements.slice(0, maxElements) : elements;
-  const rootClassName = [styles.root, variant === "card" ? styles.card : styles.page, className]
+  const rootClassName = [
+    styles.root,
+    variant === "card" ? styles.card : styles.page,
+    variant === "reader" && styles.reader,
+    className,
+  ]
     .filter(Boolean)
     .join(" ");
 

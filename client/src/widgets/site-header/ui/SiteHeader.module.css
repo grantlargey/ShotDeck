@@ -10,13 +10,13 @@
   backdrop-filter: blur(8px);
 }
 
-/* On the home page the header floats over the hero image. */
+/* On the home page the header floats over the hero, whose own top gradient keeps it legible. */
 .navbarOverlay {
   position: absolute;
   left: 0;
   border-bottom-color: transparent;
   background: transparent;
-  backdrop-filter: blur(3px);
+  backdrop-filter: none;
 }
 
 .navbarInner {
@@ -31,26 +31,10 @@
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
   min-width: 0;
   border-radius: var(--radius-sm);
   color: var(--color-text);
   text-decoration: none;
-}
-
-/* Brand mark */
-.logo {
-  flex: none;
-  width: 30px;
-  height: 20px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 236, 247, 0.82));
-}
-
-.brandText {
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
 }
 
 .primaryNav {

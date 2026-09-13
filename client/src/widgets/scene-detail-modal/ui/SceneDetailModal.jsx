@@ -1,7 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import { api } from "@/shared/api";
+import { useEffect, useRef } from "react";
+import { getSceneFirstStill, groupScriptTagsByCategory } from "@/entities/script-scene";
 import { cx } from "@/shared/lib/cx";
-import { Button, ChevronLeftIcon, ChevronRightIcon, CloseIcon, IconButton } from "@/shared/ui";
+import { useSignedMediaUrl } from "@/shared/lib/media";
+import { formatSecondsToHms } from "@/shared/lib/time";
+import {
+  Button,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  IconButton,
+  ImageIcon,
+  ScriptIcon,
+  SegmentedControl,
+} from "@/shared/ui";
 import styles from "./SceneDetailModal.module.css";
 
 function isTypingTarget(target) {
@@ -9,14 +20,16 @@ function isTypingTarget(target) {
 }
 
 /**
- * Full-screen scene dialog: header, a "stage" holding script paper (or an
- * editor), and a footer for tags and actions. Stepping arrows appear when
+ * Full-screen scene dialog: a header (with an optional `toolbar`, such as the
+ * view toggle), a tall stage for script paper, a still, or an editor, and a
+ * footer beneath for metadata and actions. Stepping arrows appear when
  * `onStep` is provided.
  */
 export function SceneDetailModal({
   title,
   meta,
   counter,
+  toolbar,
   hasPrev = false,
   hasNext = false,
   onStep,
@@ -70,6 +83,7 @@ export function SceneDetailModal({
             </h2>
             {meta && <p className={styles.meta}>{meta}</p>}
           </div>
+          {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
           {counter && <span className={styles.counter}>{counter}</span>}
           <IconButton ref={closeRef} label="Close" onClick={onClose}>
             <CloseIcon size={18} strokeWidth={2.2} />
@@ -83,7 +97,7 @@ export function SceneDetailModal({
               className={styles.stepButton}
               onClick={() => onStep(-1)}
               disabled={!hasPrev}
-              aria-label="Previous scene"
+              aria-label="Previous"
             >
               <ChevronLeftIcon size={18} strokeWidth={2.4} />
             </button>
@@ -99,7 +113,7 @@ export function SceneDetailModal({
               className={styles.stepButton}
               onClick={() => onStep(1)}
               disabled={!hasNext}
-              aria-label="Next scene"
+              aria-label="Next"
             >
               <ChevronRightIcon size={18} strokeWidth={2.4} />
             </button>
@@ -124,14 +138,86 @@ export function SceneModalPaper({ label = "Scene text", heading, toolbar, childr
   );
 }
 
-export function SceneModalTagGroups({ groups }) {
-  if (!groups?.length) return null;
+/**
+ * Switches a scene dialog between its script and its first film still. The
+ * still option is unavailable when no still falls inside the scene's timing.
+ */
+export function SceneModalViewToggle({ value, onChange, hasStill }) {
+  return (
+    <SegmentedControl
+      label="Scene view"
+      value={hasStill ? value : "script"}
+      onChange={onChange}
+      options={[
+        { value: "script", label: "Script", icon: <ScriptIcon size={14} /> },
+        {
+          value: "still",
+          label: "Film still",
+          icon: <ImageIcon size={14} />,
+          disabled: !hasStill,
+          title: hasStill ? undefined : "No film still falls inside this scene's timing",
+        },
+      ]}
+    />
+  );
+}
+
+/**
+ * The scene's first film still, filling the stage in place of the script at
+ * the same scale as the project page's still viewer.
+ */
+export function SceneModalStill({ scene }) {
+  const still = getSceneFirstStill(scene);
+  const url = useSignedMediaUrl(still?.image_key || null);
+  if (!still) return null;
+  const time = formatSecondsToHms(still.time_seconds);
+
+  return (
+    <figure className={styles.stillView}>
+      {url ? (
+        <img className={styles.stillImage} src={url} alt={`First film still in this scene, at ${time}`} />
+      ) : (
+        <span className={styles.stillPending}>Loading still…</span>
+      )}
+      <figcaption className={styles.stillCaption}>First still in this scene · {time}</figcaption>
+    </figure>
+  );
+}
+
+/**
+ * The scene's tags grouped by category, for the footer beneath the stage.
+ * Tags link back to Script Search when `onSelectTag` is given.
+ */
+export function SceneModalTags({ scene, onSelectTag }) {
+  const groups = groupScriptTagsByCategory(scene?.tags);
+  if (groups.length === 0) {
+    return <p className={styles.noTags}>No tags on this scene yet.</p>;
+  }
+
   return (
     <dl className={styles.tagGroups}>
       {groups.map((group) => (
         <div key={group.label} className={styles.tagGroup}>
-          <dt>{group.label}:</dt>
-          <dd>{group.values.join(", ")}</dd>
+          <dt>{group.label}</dt>
+          <dd>
+            {group.tags.map((tag, index) => (
+              <span key={tag.value}>
+                {onSelectTag ? (
+                  <button
+                    type="button"
+                    className={styles.tagLink}
+                    onClick={() => onSelectTag(tag.value)}
+                    title={`Find scenes tagged ${tag.label}`}
+                  >
+                    {tag.label}
+                  </button>
+                ) : (
+                  tag.label
+                )}
+                {index < group.tags.length - 1 && ", "}
+              </span>
+            ))}
+          </dd>
         </div>
       ))}
     </dl>
@@ -145,41 +231,4 @@ export function SceneModalActions({ children }) {
 /** Footer action; a shared Button that stretches to fill the row on phones. */
 export function SceneModalButton({ variant = "secondary", className, ...props }) {
   return <Button variant={variant} className={cx(styles.actionButton, className)} {...props} />;
-}
-
-/**
- * Thumbnail of the first image annotation inside a scene's time range. It is
- * optional decoration: the explicit "Open First Image" action still works if
- * the signed URL cannot be fetched.
- */
-export function SceneFirstImageThumb({ scene, onOpen }) {
-  const imageKey = scene?.first_image_annotation?.image_key;
-  const [urlByKey, setUrlByKey] = useState({});
-  const url = imageKey ? urlByKey[imageKey] : null;
-
-  useEffect(() => {
-    if (!imageKey || urlByKey[imageKey]) return undefined;
-    let cancelled = false;
-    api
-      .getViewUrlForKey(imageKey)
-      .then(({ url: viewUrl }) => {
-        if (!cancelled && viewUrl) setUrlByKey((prev) => ({ ...prev, [imageKey]: viewUrl }));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [imageKey, urlByKey]);
-
-  if (!url) return null;
-  return (
-    <button
-      type="button"
-      className={styles.imageThumb}
-      onClick={() => onOpen(scene)}
-      aria-label="Open first image annotation"
-    >
-      <img src={url} alt="" />
-    </button>
-  );
 }

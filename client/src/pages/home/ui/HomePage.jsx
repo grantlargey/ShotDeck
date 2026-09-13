@@ -1,20 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getRecentMovies, MovieCard, MovieCardGrid } from "@/entities/movie";
+import { getRecentMovies, MovieCard, MovieCardGrid, MovieCardSkeleton } from "@/entities/movie";
 import { api } from "@/shared/api";
+import { useDocumentTitle } from "@/shared/lib/document-title";
+import { getErrorMessage } from "@/shared/lib/errors";
 import {
   Button,
   Callout,
   ChevronRightIcon,
   EmptyState,
   Input,
-  LoadingState,
-  Panel,
   SearchIcon,
+  SectionHeading,
 } from "@/shared/ui";
+import { SiteFooter } from "@/widgets/site-footer";
 import styles from "./HomePage.module.css";
 
+const RECENT_PROJECT_LIMIT = 5;
+
 export default function HomePage() {
+  useDocumentTitle();
   const navigate = useNavigate();
   const [movies, setMovies] = useState([]);
   const [query, setQuery] = useState("");
@@ -31,7 +36,7 @@ export default function HomePage() {
         const data = await api.listMovies();
         if (!cancelled) setMovies(Array.isArray(data) ? data : []);
       } catch (e) {
-        if (!cancelled) setErr(e.message || "Failed to load recent projects");
+        if (!cancelled) setErr(getErrorMessage(e, "Failed to load recent projects."));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -43,7 +48,7 @@ export default function HomePage() {
     };
   }, []);
 
-  const recentProjects = useMemo(() => getRecentMovies(movies, 3), [movies]);
+  const recentProjects = useMemo(() => getRecentMovies(movies, RECENT_PROJECT_LIMIT), [movies]);
 
   function submitSearch(event) {
     event.preventDefault();
@@ -55,82 +60,92 @@ export default function HomePage() {
     <div className={styles.page}>
       <section className={styles.hero}>
         <div className={styles.heroInner}>
-          <div className={styles.heroContent}>
-            <h1 className={styles.heroTitle}>Read Between The Lines.</h1>
+          <div className={styles.heroIntro}>
+            <h1 className={styles.heroTitle}>Read between the lines.</h1>
             <p className={styles.heroSubtitle}>
-              Analyze scripts, annotate scenes, and experience storytelling patterns
+              Analyze scripts, annotate scenes, and study how great stories are built.
             </p>
-            <div className={styles.heroActions}>
-              <Button as={Link} to="/movies/new" variant="primary" size="lg" className={styles.heroButton}>
-                Start New Project
+          </div>
+
+          <div className={styles.heroActions}>
+            <form className={styles.heroSearch} onSubmit={submitSearch} role="search">
+              <Input
+                icon={<SearchIcon size={18} />}
+                className={styles.heroSearchField}
+                aria-label="Search projects"
+                autoComplete="off"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search projects by title…"
+                type="search"
+                value={query}
+              />
+              <Button type="submit" variant="primary">
+                Search
               </Button>
-              <Button as={Link} to="/movies" size="lg" className={`${styles.heroButton} ${styles.heroButtonGlass}`}>
-                Browse Projects
-              </Button>
-            </div>
+            </form>
+            <Button as={Link} to="/movies" variant="ghost" size="sm" className={styles.browseLink}>
+              Browse all projects
+              <ChevronRightIcon size={14} />
+            </Button>
           </div>
         </div>
+
+        <p className={styles.heroCredit}>Spider-Man: Into the Spider-Verse (2018)</p>
       </section>
 
-      <section className={styles.content} aria-label="Project discovery">
-        <Panel
+      <section className={styles.recent} aria-labelledby="home-recent-heading">
+        <SectionHeading
+          id="home-recent-heading"
           title="Recent projects"
-          className={styles.recentPanel}
           actions={
             <Button as={Link} to="/movies" variant="link" size="sm">
               View all
               <ChevronRightIcon size={14} />
             </Button>
           }
-        >
-          {err && (
-            <Callout tone="error" className={styles.notice}>
-              {err}
-            </Callout>
-          )}
+        />
 
-          {loading ? (
-            <LoadingState>Loading recent projects…</LoadingState>
-          ) : recentProjects.length === 0 ? (
-            !err && (
-              <EmptyState
-                title="No projects yet"
-                action={
-                  <Button as={Link} to="/movies/new" variant="primary" size="sm">
-                    Start your first project
-                  </Button>
-                }
-              >
-                Create a project to upload a script and start annotating scenes.
-              </EmptyState>
-            )
-          ) : (
-            <MovieCardGrid>
-              {recentProjects.map((movie) => (
-                <li key={movie.id}>
-                  <MovieCard movie={movie} />
+        {err && (
+          <Callout tone="error" className={styles.notice}>
+            {err}
+          </Callout>
+        )}
+
+        {loading ? (
+          <div aria-busy="true" aria-label="Loading recent projects">
+            <MovieCardGrid className={styles.recentGrid}>
+              {Array.from({ length: RECENT_PROJECT_LIMIT }, (_, index) => (
+                <li key={index}>
+                  <MovieCardSkeleton />
                 </li>
               ))}
             </MovieCardGrid>
-          )}
-        </Panel>
-
-        <form className={styles.searchBar} onSubmit={submitSearch} role="search">
-          <Input
-            icon={<SearchIcon />}
-            className={styles.searchField}
-            aria-label="Search projects"
-            autoComplete="off"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search projects by title…"
-            type="search"
-            value={query}
-          />
-          <Button type="submit" variant="primary">
-            Search
-          </Button>
-        </form>
+          </div>
+        ) : recentProjects.length === 0 ? (
+          !err && (
+            <EmptyState
+              title="No projects yet"
+              action={
+                <Button as={Link} to="/movies/new" variant="primary" size="sm">
+                  Start your first project
+                </Button>
+              }
+            >
+              Create a project to upload a script and start annotating scenes.
+            </EmptyState>
+          )
+        ) : (
+          <MovieCardGrid className={styles.recentGrid}>
+            {recentProjects.map((movie) => (
+              <li key={movie.id}>
+                <MovieCard movie={movie} />
+              </li>
+            ))}
+          </MovieCardGrid>
+        )}
       </section>
+
+      <SiteFooter />
     </div>
   );
 }

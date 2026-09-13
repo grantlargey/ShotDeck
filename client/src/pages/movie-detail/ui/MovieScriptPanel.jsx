@@ -1,16 +1,16 @@
-import { Badge, Button, FileInput, Panel } from "@/shared/ui";
+import { Badge, Button, FileInput, SectionHeading } from "@/shared/ui";
 import styles from "./MovieDetailPage.module.css";
 
+/** Script status and upload. Upload controls only appear once a PDF has been chosen. */
 export function MovieScriptPanel({ currentScript, scriptFile, savingScript, onScriptFileChange, onSaveScript }) {
   return (
-    <Panel
-      title={
-        <>
-          Script
-          {currentScript ? <Badge tone="success">Uploaded</Badge> : <Badge>Not uploaded</Badge>}
-        </>
-      }
-    >
+    <section aria-labelledby="project-script-heading">
+      <SectionHeading
+        id="project-script-heading"
+        title="Script"
+        badge={currentScript ? <Badge tone="success">Uploaded</Badge> : <Badge>Not uploaded</Badge>}
+      />
+
       <div className={styles.scriptRow}>
         <p className={styles.scriptStatus}>
           {currentScript
@@ -19,18 +19,29 @@ export function MovieScriptPanel({ currentScript, scriptFile, savingScript, onSc
         </p>
 
         <div className={styles.scriptActions}>
-          <FileInput
-            accept="application/pdf"
-            file={scriptFile}
-            onChange={onScriptFileChange}
-            label={currentScript ? "Replace PDF" : "Choose PDF"}
-            placeholder={null}
-          />
-          <Button size="sm" variant="primary" disabled={!scriptFile || savingScript} onClick={onSaveScript}>
-            {savingScript ? "Saving…" : "Save script"}
-          </Button>
+          {scriptFile ? (
+            <>
+              <span className={styles.fileName} title={scriptFile.name}>
+                {scriptFile.name}
+              </span>
+              <Button size="sm" disabled={savingScript} onClick={() => onScriptFileChange(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" variant="primary" disabled={savingScript} onClick={onSaveScript}>
+                {savingScript ? "Uploading…" : "Upload PDF"}
+              </Button>
+            </>
+          ) : (
+            <FileInput
+              accept="application/pdf"
+              file={null}
+              onChange={onScriptFileChange}
+              label={currentScript ? "Replace PDF" : "Choose PDF"}
+              placeholder={null}
+            />
+          )}
         </div>
       </div>
-    </Panel>
+    </section>
   );
 }

@@ -1,11 +1,20 @@
 .page {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   overflow-x: hidden;
 }
 
+/* ---------- Hero ---------- */
+
+/*
+ * At desktop widths the hero keeps the artwork's 1600×670 proportions, so the
+ * falling figure stays in the open band between the headline and the search.
+ */
 .hero {
   position: relative;
-  padding: calc(var(--sd-nav-height) + 82px) 0 230px;
+  min-height: clamp(560px, 41.875vw, 820px);
+  display: flex;
   overflow: hidden;
 }
 
@@ -17,146 +26,199 @@
 }
 
 .hero::before {
-  background-image: url("../assets/hero-home-desktop.webp");
-  background-position: center top;
-  background-repeat: no-repeat;
-  background-size: cover;
+  background: url("../assets/hero-home-desktop.webp") center top / cover no-repeat;
 }
 
-/* Tints the artwork and fades it into the page background behind the panel. */
+/* Darkens only behind the header and headline, then fades the artwork into the page. */
 .hero::after {
-  background:
-    linear-gradient(
-      180deg,
-      rgba(8, 14, 34, 0.1) 0%,
-      rgba(9, 18, 43, 0.18) 18%,
-      rgba(10, 20, 48, 0.3) 36%,
-      rgba(11, 18, 42, 0.48) 56%,
-      rgba(11, 15, 30, 0.68) 74%,
-      rgba(11, 13, 19, 0.84) 88%,
-      rgba(11, 13, 19, 0.94) 96%,
-      var(--color-bg) 100%
-    ),
-    linear-gradient(108deg, rgba(29, 48, 118, 0.12) 0%, rgba(18, 28, 82, 0.05) 42%, rgba(58, 30, 95, 0.14) 100%),
-    radial-gradient(circle at 50% 34%, rgba(80, 119, 255, 0.08), transparent 42%);
-}
-
-.heroInner,
-.content {
-  position: relative;
-  max-width: var(--page-max-width);
-  margin: 0 auto;
-  padding: 0 var(--page-gutter);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-bg-deep) 50%, transparent) 0%,
+    transparent 36%,
+    transparent 56%,
+    color-mix(in srgb, var(--color-bg) 70%, transparent) 84%,
+    var(--color-bg) 100%
+  );
 }
 
 .heroInner {
+  position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: calc(var(--sd-nav-height) + 28px) var(--page-gutter) 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  text-align: center;
 }
 
-.heroContent {
-  max-width: 860px;
-  margin: 0 auto;
-  text-align: center;
+.heroIntro {
+  max-width: 760px;
 }
 
 .heroTitle {
   margin: 0;
-  font-size: 3rem;
-  font-weight: 400;
-  line-height: 0.98;
-  letter-spacing: 0.05em;
+  font-size: clamp(2.5rem, 4.6vw, 4rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  text-shadow: var(--shadow-text);
   text-wrap: balance;
 }
 
 .heroSubtitle {
-  max-width: 760px;
-  margin: 24px auto 0;
+  margin: 14px auto 0;
   color: var(--color-text-soft);
-  font-size: clamp(1.05rem, 2vw, 1.28rem);
-  line-height: 1.55;
+  font-size: clamp(1rem, 1.5vw, 1.2rem);
+  line-height: 1.5;
+  text-shadow: var(--shadow-text);
   text-wrap: balance;
 }
 
 .heroActions {
-  margin-top: 34px;
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
+  width: 100%;
+  max-width: 620px;
+  display: grid;
+  justify-items: center;
   gap: 14px;
 }
 
-.heroButton {
-  min-width: 190px;
-}
-
-/* The secondary button sits on artwork, so it gets a translucent fill. */
-.heroActions .heroButtonGlass {
-  border-color: var(--color-line-strong);
+/* One glass control: the form draws the box, and the input and button sit inside it. */
+.heroSearch {
+  width: 100%;
+  padding: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-lg);
   background: var(--color-glass);
-  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(16px);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
-.heroActions .heroButtonGlass:hover:not(:disabled) {
-  background: var(--color-header);
+.heroSearch:focus-within {
+  border-color: var(--color-accent);
+  box-shadow:
+    0 0 0 3px var(--color-accent-soft),
+    var(--shadow-popover);
 }
 
-.content {
-  z-index: 2;
-  margin-top: -92px;
-  padding-bottom: 72px;
+.heroSearchField {
+  flex: 1;
 }
 
-.recentPanel {
-  box-shadow: var(--shadow-card);
+.heroSearch .heroSearchField > svg {
+  left: 12px;
+  color: var(--color-text-soft);
+}
+
+.heroSearch .heroSearchField > input,
+.heroSearch .heroSearchField > input:focus {
+  height: 42px;
+  padding-left: 40px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--text-base);
+  text-overflow: ellipsis;
+}
+
+.heroSearch .heroSearchField > input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.heroActions .browseLink {
+  color: var(--color-text-soft);
+}
+
+.heroCredit {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 20px;
+  left: 0;
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: 0 var(--page-gutter);
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Recent projects ---------- */
+
+.recent {
+  flex: 1;
+  width: 100%;
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: 32px var(--page-gutter) 80px;
 }
 
 .notice {
   margin-bottom: 16px;
 }
 
-.searchBar {
-  max-width: 600px;
-  margin: 28px auto 0;
-  display: flex;
-  gap: 8px;
+/* One row of posters; up to five fit at desktop widths. */
+.recent .recentGrid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 20px;
 }
 
-.searchField {
-  flex: 1;
+@media (max-width: 1000px) {
+  /* Narrower screens scroll the row sideways instead of wrapping it. */
+  .recent .recentGrid {
+    margin: 0 calc(-1 * var(--page-gutter));
+    padding: 4px var(--page-gutter) 12px;
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 180px;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-padding-inline: var(--page-gutter);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .recent .recentGrid > li {
+    scroll-snap-align: start;
+  }
 }
 
 @media (max-width: 780px) {
   .hero {
-    padding: calc(var(--sd-nav-height) + 54px) 0 134px;
+    min-height: 640px;
   }
 
   .hero::before {
     background-position: 54% top;
   }
 
+  .heroInner {
+    padding: calc(var(--sd-nav-height) + 24px) var(--page-gutter) 64px;
+  }
+
   .heroTitle {
-    font-size: clamp(2.1rem, 10vw, 2.85rem);
+    font-size: clamp(2.25rem, 10vw, 2.75rem);
   }
 
   .heroSubtitle {
-    margin-top: 18px;
+    margin-top: 12px;
     font-size: 1rem;
   }
+}
 
-  .heroActions {
-    margin-top: 28px;
+@media (max-width: 600px) {
+  .recent .recentGrid {
+    grid-auto-columns: 42%;
     gap: 12px;
-  }
-
-  .heroButton {
-    width: min(100%, 320px);
-  }
-
-  .content {
-    margin-top: -72px;
-  }
-
-  .searchBar {
-    max-width: none;
   }
 }

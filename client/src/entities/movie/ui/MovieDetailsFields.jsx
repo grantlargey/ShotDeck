@@ -10,12 +10,12 @@ import styles from "./MovieDetailsFields.module.css";
 export function MovieDetailsFields({ values, onChange }) {
   return (
     <div className={styles.grid}>
-      <Field label="Title" className={styles.full}>
+      <Field label="Title" required className={styles.full}>
         <Input value={values.title} onChange={(event) => onChange("title", event.target.value)} required />
       </Field>
 
       {MOVIE_CREDITS.map(({ field, label, required }) => (
-        <Field key={field} label={label} className={styles.third}>
+        <Field key={field} label={label} required={required} className={styles.third}>
           <Input
             value={values[field]}
             placeholder={required ? undefined : "Optional"}
@@ -25,7 +25,7 @@ export function MovieDetailsFields({ values, onChange }) {
         </Field>
       ))}
 
-      <Field label="Release year" className={styles.half}>
+      <Field label="Release year" required className={styles.half}>
         <Input
           type="number"
           min="1888"
@@ -36,7 +36,7 @@ export function MovieDetailsFields({ values, onChange }) {
         />
       </Field>
 
-      <Field label="Runtime" hint="Format: HH:MM:SS" className={styles.half}>
+      <Field label="Runtime" hint="Format: HH:MM:SS" required className={styles.half}>
         <Input
           value={values.runtime_hms}
           placeholder="00:00:00"

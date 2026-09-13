@@ -23,3 +23,6 @@ client/FRONTEND_LEARNING_GUIDE.md
 # Task definition snapshots
 td.json
 td-new.json
+
+# Playwright MCP screenshots and logs
+.playwright-mcp/

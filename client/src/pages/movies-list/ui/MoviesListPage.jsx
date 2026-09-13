@@ -8,9 +8,12 @@ import {
   MOVIE_CREDITS,
   MovieCard,
   MovieCardGrid,
+  MovieCardSkeleton,
 } from "@/entities/movie";
 import { movieActions } from "@/features/movie-actions";
 import { api } from "@/shared/api";
+import { cx } from "@/shared/lib/cx";
+import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage } from "@/shared/lib/errors";
 import {
   Button,
@@ -18,7 +21,6 @@ import {
   DropdownMenu,
   EmptyState,
   Input,
-  LoadingState,
   PageHeader,
   SearchIcon,
   Select,
@@ -37,8 +39,10 @@ const SORT_OPTIONS = [
 ];
 
 const NO_CREDIT_FILTERS = Object.fromEntries(MOVIE_CREDITS.map(({ field }) => [field, "all"]));
+const SKELETON_CARDS = 6;
 
 export default function MoviesListPage() {
+  useDocumentTitle("My Projects");
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
   const queryFromUrl = searchParams.get("query") || "";
@@ -53,6 +57,8 @@ export default function MoviesListPage() {
   const [sort, setSort] = useState("az");
   const [credits, setCredits] = useState(NO_CREDIT_FILTERS);
   const [year, setYear] = useState("all");
+  // Phones fold sort and filters behind a toggle so posters stay near the top.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,8 +108,8 @@ export default function MoviesListPage() {
     () => filterAndSortMovies(movies, { query, credits, year, sort }),
     [movies, query, credits, year, sort]
   );
-  const hasFilters =
-    Boolean(query.trim()) || Object.values(credits).some((value) => value !== "all") || year !== "all";
+  const activeFilterCount = Object.values(credits).filter((value) => value !== "all").length + (year !== "all" ? 1 : 0);
+  const hasFilters = Boolean(query.trim()) || activeFilterCount > 0;
 
   function clearFilters() {
     setQuery("");
@@ -130,38 +136,49 @@ export default function MoviesListPage() {
           onChange={(e) => setQuery(e.target.value)}
         />
 
-        <Select aria-label="Sort projects" value={sort} onChange={(e) => setSort(e.target.value)}>
-          {SORT_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
+        <Button
+          className={styles.filtersToggle}
+          aria-expanded={filtersOpen}
+          aria-controls="project-filters"
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
+        </Button>
 
-        <Select className={styles.year} aria-label="Filter by year" value={year} onChange={(e) => setYear(e.target.value)}>
-          <option value="all">All years</option>
-          {years.map((y) => (
-            <option key={y} value={String(y)}>
-              {y}
-            </option>
-          ))}
-        </Select>
-
-        {MOVIE_CREDITS.map(({ field, label, plural }) => (
-          <Select
-            key={field}
-            aria-label={`Filter by ${label.toLowerCase()}`}
-            value={credits[field]}
-            onChange={(e) => setCredits((current) => ({ ...current, [field]: e.target.value }))}
-          >
-            <option value="all">All {plural}</option>
-            {creditNames[field].map((name) => (
-              <option key={name} value={name}>
-                {name}
+        <div id="project-filters" className={cx(styles.filters, filtersOpen && styles.filtersOpen)}>
+          <Select aria-label="Sort projects" value={sort} onChange={(e) => setSort(e.target.value)}>
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </Select>
-        ))}
+
+          <Select aria-label="Filter by year" value={year} onChange={(e) => setYear(e.target.value)}>
+            <option value="all">All years</option>
+            {years.map((y) => (
+              <option key={y} value={String(y)}>
+                {y}
+              </option>
+            ))}
+          </Select>
+
+          {MOVIE_CREDITS.map(({ field, label, plural }) => (
+            <Select
+              key={field}
+              aria-label={`Filter by ${label.toLowerCase()}`}
+              value={credits[field]}
+              onChange={(e) => setCredits((current) => ({ ...current, [field]: e.target.value }))}
+            >
+              <option value="all">All {plural}</option>
+              {creditNames[field].map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+          ))}
+        </div>
       </div>
 
       {err && (
@@ -171,7 +188,15 @@ export default function MoviesListPage() {
       )}
 
       {loading ? (
-        <LoadingState>Loading projects…</LoadingState>
+        <div aria-busy="true" aria-label="Loading projects">
+          <MovieCardGrid>
+            {Array.from({ length: SKELETON_CARDS }, (_, index) => (
+              <li key={index}>
+                <MovieCardSkeleton />
+              </li>
+            ))}
+          </MovieCardGrid>
+        </div>
       ) : filtered.length === 0 ? (
         hasFilters ? (
           <EmptyState

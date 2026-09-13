@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { cx } from "@/shared/lib/cx";
+import { Skeleton } from "@/shared/ui";
 import { getMovieCoverUrl } from "../model/movieFilters.js";
 import styles from "./MovieCard.module.css";
 
@@ -13,7 +14,6 @@ export function MovieCard({ movie, menu, headingLevel = 3 }) {
   const coverUrl = getMovieCoverUrl(movie);
   const [failedUrl, setFailedUrl] = useState("");
   const showCover = Boolean(coverUrl) && failedUrl !== coverUrl;
-  const details = [movie.director, movie.year].filter(Boolean).join(" · ");
   const Heading = `h${headingLevel}`;
 
   return (
@@ -36,11 +36,30 @@ export function MovieCard({ movie, menu, headingLevel = 3 }) {
         </div>
         <div className={styles.meta}>
           <Heading className={styles.title}>{movie.title}</Heading>
-          {details && <p className={styles.details}>{details}</p>}
+          {(movie.director || movie.year) && (
+            <p className={styles.details}>
+              {movie.director && <span className={styles.director}>{movie.director}</span>}
+              {movie.director && movie.year && <span aria-hidden="true">·</span>}
+              {movie.year && <span className={styles.year}>{movie.year}</span>}
+            </p>
+          )}
         </div>
       </Link>
       {menu && <div className={styles.menu}>{menu}</div>}
     </article>
+  );
+}
+
+/** Placeholder with the card's shape, shown while projects load. */
+export function MovieCardSkeleton() {
+  return (
+    <div className={cx(styles.card, styles.skeletonCard)} aria-hidden="true">
+      <Skeleton className={styles.skeletonPoster} />
+      <div className={styles.meta}>
+        <Skeleton className={styles.skeletonTitle} />
+        <Skeleton className={styles.skeletonDetails} />
+      </div>
+    </div>
   );
 }
 

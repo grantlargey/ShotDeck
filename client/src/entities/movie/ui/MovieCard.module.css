@@ -88,19 +88,52 @@
   white-space: nowrap;
 }
 
+/* A long director name truncates; the year always stays visible. */
 .details {
   margin: 0;
-  overflow: hidden;
+  min-width: 0;
+  display: flex;
+  gap: 0.35em;
   color: var(--color-text-muted);
   font-size: var(--text-xs);
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.director {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.year {
+  flex: none;
 }
 
 .menu {
   position: absolute;
   top: 8px;
   right: 8px;
+}
+
+/* ---------- Loading placeholder ---------- */
+
+.skeletonCard {
+  pointer-events: none;
+}
+
+.skeletonPoster {
+  aspect-ratio: 2 / 3;
+  border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
+}
+
+.skeletonTitle {
+  width: 75%;
+  height: 11px;
+}
+
+.skeletonDetails {
+  width: 55%;
+  height: 10px;
 }
 
 @media (max-width: 600px) {
