@@ -13,6 +13,7 @@ Options:
   --frontend-only       Deploy only the S3 frontend
   --skip-verify         Skip post-deploy health and website checks
   --no-rollback         Do not auto-rollback backend on failed verification
+  --skip-migrations     Deploy the backend without running database migrations first
   --allow-local-database
                        Allow a localhost/127.0.0.1 DATABASE_URL in the base ECS task definition
   --region REGION       AWS region override
@@ -35,6 +36,7 @@ deploy_backend=1
 deploy_frontend=1
 skip_verify=0
 auto_rollback=1
+run_migrations=1
 allow_local_database=0
 
 DEPLOY_REGION=""
@@ -65,6 +67,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-rollback)
       auto_rollback=0
+      shift
+      ;;
+    --skip-migrations)
+      run_migrations=0
       shift
       ;;
     --allow-local-database)
@@ -180,6 +186,160 @@ rollback_backend() {
   echo "[WARN] Rollback completed: $rollback_td"
 }
 
+# Runs `node src/migrate.js` once as a standalone task on the new task
+# definition, in the service's own subnets and security groups, so schema
+# changes land before any new API task starts. Migrations must stay backward
+# compatible with the previous release: it keeps serving until the service
+# update finishes, and it is what auto-rollback returns to.
+run_migrations_task() {
+  local task_definition="$1"
+  local task_definition_json="$2"
+  local service_json="/tmp/shotdeck-service.json"
+  local network_json="/tmp/shotdeck-migrate-network.json"
+  local capacity_json="/tmp/shotdeck-migrate-capacity.json"
+  local settings_txt="/tmp/shotdeck-migrate-settings.txt"
+  local run_json="/tmp/shotdeck-migrate-run.json"
+  local logs_json="/tmp/shotdeck-migrate-logs.json"
+
+  aws ecs describe-services \
+    --cluster "$ECS_CLUSTER" \
+    --services "$ECS_SERVICE" \
+    --region "$AWS_REGION" \
+    --query 'services[0]' > "$service_json" || return 1
+
+  python3 - <<'PY' "$service_json" "$task_definition_json" "$network_json" "$capacity_json" "$settings_txt" || return 1
+import json
+import sys
+
+service_path, task_path, network_path, capacity_path, settings_path = sys.argv[1:6]
+
+with open(service_path, "r", encoding="utf-8") as fh:
+    service = json.load(fh)
+with open(task_path, "r", encoding="utf-8") as fh:
+    task = json.load(fh)
+
+network = service.get("networkConfiguration")
+if not network:
+    raise SystemExit("Service has no network configuration to run the migration task in.")
+with open(network_path, "w", encoding="utf-8") as fh:
+    json.dump(network, fh)
+
+launch_type = service.get("launchType") or ""
+capacity = service.get("capacityProviderStrategy") or []
+if not launch_type and not capacity:
+    raise SystemExit("Service has neither a launch type nor a capacity provider strategy.")
+with open(capacity_path, "w", encoding="utf-8") as fh:
+    json.dump(capacity, fh)
+
+api = next((c for c in task.get("containerDefinitions", []) if c.get("name") == "api"), {})
+log_options = (api.get("logConfiguration") or {}).get("options") or {}
+
+with open(settings_path, "w", encoding="utf-8") as fh:
+    fh.write(f"{launch_type}\n{log_options.get('awslogs-group', '')}\n{log_options.get('awslogs-stream-prefix', '')}\n")
+PY
+
+  local launch_type log_group log_prefix
+  launch_type="$(sed -n 1p "$settings_txt")"
+  log_group="$(sed -n 2p "$settings_txt")"
+  log_prefix="$(sed -n 3p "$settings_txt")"
+
+  local placement_flag placement_value
+  if [[ -n "$launch_type" ]]; then
+    placement_flag="--launch-type"
+    placement_value="$launch_type"
+  else
+    placement_flag="--capacity-provider-strategy"
+    placement_value="file://$capacity_json"
+  fi
+
+  echo "[INFO] Starting migration task on $task_definition"
+  aws ecs run-task \
+    --cluster "$ECS_CLUSTER" \
+    --task-definition "$task_definition" \
+    "$placement_flag" "$placement_value" \
+    --network-configuration "file://$network_json" \
+    --overrides '{"containerOverrides":[{"name":"api","command":["node","src/migrate.js"]}]}' \
+    --started-by "deploy-prod-migrate" \
+    --region "$AWS_REGION" \
+    --output json > "$run_json" || return 1
+
+  python3 - <<'PY' "$run_json" "$settings_txt" || return 1
+import json
+import sys
+
+run_path, settings_path = sys.argv[1:3]
+
+with open(run_path, "r", encoding="utf-8") as fh:
+    result = json.load(fh)
+
+failures = result.get("failures") or []
+for failure in failures:
+    print(f"[ERROR] RunTask failure: {failure.get('reason')} {failure.get('detail') or ''}", file=sys.stderr)
+tasks = result.get("tasks") or []
+if failures or not tasks:
+    raise SystemExit("RunTask did not start the migration task.")
+
+with open(settings_path, "a", encoding="utf-8") as fh:
+    fh.write(tasks[0]["taskArn"] + "\n")
+PY
+
+  local task_arn task_id
+  task_arn="$(sed -n 4p "$settings_txt")"
+  task_id="${task_arn##*/}"
+
+  echo "[INFO] Waiting for migration task $task_id to finish"
+  if ! aws ecs wait tasks-stopped \
+    --cluster "$ECS_CLUSTER" \
+    --tasks "$task_arn" \
+    --region "$AWS_REGION"; then
+    echo "[ERROR] Timed out waiting for migration task $task_arn" >&2
+    return 1
+  fi
+
+  local exit_code stopped_reason
+  exit_code="$(aws ecs describe-tasks \
+    --cluster "$ECS_CLUSTER" \
+    --tasks "$task_arn" \
+    --region "$AWS_REGION" \
+    --query "tasks[0].containers[?name=='api'] | [0].exitCode" \
+    --output text)" || return 1
+  stopped_reason="$(aws ecs describe-tasks \
+    --cluster "$ECS_CLUSTER" \
+    --tasks "$task_arn" \
+    --region "$AWS_REGION" \
+    --query 'tasks[0].stoppedReason' \
+    --output text)" || return 1
+
+  # CloudWatch can lag a few seconds behind a task that just stopped.
+  if [[ -n "$log_group" && -n "$log_prefix" ]]; then
+    local attempt logs_printed=0
+    for attempt in 1 2 3; do
+      if aws logs get-log-events \
+        --log-group-name "$log_group" \
+        --log-stream-name "$log_prefix/api/$task_id" \
+        --start-from-head \
+        --region "$AWS_REGION" \
+        --output json > "$logs_json" 2>/dev/null \
+        && python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1]))["events"] else 1)' "$logs_json"; then
+        python3 -c 'import json, sys; [print("  | " + e["message"]) for e in json.load(open(sys.argv[1]))["events"]]' "$logs_json"
+        logs_printed=1
+        break
+      fi
+      sleep 5
+    done
+    if [[ "$logs_printed" -eq 0 ]]; then
+      echo "[WARN] Could not read migration logs from $log_group ($log_prefix/api/$task_id); check logs:GetLogEvents access. The exit code below still decides the deploy."
+    fi
+  fi
+
+  if [[ "$exit_code" != "0" ]]; then
+    echo "[ERROR] Migration task exited with code $exit_code ($stopped_reason)" >&2
+    return 1
+  fi
+
+  echo "[INFO] Migrations applied"
+}
+
 verify_backend() {
   echo "[INFO] Verifying backend health"
   curl -fsS "$API_HEALTH_URL"
@@ -212,6 +372,7 @@ echo "[INFO] Backend image: $IMAGE_URI"
 echo "[INFO] Backend enabled: $deploy_backend"
 echo "[INFO] Frontend enabled: $deploy_frontend"
 echo "[INFO] Backend auto-rollback: $auto_rollback"
+echo "[INFO] Run database migrations: $run_migrations"
 echo "[INFO] Allow local DATABASE_URL in base task definition: $allow_local_database"
 
 if [[ "$deploy_backend" -eq 1 ]]; then
@@ -336,6 +497,13 @@ PY
     --cli-input-json "file://$next_td_json" \
     --query 'taskDefinition.taskDefinitionArn' \
     --output text)"
+
+  if [[ "$run_migrations" -eq 1 ]]; then
+    if ! run_migrations_task "$new_td" "$next_td_json"; then
+      echo "[ERROR] Migrations failed. The ECS service was not updated and still runs $current_task_definition_arn" >&2
+      exit 1
+    fi
+  fi
 
   echo "[INFO] Updating ECS service to $new_td"
   aws ecs update-service \
