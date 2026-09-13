@@ -3,9 +3,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 5px;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   font-family: inherit;
   font-weight: 600;
   line-height: 1;
@@ -26,21 +26,21 @@
 /* ---------- Sizes ---------- */
 
 .sm {
-  height: 32px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--text-xs);
+}
+
+.md {
+  height: 34px;
   padding: 0 12px;
   font-size: var(--text-sm);
 }
 
-.md {
-  height: 40px;
-  padding: 0 16px;
-  font-size: var(--text-md);
-}
-
 .lg {
-  height: 50px;
-  padding: 0 24px;
-  font-size: var(--text-base);
+  height: 42px;
+  padding: 0 18px;
+  font-size: var(--text-md);
 }
 
 .block {
@@ -79,23 +79,23 @@
 }
 
 .danger {
-  border-color: var(--color-danger-line);
+  border-color: var(--color-btn-danger-line);
   background: transparent;
-  color: var(--color-danger);
+  color: var(--color-btn-danger);
 }
 
 .danger:hover:not(:disabled) {
-  background: var(--color-danger-soft);
+  background: var(--color-btn-danger-soft);
 }
 
 .ai {
-  border-color: var(--color-ai-line);
+  border-color: var(--color-btn-ai-line);
   background: transparent;
-  color: var(--color-ai);
+  color: var(--color-btn-ai);
 }
 
 .ai:hover:not(:disabled) {
-  background: var(--color-ai-soft);
+  background: var(--color-btn-ai-soft);
 }
 
 /* Disabled actions turn neutral grey instead of showing a faded version of their color. */

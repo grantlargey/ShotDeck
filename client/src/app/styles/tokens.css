@@ -39,9 +39,9 @@
   --color-accent-soft: rgba(var(--accent-rgb), 0.12);
   --color-accent-line: rgba(var(--accent-rgb), 0.35);
   --color-on-accent: #0b0d13;
-  /* Flat fills for primary actions; white text stays above 4.5:1 in both states. */
-  --color-primary: #2f67eb;
-  --color-primary-hover: #2659d9;
+  /* Flat fills for primary actions; off-white text stays above 4.5:1 in both states. */
+  --color-primary: #35578f;
+  --color-primary-hover: #2c4a7a;
 
   /* Status tones: text, soft fill, border */
   --color-info: #cfe0ff;
@@ -57,6 +57,16 @@
   --color-ai: #ddd6fe;
   --color-ai-soft: rgba(167, 139, 250, 0.12);
   --color-ai-line: rgba(167, 139, 250, 0.42);
+
+  /* Button-only tints: muted counterparts of the danger/ai tones above, kept
+     separate so callouts, badges, and inline error text stay at full
+     brightness for legibility while the Button component reads calmer. */
+  --color-btn-danger: #d6a3a3;
+  --color-btn-danger-soft: rgba(198, 140, 140, 0.12);
+  --color-btn-danger-line: rgba(198, 140, 140, 0.4);
+  --color-btn-ai: #b0a4da;
+  --color-btn-ai-soft: rgba(150, 138, 196, 0.12);
+  --color-btn-ai-line: rgba(150, 138, 196, 0.4);
 
   /* Script paper */
   --color-paper: #f3f0e8;
