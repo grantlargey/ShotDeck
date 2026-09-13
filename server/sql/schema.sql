@@ -2,6 +2,8 @@ CREATE TABLE IF NOT EXISTS movies (
   id UUID PRIMARY KEY,
   title TEXT NOT NULL,
   director TEXT NOT NULL,
+  writer TEXT,
+  cinematographer TEXT,
   year INT NOT NULL CHECK (year >= 1888),
   runtime_minutes INT NOT NULL CHECK (runtime_minutes > 0),
   cover_image_key TEXT,

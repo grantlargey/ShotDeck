@@ -1,3 +1,4 @@
+import { MOVIE_CREDITS } from "@/entities/movie";
 import { formatMinutesToHms } from "@/shared/lib/time";
 import { PageHeader } from "@/shared/ui";
 import styles from "./MovieDetailPage.module.css";
@@ -19,13 +20,15 @@ export function MovieHeader({ movie, coverUrl, actions }) {
             <dd>{movie.year || "—"}</dd>
           </div>
           <div>
-            <dt>Director</dt>
-            <dd>{movie.director || "—"}</dd>
-          </div>
-          <div>
             <dt>Runtime</dt>
             <dd>{formatMinutesToHms(movie.runtime_minutes)}</dd>
           </div>
+          {MOVIE_CREDITS.map(({ field, label }) => (
+            <div key={field}>
+              <dt>{label}</dt>
+              <dd>{movie[field] || "—"}</dd>
+            </div>
+          ))}
         </dl>
       </div>
     </div>

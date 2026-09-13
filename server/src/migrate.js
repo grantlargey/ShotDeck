@@ -15,6 +15,11 @@ await pool.query(`
   ADD COLUMN IF NOT EXISTS links JSONB NOT NULL DEFAULT '[]'::jsonb
 `);
 await pool.query(`
+  ALTER TABLE movies
+  ADD COLUMN IF NOT EXISTS writer TEXT,
+  ADD COLUMN IF NOT EXISTS cinematographer TEXT
+`);
+await pool.query(`
   DO $$
   BEGIN
     IF EXISTS (

@@ -1,25 +1,51 @@
+/* Search and sort share the first row; the filters line up beneath them. */
 .toolbar {
   margin-bottom: 20px;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
 .search {
-  flex: 1 1 260px;
-}
-
-.toolbar .filter {
-  flex: 0 1 190px;
-  width: auto;
+  grid-column: span 3;
 }
 
 .notice {
   margin-bottom: 16px;
 }
 
+@media (max-width: 900px) {
+  .toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .search {
+    grid-column: auto;
+  }
+}
+
+/*
+ * Half-width selects clip the longest labels ("All cinematographers",
+ * "Cinematographer A–Z") on phones, so wrap instead: search and the last
+ * filter get full rows, and year shrinks to its content beside sort.
+ */
 @media (max-width: 600px) {
-  .toolbar .filter {
-    flex: 1 1 140px;
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .toolbar > * {
+    flex: 1 1 40%;
+  }
+
+  .toolbar .search,
+  .toolbar > :last-child {
+    flex-basis: 100%;
+  }
+
+  .toolbar .year {
+    flex: none;
+    width: auto;
   }
 }

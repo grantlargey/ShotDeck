@@ -1,5 +1,9 @@
-function getLastName(fullName) {
-  const parts = String(fullName || "").trim().split(/\s+/);
+import { MOVIE_CREDITS, splitCreditNames } from "./movieCredits.js";
+
+/** Last name of the first person credited, lowercased for sorting. */
+function getCreditSortName(credit) {
+  const [firstName = ""] = splitCreditNames(credit);
+  const parts = firstName.split(/\s+/);
   return (parts[parts.length - 1] || "").toLowerCase();
 }
 
@@ -12,8 +16,10 @@ export function getMovieCoverUrl(movie) {
   return movie?.cover_image_url || movie?.cover_url || "";
 }
 
-export function getMovieDirectors(movies) {
-  return Array.from(new Set(movies.map((m) => m.director).filter(Boolean))).sort();
+/** Every distinct person named in one credit field (e.g. "writer") across movies. */
+export function getMovieCreditNames(movies, field) {
+  const names = new Set(movies.flatMap((movie) => splitCreditNames(movie[field])));
+  return Array.from(names).sort((a, b) => a.localeCompare(b));
 }
 
 export function getMovieYears(movies) {
@@ -48,18 +54,31 @@ export function getRecentMovies(movies, limit = 3) {
     .map(({ movie }) => movie);
 }
 
+/** Sorts by credited last name; movies without the credit stay last either way. */
+function sortByCredit(list, field, direction) {
+  list.sort((a, b) => {
+    const aName = getCreditSortName(a[field]);
+    const bName = getCreditSortName(b[field]);
+    if (!aName || !bName) return Number(!aName) - Number(!bName);
+    return direction * aName.localeCompare(bName);
+  });
+}
+
 /**
  * Applies the archive page's stable filter/sort rules without mutating the
- * source movie array.
+ * source movie array. `credits` maps a credit field to a selected name or "all".
  */
-export function filterAndSortMovies(movies, { query = "", director = "all", year = "all", sort = "az" }) {
+export function filterAndSortMovies(movies, { query = "", credits = {}, year = "all", sort = "az" }) {
   const q = query.trim().toLowerCase();
 
   const filtered = movies.filter((movie) => {
     const matchesTitle = String(movie.title || "").toLowerCase().includes(q);
-    const matchesDirector = director === "all" || movie.director === director;
+    const matchesCredits = MOVIE_CREDITS.every(({ field }) => {
+      const selected = credits[field] ?? "all";
+      return selected === "all" || splitCreditNames(movie[field]).includes(selected);
+    });
     const matchesYear = year === "all" || String(movie.year) === String(year);
-    return matchesTitle && matchesDirector && matchesYear;
+    return matchesTitle && matchesCredits && matchesYear;
   });
 
   const list = [...filtered];
@@ -77,14 +96,12 @@ export function filterAndSortMovies(movies, { query = "", director = "all", year
     case "oldest":
       list.sort((a, b) => (safeYear(a.year) ?? 9999) - (safeYear(b.year) ?? 9999));
       break;
-    case "directoraz":
-      list.sort((a, b) => getLastName(a.director).localeCompare(getLastName(b.director)));
+    default: {
+      // Credit sorts use "<field>az" / "<field>za", e.g. "writeraz".
+      const credit = MOVIE_CREDITS.find(({ field }) => sort === `${field}az` || sort === `${field}za`);
+      if (credit) sortByCredit(list, credit.field, sort.endsWith("za") ? -1 : 1);
       break;
-    case "directorza":
-      list.sort((a, b) => getLastName(b.director).localeCompare(getLastName(a.director)));
-      break;
-    default:
-      break;
+    }
   }
 
   return list;

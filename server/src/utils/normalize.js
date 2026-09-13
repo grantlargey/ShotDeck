@@ -19,6 +19,14 @@ export function normalizeLinks(value) {
     return "__INVALID__";
 }
 
+/** Optional free text such as a crew credit: blank strings are stored as null. */
+export function normalizeOptionalText(value) {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (typeof value === "string") return value.trim() || null;
+    return "__INVALID__";
+}
+
 export function normalizeTags(value) {
     if (value === undefined) return undefined;
     if (value === null) return [];

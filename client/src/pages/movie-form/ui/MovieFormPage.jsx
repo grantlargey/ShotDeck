@@ -6,6 +6,7 @@ import { movieActions } from "@/features/movie-actions";
 import { saveScriptPdf } from "@/features/script-actions";
 import { uploadMediaFile } from "@/features/upload-media";
 import { api } from "@/shared/api";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
 import { parseTimeInputToMinutes } from "@/shared/lib/time";
 import { Button, Callout, Field, FileInput, PageHeader, Panel } from "@/shared/ui";
 import styles from "./MovieFormPage.module.css";
@@ -18,6 +19,8 @@ export default function MovieFormPage({ mode }) {
   const [form, setForm] = useState({
     title: "",
     director: "",
+    writer: "",
+    cinematographer: "",
     year: "",
     runtime_hms: "",
   });
@@ -53,7 +56,7 @@ export default function MovieFormPage({ mode }) {
         // Prefer cover_url / cover_image_url if backend provides it
         setExistingCoverUrl(m.cover_url || m.cover_image_url || "");
       } catch (e) {
-        setErr(e.message || "Failed to load project");
+        setErr(getErrorMessage(e, "Failed to load project."));
       }
     })();
   }, [mode, id]);
@@ -69,14 +72,14 @@ export default function MovieFormPage({ mode }) {
 
     try {
       if (scriptFile && scriptFile.type !== "application/pdf") {
-        throw new Error("Please choose a PDF file for the script.");
+        throw new ValidationError("Please choose a PDF file for the script.");
       }
 
       const runtimeMinutes = parseTimeInputToMinutes(form.runtime_hms, {
         rounding: "nearest",
       });
       if (runtimeMinutes === null || runtimeMinutes < 1) {
-        throw new Error("Runtime must use HH:MM:SS and be at least 00:01:00.");
+        throw new ValidationError("Runtime must use HH:MM:SS and be at least 00:01:00.");
       }
 
       const basePayload = buildMovieSavePayload(form, runtimeMinutes);
@@ -120,7 +123,7 @@ export default function MovieFormPage({ mode }) {
 
       nav(`/movies`);
     } catch (e2) {
-      setErr(e2.message || "Something went wrong");
+      setErr(getErrorMessage(e2, "Failed to save project."));
     } finally {
       setSaving(false);
     }

@@ -3,13 +3,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   filterAndSortMovies,
-  getMovieDirectors,
+  getMovieCreditNames,
   getMovieYears,
+  MOVIE_CREDITS,
   MovieCard,
   MovieCardGrid,
 } from "@/entities/movie";
 import { movieActions } from "@/features/movie-actions";
 import { api } from "@/shared/api";
+import { getErrorMessage } from "@/shared/lib/errors";
 import {
   Button,
   Callout,
@@ -28,9 +30,13 @@ const SORT_OPTIONS = [
   { value: "za", label: "Title Z–A" },
   { value: "newest", label: "Newest release" },
   { value: "oldest", label: "Oldest release" },
-  { value: "directoraz", label: "Director A–Z" },
-  { value: "directorza", label: "Director Z–A" },
+  ...MOVIE_CREDITS.flatMap(({ field, label }) => [
+    { value: `${field}az`, label: `${label} A–Z` },
+    { value: `${field}za`, label: `${label} Z–A` },
+  ]),
 ];
+
+const NO_CREDIT_FILTERS = Object.fromEntries(MOVIE_CREDITS.map(({ field }) => [field, "all"]));
 
 export default function MoviesListPage() {
   const nav = useNavigate();
@@ -45,7 +51,7 @@ export default function MoviesListPage() {
   // controls
   const [query, setQuery] = useState(queryFromUrl);
   const [sort, setSort] = useState("az");
-  const [director, setDirector] = useState("all");
+  const [credits, setCredits] = useState(NO_CREDIT_FILTERS);
   const [year, setYear] = useState("all");
 
   useEffect(() => {
@@ -56,7 +62,7 @@ export default function MoviesListPage() {
         if (!cancelled) setMovies(Array.isArray(data) ? data : []);
       })
       .catch((e) => {
-        if (!cancelled) setErr(e.message || "Failed to load projects");
+        if (!cancelled) setErr(getErrorMessage(e, "Failed to load projects."));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -81,23 +87,27 @@ export default function MoviesListPage() {
       await movieActions.delete(movie.id);
       setMovies((current) => current.filter((entry) => entry.id !== movie.id));
     } catch (e) {
-      setErr(e.message || "Failed to delete project");
+      setErr(getErrorMessage(e, "Failed to delete project."));
     } finally {
       setDeletingId(null);
     }
   }
 
-  const directors = useMemo(() => getMovieDirectors(movies), [movies]);
+  const creditNames = useMemo(
+    () => Object.fromEntries(MOVIE_CREDITS.map(({ field }) => [field, getMovieCreditNames(movies, field)])),
+    [movies]
+  );
   const years = useMemo(() => getMovieYears(movies), [movies]);
   const filtered = useMemo(
-    () => filterAndSortMovies(movies, { query, director, year, sort }),
-    [movies, query, director, year, sort]
+    () => filterAndSortMovies(movies, { query, credits, year, sort }),
+    [movies, query, credits, year, sort]
   );
-  const hasFilters = Boolean(query.trim()) || director !== "all" || year !== "all";
+  const hasFilters =
+    Boolean(query.trim()) || Object.values(credits).some((value) => value !== "all") || year !== "all";
 
   function clearFilters() {
     setQuery("");
-    setDirector("all");
+    setCredits(NO_CREDIT_FILTERS);
     setYear("all");
   }
 
@@ -120,7 +130,7 @@ export default function MoviesListPage() {
           onChange={(e) => setQuery(e.target.value)}
         />
 
-        <Select className={styles.filter} aria-label="Sort projects" value={sort} onChange={(e) => setSort(e.target.value)}>
+        <Select aria-label="Sort projects" value={sort} onChange={(e) => setSort(e.target.value)}>
           {SORT_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -128,21 +138,7 @@ export default function MoviesListPage() {
           ))}
         </Select>
 
-        <Select
-          className={styles.filter}
-          aria-label="Filter by director"
-          value={director}
-          onChange={(e) => setDirector(e.target.value)}
-        >
-          <option value="all">All directors</option>
-          {directors.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </Select>
-
-        <Select className={styles.filter} aria-label="Filter by year" value={year} onChange={(e) => setYear(e.target.value)}>
+        <Select className={styles.year} aria-label="Filter by year" value={year} onChange={(e) => setYear(e.target.value)}>
           <option value="all">All years</option>
           {years.map((y) => (
             <option key={y} value={String(y)}>
@@ -150,6 +146,22 @@ export default function MoviesListPage() {
             </option>
           ))}
         </Select>
+
+        {MOVIE_CREDITS.map(({ field, label, plural }) => (
+          <Select
+            key={field}
+            aria-label={`Filter by ${label.toLowerCase()}`}
+            value={credits[field]}
+            onChange={(e) => setCredits((current) => ({ ...current, [field]: e.target.value }))}
+          >
+            <option value="all">All {plural}</option>
+            {creditNames[field].map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </Select>
+        ))}
       </div>
 
       {err && (

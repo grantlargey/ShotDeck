@@ -16,6 +16,7 @@ import {
 import { movieActions } from "@/features/movie-actions";
 import { saveScriptPdf as saveScriptPdfAction } from "@/features/script-actions";
 import { api } from "@/shared/api";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
 import {
   formatSecondsToHms,
   parseTimeInputToMinutes,
@@ -71,6 +72,8 @@ export default function MovieDetailPage() {
   const [editForm, setEditForm] = useState({
     title: "",
     director: "",
+    writer: "",
+    cinematographer: "",
     year: "",
     runtime_hms: "",
   });
@@ -108,7 +111,7 @@ export default function MovieDetailPage() {
       // Keep edit form in sync with loaded movie
       setEditForm(createMovieEditForm(m));
     } catch (e) {
-      setErr(e.message);
+      setErr(getErrorMessage(e, "Failed to load project."));
     }
   }
 
@@ -172,10 +175,10 @@ export default function MovieDetailPage() {
     try {
       const time_seconds = parseTimeInputToSeconds(form.time_hms);
       if (time_seconds === null || time_seconds < 0) {
-        throw new Error("Annotation time must use HH:MM:SS (or MM:SS).");
+        throw new ValidationError("Annotation time must use HH:MM:SS (or MM:SS).");
       }
       if (!annotationFile) {
-        throw new Error("Please choose an image for the annotation.");
+        throw new ValidationError("Please choose an image for the annotation.");
       }
 
       const created = await createImageAnnotation({
@@ -188,7 +191,7 @@ export default function MovieDetailPage() {
       setAnnotationFile(null);
       await load({ annotationId: created?.id || "" });
     } catch (e2) {
-      setErr(e2.message);
+      setErr(getErrorMessage(e2, "Failed to add annotation."));
     }
   }
 
@@ -199,10 +202,10 @@ export default function MovieDetailPage() {
     try {
       const time_seconds = parseTimeInputToSeconds(annotationEditForm.time_hms);
       if (time_seconds === null || time_seconds < 0) {
-        throw new Error("Annotation time must use HH:MM:SS (or MM:SS).");
+        throw new ValidationError("Annotation time must use HH:MM:SS (or MM:SS).");
       }
       if (!selected.image_key && !annotationEditFile) {
-        throw new Error("Please choose an image for the annotation.");
+        throw new ValidationError("Please choose an image for the annotation.");
       }
 
       await updateImageAnnotation({
@@ -217,7 +220,7 @@ export default function MovieDetailPage() {
       setAnnotationEditMode(false);
       setAnnotationEditFile(null);
     } catch (e) {
-      setErr(e.message);
+      setErr(getErrorMessage(e, "Failed to save annotation."));
     }
   }
 
@@ -245,7 +248,7 @@ export default function MovieDetailPage() {
       await deleteImageAnnotation(id, selected.id);
       await load({ annotationId: nextSelectedId });
     } catch (e) {
-      setErr(e.message);
+      setErr(getErrorMessage(e, "Failed to delete annotation."));
     }
   }
 
@@ -263,7 +266,7 @@ export default function MovieDetailPage() {
         return [script, ...rest];
       });
     } catch (e) {
-      setErr(e.message || "Failed to save script PDF");
+      setErr(getErrorMessage(e, "Failed to save script PDF."));
     } finally {
       setSavingScript(false);
     }
@@ -276,14 +279,14 @@ export default function MovieDetailPage() {
         rounding: "nearest",
       });
       if (runtimeMinutes === null || runtimeMinutes < 1) {
-        throw new Error("Runtime must use HH:MM:SS and be at least 00:01:00.");
+        throw new ValidationError("Runtime must use HH:MM:SS and be at least 00:01:00.");
       }
 
       await movieActions.update(id, buildMovieSavePayload(editForm, runtimeMinutes));
       await load();
       setEditMode(false);
     } catch (e) {
-      setErr(e.message);
+      setErr(getErrorMessage(e, "Failed to save project details."));
     }
   }
 
@@ -356,7 +359,7 @@ export default function MovieDetailPage() {
         if (cancelled) return;
         setSceneLookupStatus("error");
         setSceneLookupResult(null);
-        setSceneLookupMessage(e.message || "Failed to resolve scene for this timestamp.");
+        setSceneLookupMessage(getErrorMessage(e, "Failed to look up the scene for this timestamp."));
       }
     }
 

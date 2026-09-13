@@ -1,7 +1,8 @@
+export { MOVIE_CREDITS } from "./model/movieCredits.js";
 export {
   filterAndSortMovies,
   getMovieCoverUrl,
-  getMovieDirectors,
+  getMovieCreditNames,
   getMovieYears,
   getRecentMovies,
 } from "./model/movieFilters.js";

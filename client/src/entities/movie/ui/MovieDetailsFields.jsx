@@ -1,10 +1,11 @@
 import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
 import { Field, Input } from "@/shared/ui";
+import { MOVIE_CREDITS } from "../model/movieCredits.js";
 import styles from "./MovieDetailsFields.module.css";
 
 /**
- * Title, director, year, and runtime inputs shared by the project form and the
- * project page's inline editor. `values` matches `createMovieEditForm`.
+ * Title, crew credits, year, and runtime inputs shared by the project form and
+ * the project page's inline editor. `values` matches `createMovieEditForm`.
  */
 export function MovieDetailsFields({ values, onChange }) {
   return (
@@ -13,11 +14,18 @@ export function MovieDetailsFields({ values, onChange }) {
         <Input value={values.title} onChange={(event) => onChange("title", event.target.value)} required />
       </Field>
 
-      <Field label="Director">
-        <Input value={values.director} onChange={(event) => onChange("director", event.target.value)} required />
-      </Field>
+      {MOVIE_CREDITS.map(({ field, label, required }) => (
+        <Field key={field} label={label} className={styles.third}>
+          <Input
+            value={values[field]}
+            placeholder={required ? undefined : "Optional"}
+            onChange={(event) => onChange(field, event.target.value)}
+            required={required}
+          />
+        </Field>
+      ))}
 
-      <Field label="Release year">
+      <Field label="Release year" className={styles.half}>
         <Input
           type="number"
           min="1888"
@@ -28,7 +36,7 @@ export function MovieDetailsFields({ values, onChange }) {
         />
       </Field>
 
-      <Field label="Runtime" hint="Format: HH:MM:SS">
+      <Field label="Runtime" hint="Format: HH:MM:SS" className={styles.half}>
         <Input
           value={values.runtime_hms}
           placeholder="00:00:00"

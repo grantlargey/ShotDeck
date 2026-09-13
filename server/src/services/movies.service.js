@@ -1,8 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { HttpError } from "../utils/http-error.js";
-import { normalizeLinks } from "../utils/normalize.js";
+import { normalizeLinks, normalizeOptionalText } from "../utils/normalize.js";
 import * as moviesRepository from "../repositories/movies.repository.js";
 import { withMovieCoverUrl } from "../serializers/movies.serializer.js";
+
+const INVALID_BODY_MESSAGE =
+    "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) writer:string, (optional) cinematographer:string, (optional) cover_image_key:string, (optional) links:string[] }";
 
 function validateMoviePayload({ title, director, year, runtime_minutes }) {
     return (
@@ -13,32 +16,43 @@ function validateMoviePayload({ title, director, year, runtime_minutes }) {
     );
 }
 
-export async function createMovie(db, body) {
-    const { title, director, year, runtime_minutes, cover_image_key } = body;
-    const linksNorm = normalizeLinks(body.links);
+/**
+ * Parses the optional fields shared by create and update. Undefined values mean
+ * the client did not send the field, so updates keep the stored value.
+ */
+function normalizeOptionalFields(body) {
+    const links = normalizeLinks(body.links);
+    const writer = normalizeOptionalText(body.writer);
+    const cinematographer = normalizeOptionalText(body.cinematographer);
 
-    if (!validateMoviePayload(body)) {
-        throw new HttpError(
-            400,
-            "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) cover_image_key:string, (optional) links:string[] }"
-        );
+    if (!validateMoviePayload(body) || writer === "__INVALID__" || cinematographer === "__INVALID__") {
+        throw new HttpError(400, INVALID_BODY_MESSAGE);
     }
 
-    if (linksNorm === "__INVALID__") {
+    if (links === "__INVALID__") {
         throw new HttpError(
             400,
             "Invalid body. 'links' must be an array of strings (or a newline-separated string)."
         );
     }
 
+    return { links, writer, cinematographer };
+}
+
+export async function createMovie(db, body) {
+    const { title, director, year, runtime_minutes, cover_image_key } = body;
+    const { links, writer, cinematographer } = normalizeOptionalFields(body);
+
     const row = await moviesRepository.createMovie(db, {
         id: uuidv4(),
         title,
         director,
+        writer: writer ?? null,
+        cinematographer: cinematographer ?? null,
         year,
         runtimeMinutes: runtime_minutes,
         coverImageKey: cover_image_key,
-        links: linksNorm === undefined ? [] : linksNorm,
+        links: links === undefined ? [] : links,
     });
 
     return withMovieCoverUrl(row);
@@ -57,21 +71,7 @@ export async function getMovie(db, id) {
 
 export async function updateMovie(db, id, body) {
     const { title, director, year, runtime_minutes, cover_image_key } = body;
-    const linksNorm = normalizeLinks(body.links);
-
-    if (!validateMoviePayload(body)) {
-        throw new HttpError(
-            400,
-            "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) cover_image_key:string, (optional) links:string[] }"
-        );
-    }
-
-    if (linksNorm === "__INVALID__") {
-        throw new HttpError(
-            400,
-            "Invalid body. 'links' must be an array of strings (or a newline-separated string)."
-        );
-    }
+    const { links, writer, cinematographer } = normalizeOptionalFields(body);
 
     const existing = await moviesRepository.findMovieById(db, id);
     if (!existing) throw new HttpError(404, "Movie not found");
@@ -80,10 +80,12 @@ export async function updateMovie(db, id, body) {
         id,
         title,
         director,
+        writer: writer === undefined ? existing.writer : writer,
+        cinematographer: cinematographer === undefined ? existing.cinematographer : cinematographer,
         year,
         runtimeMinutes: runtime_minutes,
         coverImageKey: cover_image_key === undefined ? existing.cover_image_key : cover_image_key ?? null,
-        links: linksNorm === undefined ? existing.links ?? [] : linksNorm,
+        links: links === undefined ? existing.links ?? [] : links,
     });
 
     return withMovieCoverUrl(row);
