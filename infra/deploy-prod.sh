@@ -14,6 +14,7 @@ Options:
   --skip-verify         Skip post-deploy health and website checks
   --no-rollback         Do not auto-rollback backend on failed verification
   --skip-migrations     Deploy the backend without running database migrations first
+  --skip-build          Reuse the image already pushed as --image-tag instead of building it
   --allow-local-database
                        Allow a localhost/127.0.0.1 DATABASE_URL in the base ECS task definition
   --region REGION       AWS region override
@@ -38,6 +39,7 @@ skip_verify=0
 auto_rollback=1
 run_migrations=1
 allow_local_database=0
+skip_build=0
 
 DEPLOY_REGION=""
 AWS_ACCOUNT_ID_OVERRIDE=""
@@ -71,6 +73,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-migrations)
       run_migrations=0
+      shift
+      ;;
+    --skip-build)
+      skip_build=1
       shift
       ;;
     --allow-local-database)
@@ -145,8 +151,13 @@ require_cmd python3
 require_cmd rsync
 require_cmd npm
 
-if [[ "$deploy_backend" -eq 1 ]]; then
+if [[ "$deploy_backend" -eq 1 && "$skip_build" -eq 0 ]]; then
   require_cmd docker
+fi
+
+if [[ "$skip_build" -eq 1 && -z "$IMAGE_TAG_OVERRIDE" ]]; then
+  echo "--skip-build needs --image-tag naming an image that is already in ECR." >&2
+  exit 1
 fi
 
 AWS_REGION="${DEPLOY_REGION:-${AWS_REGION:-us-east-1}}"
@@ -374,8 +385,22 @@ echo "[INFO] Frontend enabled: $deploy_frontend"
 echo "[INFO] Backend auto-rollback: $auto_rollback"
 echo "[INFO] Run database migrations: $run_migrations"
 echo "[INFO] Allow local DATABASE_URL in base task definition: $allow_local_database"
+echo "[INFO] Skip image build: $skip_build"
 
-if [[ "$deploy_backend" -eq 1 ]]; then
+if [[ "$deploy_backend" -eq 1 && "$skip_build" -eq 1 ]]; then
+  # A push that keeps failing from buildx can be finished with a plain
+  # `docker push`; this then deploys that image without rebuilding it.
+  echo "[INFO] Using the image already in ECR: $IMAGE_URI"
+  pushed_at="$(aws ecr describe-images \
+    --repository-name "$ECR_REPO" \
+    --image-ids imageTag="$IMAGE_TAG" \
+    --region "$AWS_REGION" \
+    --query 'imageDetails[0].imagePushedAt' \
+    --output text)"
+  echo "[INFO] Image pushed at: $pushed_at"
+fi
+
+if [[ "$deploy_backend" -eq 1 && "$skip_build" -eq 0 ]]; then
   echo "[INFO] Checking Docker availability"
   docker info >/dev/null
 
@@ -403,7 +428,9 @@ if [[ "$deploy_backend" -eq 1 ]]; then
     -t "$IMAGE_URI" \
     --push \
     "$build_dir"
+fi
 
+if [[ "$deploy_backend" -eq 1 ]]; then
   current_td_json="/tmp/shotdeck-task-current.json"
   next_td_json="/tmp/shotdeck-task-next.json"
 
