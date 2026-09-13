@@ -1,17 +1,8 @@
 // client/src/shared/api/uploads.js
-import { API_BASE } from "./request.js";
+import { ApiError, ValidationError } from "@/shared/lib/errors";
+import { req } from "./request.js";
 
-async function fetchApi(path, options) {
-  try {
-    return await fetch(`${API_BASE}${path}`, options);
-  } catch {
-    throw new Error(
-      `Network error calling ${API_BASE}${path}. Check VITE_API_BASE, HTTPS, and CORS.`
-    );
-  }
-}
-
-async function presignUpload({ movieId, type, contentType }) {
+function presignUpload({ movieId, type, contentType }) {
   // Basic client-side guardrails
   if (!movieId) throw new Error("presignUpload: movieId is required");
   if (type !== "cover" && type !== "annotation" && type !== "script") {
@@ -21,13 +12,13 @@ async function presignUpload({ movieId, type, contentType }) {
     throw new Error("presignUpload: contentType is required");
   }
   if ((type === "cover" || type === "annotation") && !contentType.startsWith("image/")) {
-    throw new Error("presignUpload: image uploads require image/* mime type");
+    throw new ValidationError("Please choose an image file.");
   }
   if (type === "script" && contentType !== "application/pdf") {
-    throw new Error("presignUpload: script uploads require application/pdf");
+    throw new ValidationError("Please choose a PDF file.");
   }
 
-  const res = await fetchApi("/uploads/presign", {
+  return req("/uploads/presign", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -36,31 +27,36 @@ async function presignUpload({ movieId, type, contentType }) {
       contentType, // IMPORTANT: send exact mime type (image/jpeg, image/png, etc.)
     }),
   });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Failed to presign upload (${res.status}): ${text}`);
-  }
-
-  return res.json();
 }
 
 async function uploadToS3(uploadUrl, file) {
   if (!uploadUrl) throw new Error("uploadToS3: uploadUrl is required");
   if (!file) throw new Error("uploadToS3: file is required");
 
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    body: file,
-    headers: {
-      // MUST match the ContentType used when generating the presigned URL
-      "Content-Type": file.type || "application/octet-stream",
-    },
-  });
+  let res;
+  try {
+    res = await fetch(uploadUrl, {
+      method: "PUT",
+      body: file,
+      headers: {
+        // MUST match the ContentType used when generating the presigned URL
+        "Content-Type": file.type || "application/octet-stream",
+      },
+    });
+  } catch (cause) {
+    throw new ApiError("Network error uploading to S3. Check the bucket's CORS rules.", {
+      url: uploadUrl,
+      cause,
+    });
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`S3 upload failed (${res.status}): ${text}`);
+    throw new ApiError(`S3 upload failed: ${res.status} ${res.statusText}`, {
+      status: res.status,
+      url: uploadUrl,
+      body: { raw: text },
+    });
   }
 }
 
@@ -69,7 +65,7 @@ async function uploadToS3(uploadUrl, file) {
  * Returns the stable object key that should be saved in the database.
  */
 export async function uploadMediaFile({ movieId, type, file }) {
-  if (!file) throw new Error("Please choose a file to upload.");
+  if (!file) throw new ValidationError("Please choose a file to upload.");
 
   const { uploadUrl, key } = await presignUpload({
     movieId,
@@ -86,6 +82,6 @@ export async function uploadMediaFile({ movieId, type, file }) {
  */
 export function assertPdfFile(file) {
   if (file && file.type !== "application/pdf") {
-    throw new Error("Please choose a PDF file.");
+    throw new ValidationError("Please choose a PDF file.");
   }
 }

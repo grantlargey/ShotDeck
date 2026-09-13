@@ -11,6 +11,7 @@ import {
 } from "@/entities/script-scene";
 import { scriptSceneActions } from "@/features/script-scene-actions";
 import { api } from "@/shared/api";
+import { getErrorMessage } from "@/shared/lib/errors";
 import { screenplayToPlainText } from "@/shared/lib/screenplay";
 import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
 import { CloseIcon, IconButton, LoadingState } from "@/shared/ui";
@@ -121,7 +122,7 @@ function ScriptViewerPage() {
         setScenes(sortScriptScenes(Array.isArray(sceneData) ? sceneData : []));
       })
       .catch((error) => {
-        if (!cancelled) setNotice({ tone: "error", text: error.message || "Failed to load the script viewer." });
+        if (!cancelled) setNotice({ tone: "error", text: getErrorMessage(error, "Failed to load the script viewer.") });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -360,7 +361,7 @@ function ScriptViewerPage() {
       });
       dispatch({ type: "proposalReady", requestId, markdown: result?.markdown || "" });
     } catch (error) {
-      dispatch({ type: "proposalError", requestId, error: error.message || "AI formatting failed." });
+      dispatch({ type: "proposalError", requestId, error: getErrorMessage(error, "AI formatting failed.") });
     }
   }
 
@@ -384,7 +385,7 @@ function ScriptViewerPage() {
       dispatch({ type: "loadScene", scene: saved });
       setNotice({ tone: "info", text: wasEditing ? "Scene updated." : "Scene saved." });
     } catch (saveError) {
-      setNotice({ tone: "error", text: saveError.message || "Failed to save the scene." });
+      setNotice({ tone: "error", text: getErrorMessage(saveError, "Failed to save the scene.") });
     } finally {
       setSaving(false);
     }
@@ -401,7 +402,7 @@ function ScriptViewerPage() {
       setModal((current) => (current?.sceneId === scene.id ? null : current));
       setNotice({ tone: "info", text: "Scene deleted." });
     } catch (deleteError) {
-      setNotice({ tone: "error", text: deleteError.message || "Failed to delete the scene." });
+      setNotice({ tone: "error", text: getErrorMessage(deleteError, "Failed to delete the scene.") });
     } finally {
       setDeletingSceneId("");
     }
@@ -444,7 +445,7 @@ function ScriptViewerPage() {
                 file={script.script_url}
                 loading={<p className={styles.viewerMessage}>Loading PDF…</p>}
                 onLoadSuccess={setPdfDocument}
-                onLoadError={(error) => setPdfLoadError(error?.message || "Unable to load this PDF.")}
+                onLoadError={(error) => setPdfLoadError(getErrorMessage(error, "Unable to load this PDF."))}
               >
                 {pageNumbers.map((pageNumber) => {
                   const inWindow =

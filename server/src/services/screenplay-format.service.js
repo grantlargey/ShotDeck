@@ -110,7 +110,8 @@ function buildUserContent({ capturedText, draftMarkdown, pageStart, pageEnd, pag
 export async function formatScreenplaySelection(input) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-        throw new HttpError(503, "AI formatting is not configured on this server (OPENAI_API_KEY is missing).");
+        console.error("Screenplay formatting is disabled: OPENAI_API_KEY is not set.");
+        throw new HttpError(503, "AI formatting isn't available right now.");
     }
 
     const model = process.env.OPENAI_SCREENPLAY_MODEL || process.env.OPENAI_FORMAT_MODEL || "gpt-5-nano";

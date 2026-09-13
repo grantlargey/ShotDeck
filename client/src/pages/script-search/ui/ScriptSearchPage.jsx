@@ -9,6 +9,7 @@ import {
   SceneCard,
 } from "@/entities/script-scene";
 import { api } from "@/shared/api";
+import { getErrorMessage } from "@/shared/lib/errors";
 import { formatSecondsToHms } from "@/shared/lib/time";
 import { Button, Callout, Chip, EmptyState, ScreenplayView, Select } from "@/shared/ui";
 import {
@@ -55,7 +56,7 @@ export default function ScriptSearchPage() {
       })
       .catch((e) => {
         if (!cancelled) {
-          setResponse({ key: requestKey, rows: [], error: e.message || "Search failed" });
+          setResponse({ key: requestKey, rows: [], error: getErrorMessage(e, "Search failed.") });
         }
       });
     return () => {
