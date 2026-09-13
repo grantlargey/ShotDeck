@@ -13,6 +13,8 @@ export {
   ChevronLeftIcon,
   ChevronRightIcon,
   CloseIcon,
+  EyeIcon,
+  EyeOffIcon,
   MoreIcon,
   SearchIcon,
 } from "./icons.jsx";

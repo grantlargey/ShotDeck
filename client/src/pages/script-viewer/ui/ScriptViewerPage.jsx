@@ -95,6 +95,8 @@ function ScriptViewerPage() {
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deletingSceneId, setDeletingSceneId] = useState("");
+  // Hides the on-page start/end markers for uncluttered reading; anchors stay set.
+  const [showAnchorMarkers, setShowAnchorMarkers] = useState(true);
   const [pendingScroll, setPendingScroll] = useState(() => {
     const page = parsePageParam(searchParams.get("page"));
     return page ? { page, offsetPt: null } : null;
@@ -423,6 +425,8 @@ function ScriptViewerPage() {
         title={title}
         pageCount={numPages}
         sceneCount={scenes.length}
+        anchorMarkersVisible={showAnchorMarkers}
+        onToggleAnchorMarkers={() => setShowAnchorMarkers((visible) => !visible)}
         onBackToMovie={() => nav(`/movies/${movieId}`)}
         onSearchScripts={() => nav("/script-search")}
         onJumpToScenes={jumpToScenes}
@@ -462,8 +466,8 @@ function ScriptViewerPage() {
                         inWindow ? 0 : windowing.pageHeights[pageNumber] || windowing.defaultPageHeight
                       }
                       compact={windowing.compact}
-                      startAnchor={anchors.start?.page === pageNumber ? anchors.start : null}
-                      endAnchor={anchors.end?.page === pageNumber ? anchors.end : null}
+                      startAnchor={showAnchorMarkers && anchors.start?.page === pageNumber ? anchors.start : null}
+                      endAnchor={showAnchorMarkers && anchors.end?.page === pageNumber ? anchors.end : null}
                       rangeTop={inRange ? (pageNumber === anchors.start.page ? anchors.start.top : 0) : null}
                       rangeBottom={
                         inRange ? (pageNumber === anchors.end.page ? anchors.end.bottom : Infinity) : null
