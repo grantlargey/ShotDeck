@@ -7,7 +7,7 @@
  * details go to the console instead of the page.
  */
 
-export const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again.";
+const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again.";
 
 /** A problem the user can fix, such as a malformed timestamp. Shown as-is. */
 export class ValidationError extends Error {

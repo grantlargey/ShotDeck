@@ -71,9 +71,7 @@ export default function MovieFormPage({ mode }) {
         throw new ValidationError("Please choose a PDF file for the script.");
       }
 
-      const runtimeMinutes = parseTimeInputToMinutes(form.runtime_hms, {
-        rounding: "nearest",
-      });
+      const runtimeMinutes = parseTimeInputToMinutes(form.runtime_hms);
       if (runtimeMinutes === null || runtimeMinutes < 1) {
         throw new ValidationError("Runtime must use HH:MM:SS and be at least 00:01:00.");
       }

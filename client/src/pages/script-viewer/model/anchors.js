@@ -25,7 +25,7 @@ export function createLineAnchor(page, line) {
   };
 }
 
-export function anchorKey(anchor) {
+function anchorKey(anchor) {
   return anchor ? `${anchor.page}:${anchor.line}` : "";
 }
 

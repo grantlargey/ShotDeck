@@ -60,11 +60,8 @@ export function parseTimeInputToSeconds(value) {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-export function parseTimeInputToMinutes(value, options = {}) {
-  const rounding = options.rounding || "nearest";
+/** Typed time as whole minutes, rounded to the nearest minute, or null when it can't be parsed. */
+export function parseTimeInputToMinutes(value) {
   const seconds = parseTimeInputToSeconds(value);
-  if (seconds === null) return null;
-  if (rounding === "ceil") return Math.ceil(seconds / 60);
-  if (rounding === "floor") return Math.floor(seconds / 60);
-  return Math.round(seconds / 60);
+  return seconds === null ? null : Math.round(seconds / 60);
 }
