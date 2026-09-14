@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSession } from "@/entities/session";
-import { api } from "@/shared/api";
+import { changePassword } from "@/shared/api/auth.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
 import { Button, Callout, Dialog, Field, Input } from "@/shared/ui";
 import styles from "./ChangePasswordDialog.module.css";
@@ -27,7 +27,7 @@ export function ChangePasswordDialog({ onClose }) {
       }
       if (newPassword !== confirmPassword) throw new ValidationError("The passwords don't match.");
       setBusy(true);
-      const { user: updated } = await api.changePassword({ currentPassword, newPassword });
+      const { user: updated } = await changePassword({ currentPassword, newPassword });
       applyUser(updated);
       setSaved(true);
     } catch (e) {

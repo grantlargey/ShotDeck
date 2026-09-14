@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "@/shared/api";
+import { getViewUrlForKey } from "@/shared/api/uploads.js";
 
 // Signed view URLs expire, so cached entries are refetched after this long.
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -22,8 +22,7 @@ export function useSignedMediaUrl(key, directUrl = null) {
   useEffect(() => {
     if (directUrl || !key || readCache(key)) return undefined;
     let cancelled = false;
-    api
-      .getViewUrlForKey(key)
+    getViewUrlForKey(key)
       .then(({ url }) => {
         if (!url) return;
         urlCache.set(key, { url, at: Date.now() });

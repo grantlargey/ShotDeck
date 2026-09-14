@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getRecentMovies, MovieCard, MovieCardGrid, MovieCardSkeleton } from "@/entities/movie";
 import { useSession } from "@/entities/session";
-import { api } from "@/shared/api";
+import { listMovies } from "@/shared/api/movies.js";
 import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage } from "@/shared/lib/errors";
 import {
@@ -35,7 +35,7 @@ export default function HomePage() {
       setErr("");
       setLoading(true);
       try {
-        const data = await api.listMovies();
+        const data = await listMovies();
         if (!cancelled) setMovies(Array.isArray(data) ? data : []);
       } catch (e) {
         if (!cancelled) setErr(getErrorMessage(e, "Failed to load recent projects."));

@@ -11,8 +11,7 @@ import {
   MovieCardSkeleton,
 } from "@/entities/movie";
 import { useSession } from "@/entities/session";
-import { movieActions } from "@/features/movie-actions";
-import { api } from "@/shared/api";
+import { deleteMovie, listMovies } from "@/shared/api/movies.js";
 import { cx } from "@/shared/lib/cx";
 import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage } from "@/shared/lib/errors";
@@ -64,8 +63,7 @@ export default function MoviesListPage() {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .listMovies()
+    listMovies()
       .then((data) => {
         if (!cancelled) setMovies(Array.isArray(data) ? data : []);
       })
@@ -92,7 +90,7 @@ export default function MoviesListPage() {
     setDeletingId(movie.id);
 
     try {
-      await movieActions.delete(movie.id);
+      await deleteMovie(movie.id);
       setMovies((current) => current.filter((entry) => entry.id !== movie.id));
     } catch (e) {
       setErr(getErrorMessage(e, "Failed to delete project."));

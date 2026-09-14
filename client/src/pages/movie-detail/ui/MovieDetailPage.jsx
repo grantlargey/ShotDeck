@@ -6,14 +6,9 @@ import { buildMovieSavePayload, createMovieEditForm, getMovieCoverUrl } from "@/
 import { getCurrentScript } from "@/entities/script";
 import { getSceneScriptPath } from "@/entities/script-scene";
 import { useSession } from "@/entities/session";
-import {
-  createImageAnnotation,
-  deleteImageAnnotation,
-  updateImageAnnotation,
-} from "@/features/annotation-actions";
-import { movieActions } from "@/features/movie-actions";
-import { saveScriptPdf as saveScriptPdfAction } from "@/features/script-actions";
-import { api } from "@/shared/api";
+import { createAnnotation, deleteAnnotation, listAnnotations, updateAnnotation } from "@/shared/api/annotations.js";
+import { getMovie, updateMovie } from "@/shared/api/movies.js";
+import { listScripts, saveScript } from "@/shared/api/scripts.js";
 import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
 import { useFilePreviewUrl, useSignedMediaUrl } from "@/shared/lib/media";
@@ -173,7 +168,7 @@ export default function MovieDetailPage() {
     const isLatest = () => loadIdRef.current === loadId;
     setErr("");
 
-    const details = Promise.all([api.getMovie(id), api.listScripts(id)]).then(([m, scriptRows]) => {
+    const details = Promise.all([getMovie(id), listScripts(id)]).then(([m, scriptRows]) => {
       if (!isLatest()) return;
       setMovie(m);
       setScripts(Array.isArray(scriptRows) ? scriptRows : []);
@@ -181,7 +176,7 @@ export default function MovieDetailPage() {
       setEditForm(createMovieEditForm(m));
     });
 
-    const stills = api.listAnnotations(id).then((annotationRows) => {
+    const stills = listAnnotations(id).then((annotationRows) => {
       if (!isLatest()) return;
       const a = sortAnnotationsByTime(annotationRows);
       setStillRows(a);
@@ -242,7 +237,7 @@ export default function MovieDetailPage() {
       }
 
       setAddBusy(true);
-      await createImageAnnotation({ movieId: id, timeSeconds, file: addFile });
+      await createAnnotation({ movieId: id, timeSeconds, file: addFile });
       setAdding(false);
       await load();
     } catch (e2) {
@@ -270,7 +265,7 @@ export default function MovieDetailPage() {
         throw new ValidationError("Choose an image for this still.");
       }
 
-      await updateImageAnnotation({
+      await updateAnnotation({
         movieId: id,
         annotationId: still.id,
         timeSeconds,
@@ -288,7 +283,7 @@ export default function MovieDetailPage() {
   async function deleteStill(still) {
     if (!window.confirm("Delete this still?")) return;
     try {
-      await deleteImageAnnotation(id, still.id);
+      await deleteAnnotation(id, still.id);
       setStillEdit(null);
       await load();
     } catch (e) {
@@ -307,7 +302,7 @@ export default function MovieDetailPage() {
     setSavingScript(true);
 
     try {
-      const script = await saveScriptPdfAction({ movieId: id, file: scriptFile });
+      const script = await saveScript({ movieId: id, file: scriptFile });
       setScriptFile(null);
       setScripts((prev) => {
         if (!script?.id) return prev;
@@ -331,7 +326,7 @@ export default function MovieDetailPage() {
         throw new ValidationError("Runtime must use HH:MM:SS and be at least 00:01:00.");
       }
 
-      await movieActions.update(id, buildMovieSavePayload(editForm, runtimeMinutes));
+      await updateMovie(id, buildMovieSavePayload(editForm, runtimeMinutes));
       await load();
       setEditMode(false);
     } catch (e) {

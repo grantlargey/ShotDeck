@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, markSessionActive, SESSION_EXPIRED_EVENT } from "@/shared/api";
+import { getSession, login, logout } from "@/shared/api/auth.js";
+import { markSessionActive, SESSION_EXPIRED_EVENT } from "@/shared/api/request.js";
 import { SessionContext } from "./sessionContext.js";
 
 /**
@@ -16,8 +17,7 @@ export function SessionProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .getSession()
+    getSession()
       .then(({ user: current }) => {
         if (cancelled) return;
         markSessionActive(Boolean(current));
@@ -50,7 +50,7 @@ export function SessionProvider({ children }) {
 
   const signIn = useCallback(
     async (email, password) => {
-      const { user: next } = await api.login(email, password);
+      const { user: next } = await login(email, password);
       applyUser(next);
       return next;
     },
@@ -59,7 +59,7 @@ export function SessionProvider({ children }) {
 
   const signOut = useCallback(async () => {
     try {
-      await api.logout();
+      await logout();
     } finally {
       applyUser(null);
     }

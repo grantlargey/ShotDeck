@@ -53,10 +53,12 @@ import ScriptViewerRoute from "./ScriptViewerPage.jsx";
  * behavior that may be a bug; a fix must change them deliberately.
  */
 
-vi.mock("@/shared/api", async (importOriginal) => ({
-  ...(await importOriginal()),
-  api: (await import("../test/pageHarness.js")).fakeApi,
-}));
+vi.mock("@/shared/api/annotations.js", async () => (await import("../test/pageHarness.js")).apiModules.annotations);
+vi.mock("@/shared/api/movies.js", async () => (await import("../test/pageHarness.js")).apiModules.movies);
+vi.mock("@/shared/api/screenplayFormat.js", async () => (await import("../test/pageHarness.js")).apiModules.screenplayFormat);
+vi.mock("@/shared/api/scriptScenes.js", async () => (await import("../test/pageHarness.js")).apiModules.scriptScenes);
+vi.mock("@/shared/api/scripts.js", async () => (await import("../test/pageHarness.js")).apiModules.scripts);
+vi.mock("@/shared/api/uploads.js", async () => (await import("../test/pageHarness.js")).apiModules.uploads);
 vi.mock("@/entities/session", async () => (await import("../test/pageHarness.js")).sessionModule);
 vi.mock("react-pdf", async () => (await import("../test/pageHarness.js")).reactPdfModule);
 vi.mock("../model/useScriptTextIndex.js", async () => (await import("../test/pageHarness.js")).textIndexModule);

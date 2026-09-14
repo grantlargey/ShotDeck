@@ -1,15 +1,23 @@
 import { req } from "./request.js";
+import { uploadMediaFile } from "./uploads.js";
 
-export const scriptsApi = {
-  listScripts: (movieId) => req(`/movies/${encodeURIComponent(movieId)}/scripts`),
+export function listScripts(movieId) {
+  return req(`/movies/${encodeURIComponent(movieId)}/scripts`);
+}
 
-  getScript: (movieId, scriptId) =>
-    req(`/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}`),
+export function getScript(movieId, scriptId) {
+  return req(`/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}`);
+}
 
-  saveScript: (movieId, payload) =>
-    req(`/movies/${encodeURIComponent(movieId)}/scripts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-};
+/**
+ * Uploads a script PDF and saves it as the movie's script. The upload refuses
+ * a file that isn't a PDF before sending anything.
+ */
+export async function saveScript({ movieId, file }) {
+  const key = await uploadMediaFile({ movieId, type: "script", file });
+  return req(`/movies/${encodeURIComponent(movieId)}/scripts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ s3_key: key }),
+  });
+}

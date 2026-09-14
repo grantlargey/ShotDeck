@@ -68,6 +68,21 @@ export const fakeApi = {
   listAnnotations: vi.fn(),
 };
 
+/** The same doubles, grouped by the API module that owns each operation, for the suite's vi.mock factories. */
+export const apiModules = {
+  annotations: { listAnnotations: fakeApi.listAnnotations },
+  movies: { getMovie: fakeApi.getMovie },
+  screenplayFormat: { formatScreenplaySelection: fakeApi.formatScreenplaySelection },
+  scriptScenes: {
+    listScriptScenes: fakeApi.listScriptScenes,
+    createScriptScene: fakeApi.createScriptScene,
+    updateScriptScene: fakeApi.updateScriptScene,
+    deleteScriptScene: fakeApi.deleteScriptScene,
+  },
+  scripts: { getScript: fakeApi.getScript },
+  uploads: { getViewUrlForKey: fakeApi.getViewUrlForKey },
+};
+
 function installApi() {
   fakeApi.getMovie.mockImplementation(async () => ({ ...MOVIE }));
   fakeApi.getScript.mockImplementation(async () => ({ ...SCRIPT }));

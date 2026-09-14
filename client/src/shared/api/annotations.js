@@ -1,28 +1,45 @@
 import { req } from "./request.js";
+import { uploadMediaFile } from "./uploads.js";
 
-export const annotationsApi = {
-  listAnnotations: (movieId) => req(`/movies/${encodeURIComponent(movieId)}/annotations`),
+export function listAnnotations(movieId) {
+  return req(`/movies/${encodeURIComponent(movieId)}/annotations`);
+}
 
-  createAnnotation: (movieId, payload) =>
-    req(`/movies/${encodeURIComponent(movieId)}/annotations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+/** Uploads a still's image, then saves the still at `timeSeconds`. */
+export async function createAnnotation({ movieId, timeSeconds, file }) {
+  const imageKey = await uploadMediaFile({ movieId, type: "annotation", file });
+  return req(`/movies/${encodeURIComponent(movieId)}/annotations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      time_seconds: timeSeconds,
+      image_key: imageKey,
     }),
+  });
+}
 
-  updateAnnotation: (movieId, annotationId, payload) =>
-    req(
-      `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(annotationId)}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    ),
+/** Saves a still's time. A `file` is uploaded first and replaces `imageKey`. */
+export async function updateAnnotation({ movieId, annotationId, timeSeconds, imageKey, file }) {
+  const nextImageKey = file
+    ? await uploadMediaFile({ movieId, type: "annotation", file })
+    : imageKey;
 
-  deleteAnnotation: (movieId, annotationId) =>
-    req(
-      `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(annotationId)}`,
-      { method: "DELETE" }
-    ),
-};
+  return req(
+    `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(annotationId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        time_seconds: timeSeconds,
+        image_key: nextImageKey,
+      }),
+    }
+  );
+}
+
+export function deleteAnnotation(movieId, annotationId) {
+  return req(
+    `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(annotationId)}`,
+    { method: "DELETE" }
+  );
+}

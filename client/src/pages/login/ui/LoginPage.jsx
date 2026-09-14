@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useSession } from "@/entities/session";
-import { api } from "@/shared/api";
+import { changePassword } from "@/shared/api/auth.js";
 import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
 import { Button, Callout, Field, Input } from "@/shared/ui";
@@ -67,7 +67,7 @@ export default function LoginPage() {
       }
       if (newPassword !== confirmPassword) throw new ValidationError("The passwords don't match.");
       setBusy(true);
-      const { user } = await api.changePassword({ currentPassword: temporaryPassword, newPassword });
+      const { user } = await changePassword({ currentPassword: temporaryPassword, newPassword });
       applyUser(user);
       nav(next, { replace: true });
     } catch (e) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSession } from "@/entities/session";
-import { api } from "@/shared/api";
+import { createAdmin, disableAdmin, enableAdmin, listAdmins, resetAdminPassword } from "@/shared/api/auth.js";
 import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { Badge, Button, Callout, Dialog, Field, Input, PageHeader, PlusIcon } from "@/shared/ui";
@@ -31,8 +31,8 @@ function PasswordDialog({ mode, admin, onClose, onDone }) {
     setBusy(true);
     try {
       const result = isAdd
-        ? await api.createAdmin({ email: email.trim(), password })
-        : await api.resetAdminPassword(admin.id, { password });
+        ? await createAdmin({ email: email.trim(), password })
+        : await resetAdminPassword(admin.id, { password });
       onDone({ kind: mode, user: result.user, temporaryPassword: result.temporary_password, manual: Boolean(password) });
     } catch (e) {
       setErr(getErrorMessage(e, isAdd ? "Couldn't add the admin." : "Couldn't reset the password."));
@@ -141,7 +141,7 @@ export default function AdminUsersPage() {
 
   async function load() {
     try {
-      const rows = await api.listAdmins();
+      const rows = await listAdmins();
       setAdmins(Array.isArray(rows) ? rows : []);
     } catch (e) {
       setErr(getErrorMessage(e, "Failed to load admins."));
@@ -165,7 +165,7 @@ export default function AdminUsersPage() {
     setErr("");
     setBusyId(admin.id);
     try {
-      await (disabled ? api.disableAdmin(admin.id) : api.enableAdmin(admin.id));
+      await (disabled ? disableAdmin(admin.id) : enableAdmin(admin.id));
       await load();
     } catch (e) {
       setErr(getErrorMessage(e, disabled ? "Couldn't disable the admin." : "Couldn't enable the admin."));
