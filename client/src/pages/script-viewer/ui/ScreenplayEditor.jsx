@@ -94,10 +94,25 @@ function ElementTypeMenu({ currentType, onSelect, onClose }) {
 /**
  * Block editor for screenplay markdown. Each element is its own auto-sizing
  * field, laid out like the script page, with keyboard shortcuts for changing
- * element types. It owns its blocks after mounting; the parent remounts it
- * (via `key`) when the text is replaced from outside.
+ * element types. It owns its blocks until `sourceKey` changes, which means the
+ * text was replaced from outside; it then starts again from `initialMarkdown`.
+ * If one of its fields had focus, focus moves to the same block number with
+ * the caret at the same offset, both clamped to the new text.
  */
-export function ScreenplayEditor({ initialMarkdown, onChange }) {
+export function ScreenplayEditor({ sourceKey, initialMarkdown, onChange }) {
+  // Where focus was when the previous source's blocks were removed.
+  const focusHandoffRef = useRef(null);
+  return (
+    <ScreenplayBlocks
+      key={sourceKey}
+      initialMarkdown={initialMarkdown}
+      onChange={onChange}
+      focusHandoffRef={focusHandoffRef}
+    />
+  );
+}
+
+function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
   const [blocks, setBlocks] = useState(() => blocksFromMarkdown(initialMarkdown));
   const [focusedId, setFocusedId] = useState(null);
   const [menuBlockId, setMenuBlockId] = useState(null);
@@ -116,6 +131,22 @@ export function ScreenplayEditor({ initialMarkdown, onChange }) {
     pendingFocusRef.current = null;
     focusInput(inputsRef.current.get(pending.id), pending.caret);
   }, [blocks]);
+
+  useLayoutEffect(() => {
+    const sheet = sheetRef.current;
+    const handoff = focusHandoffRef.current;
+    focusHandoffRef.current = null;
+    if (handoff) {
+      const fields = sheet.querySelectorAll("textarea");
+      focusInput(fields[Math.min(handoff.index, fields.length - 1)], handoff.caret);
+    }
+    // Layout cleanup runs before these fields leave the page, while one may still have focus.
+    return () => {
+      const focused = document.activeElement;
+      const index = [...sheet.querySelectorAll("textarea")].indexOf(focused);
+      if (index >= 0) focusHandoffRef.current = { index, caret: focused.selectionStart };
+    };
+  }, [focusHandoffRef]);
 
   useEffect(() => {
     const sheet = sheetRef.current;

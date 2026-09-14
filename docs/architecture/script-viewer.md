@@ -19,7 +19,7 @@ The third and fourth checks share the message "Place start and end anchors in th
 
 | Text origin | Where the text comes from |
 |---|---|
-| `"capture"` | Captured text, read live from the anchors in effect. It changes whenever the anchors or the text index change, and isn't stored in the draft. |
+| `"capture"` | Captured text, read live from the anchors in effect. It changes whenever the anchors or the text index change, and isn't stored in the draft. See [Captured text that changes during indexing](#captured-text-that-changes-during-indexing). |
 | `"edited"` | Typed in the editor dialog. |
 | `"ai"` | An accepted AI proposal. |
 | `"saved"` | The saved scene's formatted text, else its raw text, else its selected text. |
@@ -107,13 +107,31 @@ The prompt comes after validation, so timing, a missing capture, blank text and 
 
 This fixes B6, where stale text was saved with another selection's location and raw text without acknowledgement.
 
-### Existing compatibility behavior
+### Captured text that changes during indexing
 
-These behaviors look questionable but are kept on purpose. Each is pinned by a test named "existing compatibility behavior", so a fix has to change that test deliberately.
+The action margin is estimated from the pages indexed so far, so indexing more pages can reclassify captured text under unchanged anchors. Offsets appear once the whole script is indexed. Script mode, Markdown mode, the panel preview and saving all use `draft.text`. Who owns the text decides what an index update may change:
 
-| ID | Behavior |
-|---|---|
-| C3 | Captured text can change while indexing progresses (the estimated action margin moves), but the editor dialog keeps the text it mounted with. |
+| Text | Owner | When a new index changes the captured text |
+|---|---|---|
+| Captured, not yet edited | The live capture | The new text replaces it everywhere. The script editor is replaced too, as it is after an anchor change. |
+| Edited, AI formatted or Saved | The draft | Nothing changes: the text, the editor, focus and caret stay. |
+
+Rules:
+
+- **Editor source.** `draft.editorKey` is `revision:seed`, and the dialog passes it to `ScreenplayEditor` as `sourceKey`. For Captured text the seed is the anchor pair plus a fingerprint of the captured Markdown, so it changes only when that text does. Pages elsewhere in the script, offsets and context don't replace the editor.
+- **First edit.** `editText` stores the seed from the latest commit, which is the text the editor was showing. The first keystroke keeps the key and wins over a newer capture, even when both are committed in the same batch.
+- **Focus.** When `sourceKey` changes while one of the editor's fields has focus, the editor rebuilds its blocks and focuses the same block number, with the caret at the same offset, both clamped to the new text. It records the position in a layout-effect cleanup, before the old fields leave the page.
+- **After a reclassification.** Edited and AI formatted text keep their anchor key, so they aren't stale and saving doesn't ask. The draft's word check, "Revert to captured text", and the saved raw text and location come from the new capture. A pending AI proposal keeps the plain text it was requested with as its word-check baseline (H2).
+- **Unchanged.** Classification, capturing and saving from a partly indexed script, B5 messages, B6 staleness, and I1/I2 response handling.
+
+This fixes C3. The script editor kept its mount-time text while the preview and save used the reclassified capture, and the first keystroke silently replaced the newer capture with the older text.
+
+Known limits:
+
+- Staleness still compares anchor pairs only (D7). Text edited from an earlier classification isn't marked stale when indexing reclassifies the capture. Only the word check and the revert button reflect the new capture.
+- The restored caret is positional. If reclassification splits or joins blocks, the same block number and offset may hold different words.
+- The fingerprint is a 32-bit FNV-1a hash plus the text length. A collision would leave the old text in the editor until the next replacement.
+- Markdown mode's source is a controlled textarea. When untouched text is reclassified there, focus stays but Chromium moves the caret to the end, as it does for any outside replacement in that mode. Only Script mode restores the caret.
 
 ## Entry points and ownership
 
@@ -124,7 +142,7 @@ The route `/movies/:movieId/scripts/:scriptId` is declared in `client/src/app/Ap
 | Draft state and every transition (a private pure reducer) | Loading the project, script and scenes; notices |
 | Anchors in effect: explicit, or suggested | PDF rendering, windowing, scrolling, deep links |
 | Capture memoization and captured text | Menus, dialogs, tabs, the marker toggle, the visitor's focused scene |
-| Text origin, stale text, legacy text, the editor remount key | `window.confirm` prompts and all UI wording, including re-capture button labels |
+| Text origin, stale text, legacy text, the editor source key | `window.confirm` prompts and all UI wording, including re-capture button labels |
 | The dirty check | Keyboard and pointer wiring |
 | Re-capture rules, the AI proposal lifecycle and request tokens | Network calls: AI formatting, scene create, update and delete |
 | Save validation, payload, and whether saving needs confirmation (`buildSave`) | AI page snapshots and error-message mapping |
@@ -143,7 +161,7 @@ All paths are under `client/src/pages/script-viewer/`.
 | `model/useScriptTextIndex.js` | Indexes every page's text lines in the background on a separate pdf.js worker. Publishes a new index object every 8 pages and on completion. |
 | `model/usePdfPageWindowing.js` | Page sizing, mobile windowing and scrolling. |
 | `ui/PdfPageFrame.jsx` | One memoized page plus its overlay: markers, range, scene bars, hover line. |
-| `ui/AnnotatorPanel.jsx`, `ui/DraftEditorModal.jsx`, `ui/ScreenplayEditor.jsx`, `ui/AnchorContextMenu.jsx`, `ui/SavedScenesGrid.jsx`, `ui/ViewerTopBar.jsx` | Presentational components. `ScreenplayEditor` owns its blocks after mounting; the page remounts it through `draft.editorKey`. |
+| `ui/AnnotatorPanel.jsx`, `ui/DraftEditorModal.jsx`, `ui/ScreenplayEditor.jsx`, `ui/AnchorContextMenu.jsx`, `ui/SavedScenesGrid.jsx`, `ui/ViewerTopBar.jsx` | Presentational components. `ScreenplayEditor` owns its blocks until its `sourceKey` (`draft.editorKey`) changes, then rebuilds them and keeps focus in the same block. |
 | `lib/pageSnapshots.js` | Renders cropped page images for the AI formatter. |
 | `lib/pdfViewport.js`, `lib/platform.js` | Scroll helpers, typing-target detection, shortcut labels. |
 
@@ -165,7 +183,7 @@ const [draft, draftActions] = useSceneDraft(textIndex);
 | `textStale`, `legacyText` | Stale text; saved text that belongs to no anchor pair. |
 | `capturedPlainText` | The capture's plain text when the text isn't stale, else `""` (the draft's word check). |
 | `recaptureOption`, `recaptureReplacesEdits` | `"none"`, `"recapture"` or `"revert"`, which the page turns into a button label; and whether re-capture would replace edited or AI text, in which case the page confirms first. |
-| `editorKey` | Remount key for the editor. It stays the same on the first edit, so the caret isn't lost, and changes on reset, load, re-capture and accepting a proposal. |
+| `editorKey` | The editor's source key, passed to `ScreenplayEditor` as `sourceKey`. While Captured, it changes when the captured text does, after an anchor change or a reclassification, but not when only offsets or context appear. It stays the same on the first edit and through later index updates, so the caret isn't lost. It changes on reset, load, re-capture and accepting a proposal. |
 | `proposal` | `null` or `{ status, markdown, error, capturedPlainText }`. `capturedPlainText` is the plain text of the capture the request was made from, else `""`; it is the baseline for the proposal's word check. The token and requested anchor key stay private. |
 | `previewScene` | A scene-shaped preview for the panel's card and the dialog's page label. |
 | `dirty` | Whether there are unsaved changes, used for the discard prompt. |
@@ -205,6 +223,7 @@ Timing rules:
 | Captured text layout | `model/captureRange.js` and `@/shared/lib/screenplay` |
 | Line geometry and pointer snapping | `@/shared/lib/pdf-text` |
 | Text origin, stale text, the editor key, the dirty check | `useSceneDraft` |
+| Focus when the editor's text is replaced from outside | `ScreenplayEditor` in `ui/ScreenplayEditor.jsx` |
 | Confirm wording and button labels | `ui/ScriptViewerPage.jsx` |
 | AI requests | `startProposal` (what is sent) and `requestAiFormat` in the page (snapshots and the network call) |
 | AI proposal selection and word-check baseline | `startProposal` and the `proposalAccept` transition in `useSceneDraft`; the proposal check in `ui/DraftEditorModal.jsx` |
@@ -250,9 +269,23 @@ Saving stale text under explicit anchors (B6) is covered in both suites.
   - confirmed AI formatted text, where an edit during the save keeps the text stale and the next save asks again;
   - a legacy scene that asks only once its suggested anchors become explicit.
 
+Captured text that changes during indexing (C3) is covered in both suites. `marginShiftPage` moves the estimated action margin.
+
+- **Hook tests** check:
+  - the Captured editor key changes only when the text does, not for unrelated pages or completed offsets, and still changes after an anchor move;
+  - edits keep the key whether the index update commits after the first edit or in the same batch, and re-capture then takes the reclassified text;
+  - the first edit after re-capture and removing an anchor keeps the editor key and preview text, while saving still refuses the incomplete anchor pair;
+  - accepted AI text and a pending proposal's baseline don't change.
+- **Page tests (P3)** check, with the dialog open:
+  - an untouched editor is replaced with the reclassified text, with focus kept in the same block;
+  - unrelated publishes and index completion keep the field, focus and caret, then save offsets;
+  - edits made after, or in the same batch as, the first keystroke survive mode switches, reopening and saving;
+  - a confirmed re-capture and a later anchor change;
+  - accepted AI text with a pending request.
+
 Shared fixtures live in `test/`. `textIndexFixtures.js` builds synthetic screenplay pages through the real line builder. Its `textIndexFrom` repeats the indexer's publish step (page offsets and the action margin), so keep it in step with `useScriptTextIndex.js`. `pageHarness.js` holds the page suite's doubles and helpers.
 
-A test named "[ID] existing compatibility behavior: …", with a "Why this may be a bug" comment, pins behavior kept on purpose (see the table above).
+A test named "[ID] existing compatibility behavior: …", with a "Why this may be a bug" comment, pins behavior kept on purpose. None remain since C3 was fixed; use the convention for the next one.
 
 jsdom has no layout, so real PDF rendering, pointer snapping and caret behavior need a browser. Check them manually against a non-production database: place anchors with `[` and `]`, edit in the dialog, re-capture, accept an AI proposal, save and reload.
 
@@ -266,3 +299,14 @@ B6 was verified the same way on 2026-09-14, with S3 sends stubbed to fail:
 - Confirmed stale Edited text was saved while its response was held. A time edit made during the request survived the response, and the next save asked again and sent nothing when canceled.
 
 AI formatted text was covered only by the page tests, because the check calls no AI service.
+
+C3 was verified on 2026-09-14 in Chromium 151 against the Vite dev app, which runs in `StrictMode`, using local fixtures only. Real pdf.js indexed a synthetic 17-page PDF, the browser answered API requests from fixtures, and every other host was blocked. A per-page gate injected into the served indexer module made each index publish happen on cue. Pages 1–3 match the test fixtures, and page 17 moves the action margin.
+
+- Unrelated publishes kept the focused field, focus and caret, in Script and Markdown mode.
+- A reclassifying publish replaced an untouched editor with the panel's text and kept focus in block 2 at caret 5. Real keystrokes then landed at that caret without replacing the field.
+- Two keystrokes before and 17 right after a reclassifying publish stayed in the same field with focus and caret. The edited text wasn't reclassified.
+- In each case, Markdown mode, Script mode, the reopened dialog and the actual save request agreed. Raw text and offsets came from the current capture, and nothing prompted.
+- A first keystroke racing the publish ended consistent in one run where the publish landed first and in another where the keystroke did. A browser can't show whether both landed in one React batch; the hook and page tests cover that.
+- In Markdown mode the reclassified source kept focus, but Chromium moved the caret to the end.
+
+The harness is in `.scratch/architecture-followups/c3-browser/`, which Git ignores, and uses a locally cached Playwright. Saved and AI formatted text, other browsers and production data weren't part of this check.

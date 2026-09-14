@@ -153,7 +153,7 @@ export function DraftEditorModal({
         }
       >
         {mode === "script" ? (
-          <ScreenplayEditor key={editorKey} initialMarkdown={markdown} onChange={onChangeMarkdown} />
+          <ScreenplayEditor sourceKey={editorKey} initialMarkdown={markdown} onChange={onChangeMarkdown} />
         ) : (
           <textarea
             className={styles.source}

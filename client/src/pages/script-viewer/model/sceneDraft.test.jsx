@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   LEGACY_RAW,
   legacyScene,
+  marginShiftPage,
   OTHER_TEXT,
   otherScene,
   page1,
@@ -51,6 +52,11 @@ function renderDraft(index = FULL_INDEX, options = {}) {
 function current(result) {
   const [draft, actions] = result.current;
   return { draft, actions };
+}
+
+/** The editor key for Captured text: its revision, anchor pair, and a fingerprint of the captured text. */
+function capturedEditorKey(revision, anchorPair) {
+  return expect.stringMatching(new RegExp(`^${revision}:${anchorPair}#[0-9a-z]+\\.[0-9a-z]+$`));
 }
 
 function lineOf(page, lineIndex) {
@@ -278,6 +284,161 @@ describe("capture work", () => {
     expect(captureAnchoredRange.mock.calls.length).toBeGreaterThan(calls);
     expect(current(result).draft.text).toBe([`## ${DINER}`, RAIN, BELL].join("\n\n"));
     expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({ start_offset: null, end_offset: null });
+  });
+});
+
+describe("[C3] captured text that changes during indexing", () => {
+  // Anchors on p1 line 1 and p2 line 4. Publishing marginShiftPage moves the
+  // estimated action margin from x=108 to x=72, which reclassifies that range.
+  const PARTIAL = textIndexFrom([page1, page2], { total: 4 });
+  const UNRELATED = textIndexFrom([page1, page2, page3], { total: 4 });
+  const SHIFTED = textIndexFrom([page1, page2, page3, marginShiftPage], { total: 4 });
+  const SHIFTED_COMPLETE = textIndexFrom([page1, page2, page3, marginShiftPage], { total: 4, complete: true });
+  // Under the moved margin, action lines are no longer joined.
+  const SHIFTED_LINE = "\n\nRain streaks the windows of an empty roadside diner at\n\n";
+  const AI_TEXT = "## AI HEADING\n\nWords from the formatter.";
+  const SECOND_AI_TEXT = "## SECOND AI HEADING\n\nMore words from the formatter.";
+
+  function anchorP1ToP2(result) {
+    place(result, "start", page1, 0);
+    place(result, "end", page2, 3);
+    run(result, (a) => a.setTime("startTime", "00:01:00"));
+    run(result, (a) => a.setTime("endTime", "00:02:00"));
+  }
+
+  function save(result) {
+    return run(result, (a) => a.buildSave(0));
+  }
+
+  it("replaces the editor's source for untouched captured text only when indexing changes that text", () => {
+    const { result, rerender } = renderDraft(PARTIAL);
+    anchorP1ToP2(result);
+    const before = current(result).draft;
+    expect(before.text).not.toContain(SHIFTED_LINE);
+
+    rerender({ index: UNRELATED });
+    expect(current(result).draft.editorKey).toBe(before.editorKey);
+    expect(current(result).draft.text).toBe(before.text);
+
+    rerender({ index: SHIFTED });
+    const shifted = current(result).draft;
+    expect(shifted).toMatchObject({ textOrigin: "capture", textStale: false, editorKey: capturedEditorKey(0, "1:0-2:3") });
+    expect(shifted.text).toContain(SHIFTED_LINE);
+    expect(shifted.editorKey).not.toBe(before.editorKey);
+    expect(shifted.previewScene.formatted_selected_text).toBe(shifted.text);
+    expect(save(result).payload).toMatchObject({
+      selected_text: shifted.text,
+      formatted_selected_text: shifted.text,
+      raw_selected_text: shifted.capturedPlainText,
+      start_offset: null,
+      end_offset: null,
+    });
+
+    // Completing the index adds offsets without changing the text or its editor.
+    rerender({ index: SHIFTED_COMPLETE });
+    expect(current(result).draft.editorKey).toBe(shifted.editorKey);
+    expect(current(result).draft.text).toBe(shifted.text);
+    const { payload } = save(result);
+    expect(payload.selected_text).toBe(shifted.text);
+    expect(Number.isInteger(payload.start_offset) && Number.isInteger(payload.end_offset)).toBe(true);
+
+    // Moving an anchor replaces the source as before, under the moved margin.
+    place(result, "end", page2, 4);
+    expect(current(result).draft.editorKey).toEqual(capturedEditorKey(0, "1:0-2:4"));
+    expect(current(result).draft.text).toContain(SHIFTED_LINE);
+    expect(current(result).draft.text).toContain("Maya pours two cups and slides one across the counter.");
+  });
+
+  it("keeps the editor source on the first edit after re-capture and removing an anchor", () => {
+    const { result } = renderDraft(PARTIAL);
+    anchorP1ToP2(result);
+    run(result, (a) => a.recapture());
+    run(result, (a) => a.removeAnchor("end"));
+    const before = current(result).draft;
+    expect(before).toMatchObject({ textOrigin: "capture", text: "" });
+
+    const edited = "## INT. DINER - NIGHT\n\nA new line typed without a capture.";
+    run(result, (a) => a.editText(edited));
+
+    expect(current(result).draft).toMatchObject({
+      text: edited,
+      textOrigin: "edited",
+      editorKey: before.editorKey,
+      previewScene: { formatted_selected_text: edited },
+    });
+    expect(save(result)).toMatchObject({ error: "Place an end anchor in the script before saving." });
+  });
+
+  it.each([
+    {
+      when: "after the first edit commits",
+      editThenShift: (result, rerender, markdown) => {
+        run(result, (a) => a.editText(markdown));
+        rerender({ index: SHIFTED });
+      },
+    },
+    {
+      when: "in the same batch as the first edit",
+      editThenShift: (result, rerender, markdown) => {
+        act(() => {
+          current(result).actions.editText(markdown);
+          rerender({ index: SHIFTED });
+        });
+      },
+    },
+  ])("keeps edits and the editor's source when indexing changes the captured text $when", ({ editThenShift }) => {
+    const { result, rerender } = renderDraft(PARTIAL);
+    anchorP1ToP2(result);
+    const { editorKey, text } = current(result).draft;
+    const edited = text.replace(`## ${DINER}`, "## INT. DINER - LATE NIGHT");
+    expect(edited).not.toBe(text);
+
+    editThenShift(result, rerender, edited);
+
+    const draft = current(result).draft;
+    expect(draft).toMatchObject({ text: edited, textOrigin: "edited", textStale: false, editorKey, recaptureOption: "revert" });
+    // The draft's word check follows the reclassified capture.
+    expect(draft.capturedPlainText).toContain(SHIFTED_LINE);
+    expect(save(result)).toMatchObject({
+      payload: { selected_text: edited, formatted_selected_text: edited, raw_selected_text: draft.capturedPlainText },
+      confirmStaleText: false,
+    });
+
+    run(result, (a) => a.recapture());
+    expect(current(result).draft).toMatchObject({
+      textOrigin: "capture",
+      recaptureOption: "none",
+      editorKey: capturedEditorKey(1, "1:0-2:3"),
+    });
+    expect(current(result).draft.text).toContain(SHIFTED_LINE);
+  });
+
+  it("keeps accepted AI text, and a pending proposal's word-check baseline, when indexing changes the captured text", () => {
+    const { result, rerender } = renderDraft(PARTIAL);
+    anchorP1ToP2(result);
+    const requestedPlainText = current(result).draft.capturedPlainText;
+    acceptAiText(result, AI_TEXT);
+    const { editorKey } = current(result).draft;
+    expect(editorKey).toBe("1:1:0-2:3");
+    const request = run(result, (a) => a.startProposal());
+    expect(request.capturedText).toBe(requestedPlainText);
+
+    rerender({ index: SHIFTED });
+
+    expect(current(result).draft).toMatchObject({ text: AI_TEXT, textOrigin: "ai", textStale: false, editorKey });
+    expect(current(result).draft.capturedPlainText).toContain(SHIFTED_LINE);
+    expect(current(result).draft.proposal.capturedPlainText).toBe(requestedPlainText);
+
+    run(result, (a) => a.proposalReady(request.token, SECOND_AI_TEXT));
+    expect(current(result).draft.proposal.capturedPlainText).toBe(requestedPlainText);
+    run(result, (a) => a.acceptProposal());
+
+    const draft = current(result).draft;
+    expect(draft).toMatchObject({ text: SECOND_AI_TEXT, textOrigin: "ai", textStale: false, editorKey: "2:1:0-2:3" });
+    expect(save(result)).toMatchObject({
+      payload: { selected_text: SECOND_AI_TEXT, raw_selected_text: draft.capturedPlainText },
+      confirmStaleText: false,
+    });
   });
 });
 
@@ -509,7 +670,7 @@ describe("[H2] AI proposal provenance", () => {
     expect(current(result).draft).toMatchObject({
       textOrigin: "edited",
       textStale: true,
-      editorKey: "0:1:0-1:7",
+      editorKey: capturedEditorKey(0, "1:0-1:7"),
       proposal: null,
     });
 
@@ -594,7 +755,7 @@ describe("re-capture options", () => {
 });
 
 describe("editorKey", () => {
-  it("follows the capture while Captured, keeps the key on edits, and bumps the revision on replacement", () => {
+  it("follows the captured text while Captured, keeps the key on edits, and bumps the revision on replacement", () => {
     const { result } = renderDraft();
     const key = () => current(result).draft.editorKey;
 
@@ -602,27 +763,29 @@ describe("editorKey", () => {
     place(result, "start", page1, 0);
     expect(key()).toBe("0:");
     place(result, "end", page1, 7);
-    expect(key()).toBe("0:1:0-1:7");
+    expect(key()).toEqual(capturedEditorKey(0, "1:0-1:7"));
+    const captured = key();
 
     run(result, (a) => a.setTime("startTime", "00:00:05"));
     run(result, (a) => a.toggleTag("character-focus:protagonist"));
     const request = run(result, (a) => a.startProposal());
     run(result, (a) => a.proposalFailed(request.token, "failed"));
     run(result, (a) => a.discardProposal());
-    expect(key()).toBe("0:1:0-1:7");
+    expect(key()).toBe(captured);
 
     run(result, (a) => a.editText("## INT. DINER - LATER"));
-    expect(key()).toBe("0:1:0-1:7");
+    expect(key()).toBe(captured);
     place(result, "end", page1, 4);
-    expect(key()).toBe("0:1:0-1:7");
+    expect(key()).toBe(captured);
 
     run(result, (a) => a.recapture());
-    expect(key()).toBe("1:1:0-1:4");
+    expect(key()).toEqual(capturedEditorKey(1, "1:0-1:4"));
+    const recaptured = key();
 
     const discarded = run(result, (a) => a.startProposal());
     run(result, (a) => a.proposalReady(discarded.token, "## AI"));
     run(result, (a) => a.discardProposal());
-    expect(key()).toBe("1:1:0-1:4");
+    expect(key()).toBe(recaptured);
 
     acceptAiText(result, "## AI HEADING\n\nWords from the formatter.");
     expect(key()).toBe("2:1:0-1:4");

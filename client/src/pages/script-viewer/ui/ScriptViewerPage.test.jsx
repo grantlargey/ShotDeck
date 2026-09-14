@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/shared/lib/errors";
 import { captureAnchoredRange } from "../model/captureRange.js";
@@ -113,6 +113,21 @@ const MARGIN_SHIFTED_MARKDOWN = [
   "shaking water from a battered canvas coat and hat.",
   "### MAYA",
   `> ${MAYA_SPEECH}`,
+  "SAM",
+  "(quietly)",
+  "Then coffee. And the booth",
+  "by the window.",
+].join("\n\n");
+
+/** Plain text for the same range and margin. */
+const MARGIN_SHIFTED_PLAIN = [
+  DINER,
+  "Rain streaks the windows of an empty roadside diner at",
+  "midnight. MAYA, thirties, wipes the counter in slow circles.",
+  "A bell over the door rings. SAM steps in from the storm,",
+  "shaking water from a battered canvas coat and hat.",
+  "MAYA",
+  MAYA_SPEECH,
   "SAM",
   "(quietly)",
   "Then coffee. And the booth",
@@ -283,37 +298,230 @@ describe("capturing a new scene draft", () => {
     expect(lastSavePayload()).toMatchObject({ page_start: 1, page_end: 3, start_offset: 19, end_offset: 562 });
   });
 
-  it("[C3] existing compatibility behavior: captured text changes during indexing while an open editor keeps its mount-time text (P3)", async () => {
-    // Why this may be a bug: the editor can show different text from what
-    // saving would store, because the capture key doesn't change when the
-    // estimated action margin does.
-    await renderViewer(ScriptViewerRoute, { numPages: 4 });
-    publishPages([page1, page2], { total: 4 });
-    placeAnchorsWithKeys([1, 0], [2, 3]);
+  describe("P3 [C3] captured text that changes while indexing", () => {
+    // Anchors on p1 line 1 and p2 line 4. Publishing marginShiftPage moves the
+    // estimated action margin from x=108 to x=72, which reclassifies that range.
+    const SHIFTED_RAIN_LINE = "Rain streaks the windows of an empty roadside diner at";
+    const EDITED_HEADING = "INT. DINER - LATE NIGHT";
+    const EDITED_MARKDOWN = CAPTURE_P1_TO_P2.markdown.replace(`## ${DINER}`, `## ${EDITED_HEADING}`);
 
-    openEditor();
-    const block = editorBlock(1);
-    expect(block.value).toBe(DINER);
-    expect(editorBlock(2).value).toBe(RAIN);
-    expect(inPanel().queryByText("Rain streaks the windows of an empty roadside diner at")).toBeNull();
+    function publishMarginShift({ complete = false } = {}) {
+      return publishPages([page1, page2, page3, marginShiftPage], { total: 4, complete });
+    }
 
-    publishPages([page1, page2, page3, marginShiftPage], { total: 4 });
+    async function openEditorBeforeMarginShift() {
+      await renderViewer(ScriptViewerRoute, { numPages: 4 });
+      publishPages([page1, page2], { total: 4 });
+      placeAnchorsWithKeys([1, 0], [2, 3]);
+      openEditor();
+      expect(editorBlock(1).value).toBe(DINER);
+      expect(editorBlock(2).value).toBe(RAIN);
+    }
 
-    expect(inPanel().getByText("Rain streaks the windows of an empty roadside diner at")).toBeTruthy();
-    expect(editorBlock(1)).toBe(block);
-    expect(editorBlock(1).value).toBe(DINER);
-    expect(editorBlock(2).value).toBe(RAIN);
+    // jsdom tracks focus and selection, but not real caret rendering.
+    function focusAt(field, caret) {
+      act(() => {
+        field.focus();
+        field.setSelectionRange(caret, caret);
+      });
+    }
 
-    click(inDialog().getByRole("radio", { name: "Markdown" }));
-    expect(inDialog().getByRole("textbox", { name: "Screenplay markdown source" }).value).toBe(MARGIN_SHIFTED_MARKDOWN);
-    closeEditor();
+    function editorFields() {
+      return inDialog().getAllByRole("textbox", { name: /, block \d+$/ });
+    }
 
-    typeTime("Start", "00:01:00");
-    typeTime("End", "00:02:00");
-    click(inPanel().getByRole("button", { name: "Save scene" }));
-    expect(lastSavePayload()).toMatchObject({
-      selected_text: MARGIN_SHIFTED_MARKDOWN,
-      formatted_selected_text: MARGIN_SHIFTED_MARKDOWN,
+    /** Reads the Markdown source, then switches back to Script mode. */
+    function markdownSource() {
+      click(inDialog().getByRole("radio", { name: "Markdown" }));
+      const { value } = inDialog().getByRole("textbox", { name: "Screenplay markdown source" });
+      click(inDialog().getByRole("radio", { name: "Script" }));
+      return value;
+    }
+
+    function saveWithTimes() {
+      typeTime("Start", "00:01:00");
+      typeTime("End", "00:02:00");
+      click(inPanel().getByRole("button", { name: "Save scene" }));
+      return lastSavePayload();
+    }
+
+    it("replaces an untouched script editor's text when indexing reclassifies it, keeping focus in the same block", async () => {
+      await openEditorBeforeMarginShift();
+      const field = editorBlock(2);
+      focusAt(field, 5);
+      expect(inPanel().queryByText(SHIFTED_RAIN_LINE)).toBeNull();
+
+      publishMarginShift();
+
+      expect(editorBlock(2)).not.toBe(field);
+      expect(editorFields()).toHaveLength(11);
+      expect(inDialog().getByRole("textbox", { name: "Dialogue, block 1" }).value).toBe(DINER);
+      expect(editorBlock(2).value).toBe(SHIFTED_RAIN_LINE);
+      expect(document.activeElement).toBe(editorBlock(2));
+      expect(editorBlock(2).selectionStart).toBe(5);
+      expect(inPanel().getByText(SHIFTED_RAIN_LINE)).toBeTruthy();
+      expect(inPanel().getByText("Captured from PDF")).toBeTruthy();
+
+      expect(markdownSource()).toBe(MARGIN_SHIFTED_MARKDOWN);
+      expect(editorBlock(2).value).toBe(SHIFTED_RAIN_LINE);
+      closeEditor();
+      openEditor();
+      expect(editorBlock(2).value).toBe(SHIFTED_RAIN_LINE);
+      closeEditor();
+
+      expect(saveWithTimes()).toMatchObject({
+        selected_text: MARGIN_SHIFTED_MARKDOWN,
+        formatted_selected_text: MARGIN_SHIFTED_MARKDOWN,
+        raw_selected_text: MARGIN_SHIFTED_PLAIN,
+        start_offset: null,
+        end_offset: null,
+      });
+    });
+
+    it("keeps the script editor, focus and caret when published indexes don't change the captured text, then saves offsets", async () => {
+      await renderViewer(ScriptViewerRoute);
+      publishPages([page1, page2], { total: 3 });
+      placeAnchorsWithKeys([1, 0], [2, 3]);
+      openEditor();
+      const field = editorBlock(2);
+      focusAt(field, 5);
+
+      publishPages([page1, page2, page3], { total: 3 });
+      publishWholeScript();
+
+      expect(editorBlock(2)).toBe(field);
+      expect(document.activeElement).toBe(field);
+      expect(field.selectionStart).toBe(5);
+      fireEvent.change(field, { target: { value: `${RAIN} Thunder.` } });
+      expect(editorBlock(2)).toBe(field);
+      expect(document.activeElement).toBe(field);
+      expect(inPanel().getByText("Edited")).toBeTruthy();
+      closeEditor();
+
+      expect(saveWithTimes()).toMatchObject({
+        selected_text: CAPTURE_P1_TO_P2.markdown.replace(RAIN, `${RAIN} Thunder.`),
+        raw_selected_text: CAPTURE_P1_TO_P2.plainText,
+        start_offset: 0,
+        end_offset: 355,
+      });
+      expect(window.confirm).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        when: "after the first keystroke",
+        typeThenShift: (field) => {
+          fireEvent.change(field, { target: { value: EDITED_HEADING } });
+          publishMarginShift();
+        },
+      },
+      {
+        when: "in the same batch as the first keystroke",
+        typeThenShift: (field) => {
+          act(() => {
+            fireEvent.change(field, { target: { value: EDITED_HEADING } });
+            publishMarginShift();
+          });
+        },
+      },
+    ])("keeps manual edits made $when when indexing reclassifies the captured text", async ({ typeThenShift }) => {
+      await openEditorBeforeMarginShift();
+      const field = editorBlock(1);
+      focusAt(field, DINER.length);
+
+      typeThenShift(field);
+
+      expect(editorBlock(1)).toBe(field);
+      expect(document.activeElement).toBe(field);
+      expect(field.value).toBe(EDITED_HEADING);
+      expect(editorBlock(2).value).toBe(RAIN);
+      expect(inPanel().getByText("Edited")).toBeTruthy();
+      expect(inPanel().getByText(EDITED_HEADING)).toBeTruthy();
+      expect(inPanel().queryByText(SHIFTED_RAIN_LINE)).toBeNull();
+
+      expect(markdownSource()).toBe(EDITED_MARKDOWN);
+      expect(editorBlock(1).value).toBe(EDITED_HEADING);
+      closeEditor();
+      openEditor();
+      expect(editorBlock(1).value).toBe(EDITED_HEADING);
+      expect(editorBlock(2).value).toBe(RAIN);
+      closeEditor();
+
+      // The anchors didn't move, so the text isn't stale; saving stores it with the reclassified capture's raw text.
+      expect(inPanel().queryByText(ANCHORS_MOVED)).toBeNull();
+      expect(saveWithTimes()).toMatchObject({
+        selected_text: EDITED_MARKDOWN,
+        formatted_selected_text: EDITED_MARKDOWN,
+        raw_selected_text: MARGIN_SHIFTED_PLAIN,
+      });
+      expect(window.confirm).not.toHaveBeenCalled();
+    });
+
+    it("re-captures reclassified text after edits once the admin confirms, and follows later anchor changes", async () => {
+      await openEditorBeforeMarginShift();
+      fireEvent.change(editorBlock(1), { target: { value: EDITED_HEADING } });
+      publishMarginShift({ complete: true });
+      expect(editorBlock(1).value).toBe(EDITED_HEADING);
+
+      answerConfirm(true);
+      click(inDialog().getByRole("button", { name: "Revert to captured text" }));
+      expect(window.confirm).toHaveBeenLastCalledWith(RECAPTURE_PROMPT);
+      expect(editorBlock(2).value).toBe(SHIFTED_RAIN_LINE);
+      expect(inPanel().getByText("Captured from PDF")).toBeTruthy();
+      expect(markdownSource()).toBe(MARGIN_SHIFTED_MARKDOWN);
+      closeEditor();
+
+      hoverLine(2, 4);
+      pressKey("]");
+      openEditor();
+      const fields = editorFields();
+      expect(fields[fields.length - 1].value).toBe(POURS);
+      const source = markdownSource();
+      expect(source.startsWith(MARGIN_SHIFTED_MARKDOWN)).toBe(true);
+      closeEditor();
+
+      const payload = saveWithTimes();
+      expect(payload).toMatchObject({ selected_text: source, page_start: 1, page_end: 2 });
+      expect(Number.isInteger(payload.start_offset) && Number.isInteger(payload.end_offset)).toBe(true);
+      expect(window.confirm).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps accepted AI text, and a pending request's captured text, when indexing reclassifies the capture", async () => {
+      const SECOND_AI_MARKDOWN = "## INT. DINER - NIGHT\n\nRain streaks the windows.";
+      await openEditorBeforeMarginShift();
+
+      click(inDialog().getByRole("button", { name: "Format with AI" }));
+      await waitFor(() => expect(pending.formats).toHaveLength(1));
+      await settle(pending.formats[0], { markdown: AI_MARKDOWN });
+      click(inDialog().getByRole("button", { name: "Accept proposal" }));
+      const field = editorBlock(1);
+      expect(field.value).toBe("INT. ROADSIDE DINER - NIGHT");
+
+      click(inDialog().getByRole("button", { name: "Format with AI" }));
+      await waitFor(() => expect(pending.formats).toHaveLength(2));
+      expect(pending.formats[1].args[0].capturedText).toBe(CAPTURE_P1_TO_P2.plainText);
+      focusAt(field, 4);
+
+      publishMarginShift();
+
+      expect(editorBlock(1)).toBe(field);
+      expect(document.activeElement).toBe(field);
+      expect(field.selectionStart).toBe(4);
+      expect(field.value).toBe("INT. ROADSIDE DINER - NIGHT");
+      expect(inPanel().getByText("AI formatted")).toBeTruthy();
+      expect(markdownSource()).toBe(AI_MARKDOWN);
+
+      await settle(pending.formats[1], { markdown: SECOND_AI_MARKDOWN });
+      click(inDialog().getByRole("button", { name: "Accept proposal" }));
+      expect(editorBlock(2).value).toBe("Rain streaks the windows.");
+      closeEditor();
+
+      expect(inPanel().queryByText(ANCHORS_MOVED)).toBeNull();
+      expect(saveWithTimes()).toMatchObject({
+        selected_text: SECOND_AI_MARKDOWN,
+        raw_selected_text: MARGIN_SHIFTED_PLAIN,
+      });
+      expect(window.confirm).not.toHaveBeenCalled();
     });
   });
 });

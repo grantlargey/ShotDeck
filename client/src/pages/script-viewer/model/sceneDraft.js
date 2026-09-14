@@ -33,6 +33,13 @@ import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.j
  * anchor key, else the draft text's own key. Accepting it keys the AI text to
  * that selection, so the text is stale if the anchors have moved since.
  *
+ * The editor dialog replaces its script editor whenever `editorKey` changes.
+ * While the text is Captured, the key follows the captured text itself: its
+ * anchor pair and a fingerprint of the text, because indexing more pages can
+ * reclassify the text under unchanged anchors. The first edit keeps that key,
+ * so typing never replaces the editor, and index updates never change Edited,
+ * AI formatted or Saved text.
+ *
  * Suggested anchors are derived, never stored. They are in effect for a saved
  * scene with no explicit anchors until the admin clears them, and stay out of
  * undo history, the dirty check and the saved script location until an anchor
@@ -61,6 +68,8 @@ function createEmptyDraft(generation = 0) {
     // Ignored while the origin is "capture".
     text: "",
     textAnchorKey: "",
+    // The editor's source while the origin isn't "capture"; see editorKey.
+    editorSeed: "",
     editorRevision: 0,
     proposal: null,
   };
@@ -91,6 +100,7 @@ function draftFromScene(scene, editorRevision, generation) {
     textOrigin: "saved",
     text: displayScriptSceneText(scene),
     textAnchorKey: anchorPairKey(anchors),
+    editorSeed: anchorPairKey(anchors),
     editorRevision,
   };
 }
@@ -171,6 +181,7 @@ function reduceDraft(draft, action) {
         text: action.text,
         textOrigin: "edited",
         textAnchorKey: action.anchorKey ?? draft.textAnchorKey,
+        editorSeed: action.editorSeed ?? draft.editorSeed,
       };
 
     case "recapture":
@@ -215,6 +226,7 @@ function reduceDraft(draft, action) {
         text: draft.proposal.markdown,
         textOrigin: "ai",
         textAnchorKey: draft.proposal.anchorKey,
+        editorSeed: draft.proposal.anchorKey,
         editorRevision: draft.editorRevision + 1,
         proposal: null,
       };
@@ -353,6 +365,18 @@ function buildSavePayload(draft, textIndex, capture, text, runtimeSeconds = 0) {
   };
 }
 
+/**
+ * A short fingerprint of captured text for the editor key, so reclassified
+ * text replaces the editor while offsets or context appearing later don't.
+ */
+function textFingerprint(text) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+  }
+  return `${text.length.toString(36)}.${(hash >>> 0).toString(36)}`;
+}
+
 /** Stored text is stale when a capture exists under a different anchor pair; captured text never is. */
 function isTextStale(draft, capture) {
   return Boolean(capture) && draft.textOrigin !== "capture" && capture.key !== draft.textAnchorKey;
@@ -392,7 +416,8 @@ export function useSceneDraft(textIndex) {
 
   const text = state.textOrigin === "capture" ? capture?.markdown ?? "" : state.text;
   const textStale = isTextStale(state, capture);
-  const editorSeed = state.textOrigin === "capture" ? capture?.key ?? "" : state.textAnchorKey;
+  const captureSeed = useMemo(() => (capture ? `${capture.key}#${textFingerprint(capture.markdown)}` : ""), [capture]);
+  const editorSeed = state.textOrigin === "capture" ? captureSeed : state.editorSeed;
 
   const previewScene = useMemo(
     () => ({
@@ -424,7 +449,7 @@ export function useSceneDraft(textIndex) {
   const latestRef = useRef(null);
   const tokenRef = useRef(0);
   useLayoutEffect(() => {
-    latestRef.current = { state, textIndex, anchors, capture, text };
+    latestRef.current = { state, textIndex, anchors, capture, captureSeed, text };
   });
 
   const [draftActions] = useState(() => ({
@@ -479,13 +504,18 @@ export function useSceneDraft(textIndex) {
       dispatch({ type: "clearTags" });
     },
 
-    /** Replaces the scene text by hand; the first edit keeps the captured text's anchor key. */
+    /**
+     * Replaces the scene text by hand. The first edit keeps the captured
+     * text's anchor key and editor source, so the editor isn't replaced.
+     */
     editText(markdown) {
-      const { state: current, capture: currentCapture } = latestRef.current;
+      const { state: current, capture: currentCapture, captureSeed } = latestRef.current;
+      const fromCapture = current.textOrigin === "capture";
       dispatch({
         type: "editText",
         text: markdown,
-        anchorKey: current.textOrigin === "capture" ? currentCapture?.key : undefined,
+        anchorKey: fromCapture ? currentCapture?.key : undefined,
+        editorSeed: fromCapture ? captureSeed : undefined,
       });
     },
 
