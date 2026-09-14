@@ -10,8 +10,13 @@ node_modules/
 **/.env
 **/.env.*
 
-# Local docs
-docs/
+# Local agent skills
+/.agents/skills/
+/.claude/skills/
+/skills-lock.json
+
+# Local issues, specs, and conversation history
+/.scratch/
 
 # ShotDeck import artifacts
 /data/sd/
