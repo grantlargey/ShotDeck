@@ -4,6 +4,13 @@ import assert from "node:assert/strict";
  * Request bodies shaped like the client's, and records made through the API.
  */
 
+/** A presigned S3 view URL for `key`, signed locally with the test run's dummy bucket and region. */
+export function signedUrlPattern(key) {
+    const host = `${process.env.S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com`;
+    const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`^https://${escape(host)}/${escape(key)}\\?.*X-Amz-Signature=[0-9a-f]+`);
+}
+
 export const TAGS = {
     protagonist: "character-focus:protagonist",
     revelation: "narrative-function:revelation",
