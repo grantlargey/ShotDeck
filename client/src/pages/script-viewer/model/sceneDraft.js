@@ -29,6 +29,10 @@ import { captureAnchoredRange } from "./captureRange.js";
  * (`textAnchorKey`). When a capture exists under a different key the text is
  * stale; saved text with no key belongs to a legacy scene.
  *
+ * An AI proposal keeps the selection its request was made from: the capture's
+ * anchor key, else the draft text's own key. Accepting it keys the AI text to
+ * that selection, so the text is stale if the anchors have moved since.
+ *
  * Suggested anchors are derived, never stored. They are in effect for a saved
  * scene with no explicit anchors until the admin clears them, and stay out of
  * undo history, the dirty check and the saved script location until an anchor
@@ -179,7 +183,17 @@ function reduceDraft(draft, action) {
       };
 
     case "proposalStart":
-      return { ...draft, proposal: { token: action.token, status: "loading", markdown: "", error: "" } };
+      return {
+        ...draft,
+        proposal: {
+          token: action.token,
+          anchorKey: action.anchorKey,
+          capturedPlainText: action.capturedPlainText,
+          status: "loading",
+          markdown: "",
+          error: "",
+        },
+      };
 
     case "proposalReady":
       if (draft.proposal?.token !== action.token) return draft;
@@ -194,11 +208,13 @@ function reduceDraft(draft, action) {
 
     case "proposalAccept":
       if (draft.proposal?.status !== "ready") return draft;
+      // Keyed to the selection the proposal was requested for, so the text is
+      // stale if a capture now exists under a different anchor pair.
       return {
         ...draft,
         text: draft.proposal.markdown,
         textOrigin: "ai",
-        textAnchorKey: action.anchorKey ?? draft.textAnchorKey,
+        textAnchorKey: draft.proposal.anchorKey,
         editorRevision: draft.editorRevision + 1,
         proposal: null,
       };
@@ -370,11 +386,16 @@ export function useSceneDraft(textIndex) {
     [state.startTime, state.endTime, state.savedScene, state.tags, capture, text]
   );
 
-  // The request token stays private.
+  // The request token and requested selection stay private.
   const proposal = useMemo(
     () =>
       state.proposal
-        ? { status: state.proposal.status, markdown: state.proposal.markdown, error: state.proposal.error }
+        ? {
+            status: state.proposal.status,
+            markdown: state.proposal.markdown,
+            error: state.proposal.error,
+            capturedPlainText: state.proposal.capturedPlainText,
+          }
         : null,
     [state.proposal]
   );
@@ -457,7 +478,9 @@ export function useSceneDraft(textIndex) {
 
     /**
      * Starts an AI proposal and returns what to send, or null (changing
-     * nothing) when there is no text to format.
+     * nothing) when there is no text to format. The proposal keeps the
+     * selection it was requested from: the capture's anchor key and plain text,
+     * or, without a capture, the draft text's own anchor key and no word check.
      */
     startProposal() {
       const { state: current, anchors: currentAnchors, capture: currentCapture, text: currentText } = latestRef.current;
@@ -466,7 +489,12 @@ export function useSceneDraft(textIndex) {
 
       tokenRef.current += 1;
       const token = tokenRef.current;
-      dispatch({ type: "proposalStart", token });
+      dispatch({
+        type: "proposalStart",
+        token,
+        anchorKey: currentCapture ? currentCapture.key : current.textAnchorKey,
+        capturedPlainText: currentCapture?.plainText ?? "",
+      });
       return {
         token,
         capturedText,
@@ -487,9 +515,9 @@ export function useSceneDraft(textIndex) {
       dispatch({ type: "proposalFailed", token, error: message });
     },
 
-    /** Uses a ready proposal as the text, keyed to the capture at accept time. */
+    /** Uses a ready proposal as the text, keyed to the selection its request was made from. */
     acceptProposal() {
-      dispatch({ type: "proposalAccept", anchorKey: latestRef.current.capture?.key });
+      dispatch({ type: "proposalAccept" });
     },
 
     discardProposal() {

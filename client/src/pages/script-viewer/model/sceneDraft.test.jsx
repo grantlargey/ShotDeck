@@ -33,6 +33,9 @@ const RAIN =
   "Rain streaks the windows of an empty roadside diner at midnight. MAYA, thirties, wipes the counter in slow circles.";
 const BELL = "A bell over the door rings. SAM steps in from the storm, shaking water from a battered canvas coat and hat.";
 const MAYA_SPEECH = "Kitchen closed an hour ago. Coffee is all I can do.";
+/** Captured plain text for p1 lines 1–8, and for p1 lines 1–5. */
+const P1_PLAIN = [DINER, RAIN, BELL, "MAYA", MAYA_SPEECH].join("\n\n");
+const P1_SHORT_PLAIN = [DINER, RAIN, BELL].join("\n\n");
 
 function renderDraft(index = FULL_INDEX, options = {}) {
   return renderHook(({ index: current }) => useSceneDraft(current), { initialProps: { index }, ...options });
@@ -198,7 +201,8 @@ describe("identities", () => {
     rerender({ index: FULL_INDEX });
     expect(current(result).draft.proposal).toBe(proposal);
     expect(current(result).draft.previewScene).toBe(previewScene);
-    expect(Object.keys(proposal).sort()).toEqual(["error", "markdown", "status"]);
+    // The request token and requested selection stay private.
+    expect(Object.keys(proposal).sort()).toEqual(["capturedPlainText", "error", "markdown", "status"]);
 
     run(result, (a) => a.proposalReady(request.token, "## AI"));
     run(result, (a) => a.discardProposal());
@@ -285,10 +289,15 @@ describe("AI proposal tokens", () => {
     expect([first.token, second.token]).toEqual([1, 2]);
 
     run(result, (a) => a.proposalReady(first.token, "## OLD"));
-    expect(current(result).draft.proposal).toEqual({ status: "loading", markdown: "", error: "" });
+    expect(current(result).draft.proposal).toEqual({ status: "loading", markdown: "", error: "", capturedPlainText: P1_PLAIN });
 
     run(result, (a) => a.proposalReady(second.token, "## NEW"));
-    expect(current(result).draft.proposal).toEqual({ status: "ready", markdown: "## NEW", error: "" });
+    expect(current(result).draft.proposal).toEqual({
+      status: "ready",
+      markdown: "## NEW",
+      error: "",
+      capturedPlainText: P1_PLAIN,
+    });
 
     run(result, (a) => a.proposalFailed(first.token, "stale failure"));
     expect(current(result).draft.proposal.status).toBe("ready");
@@ -318,6 +327,191 @@ describe("AI proposal tokens", () => {
       pageEnd: 3,
       snapshotAnchors: null,
     });
+  });
+});
+
+describe("[H2] AI proposal provenance", () => {
+  const AI_TEXT = "## AI HEADING\n\nWords from the formatter.";
+  const PLACE_ANCHORS = "Place start and end anchors in the script to capture the scene text.";
+
+  function anchorP1(result, endLine = 7) {
+    place(result, "start", page1, 0);
+    place(result, "end", page1, endLine);
+  }
+
+  function ready(result, request, markdown = AI_TEXT) {
+    run(result, (a) => a.proposalReady(request.token, markdown));
+  }
+
+  it("accepts a proposal as fresh text when the selection is unchanged", () => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    ready(result, run(result, (a) => a.startProposal()));
+    expect(current(result).draft.proposal).toEqual({
+      status: "ready",
+      markdown: AI_TEXT,
+      error: "",
+      capturedPlainText: P1_PLAIN,
+    });
+
+    run(result, (a) => a.acceptProposal());
+
+    expect(current(result).draft).toMatchObject({
+      text: AI_TEXT,
+      textOrigin: "ai",
+      textStale: false,
+      capturedPlainText: P1_PLAIN,
+      recaptureOption: "revert",
+      editorKey: "1:1:0-1:7",
+      proposal: null,
+    });
+  });
+
+  it.each([
+    {
+      when: "while the request is pending",
+      moveAndReady: (result, request) => {
+        place(result, "end", page1, 4);
+        ready(result, request);
+      },
+    },
+    {
+      when: "after the proposal is ready",
+      moveAndReady: (result, request) => {
+        ready(result, request);
+        place(result, "end", page1, 4);
+      },
+    },
+  ])("keeps the requested selection and word check when the anchors move $when", ({ moveAndReady }) => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    moveAndReady(result, run(result, (a) => a.startProposal()));
+
+    // The draft's word check follows the moved capture; the proposal's stays with the text that was sent.
+    expect(current(result).draft.capturedPlainText).toBe(P1_SHORT_PLAIN);
+    expect(current(result).draft.proposal.capturedPlainText).toBe(P1_PLAIN);
+
+    run(result, (a) => a.acceptProposal());
+
+    expect(current(result).draft).toMatchObject({
+      text: AI_TEXT,
+      textOrigin: "ai",
+      textStale: true,
+      capturedPlainText: "",
+      recaptureOption: "recapture",
+      recaptureReplacesEdits: true,
+      editorKey: "1:1:0-1:7",
+    });
+
+    place(result, "end", page1, 7);
+    expect(current(result).draft).toMatchObject({ textStale: false, capturedPlainText: P1_PLAIN, recaptureOption: "revert" });
+  });
+
+  it("keeps the requested selection when the anchors are cleared, without changing what saving needs", () => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    run(result, (a) => a.setTime("startTime", "00:01:00"));
+    run(result, (a) => a.setTime("endTime", "00:02:00"));
+    ready(result, run(result, (a) => a.startProposal()));
+    run(result, (a) => a.clearAnchors());
+
+    run(result, (a) => a.acceptProposal());
+
+    // Without a capture the text can't be stale, and a new draft still has no script location.
+    expect(current(result).draft).toMatchObject({
+      text: AI_TEXT,
+      textOrigin: "ai",
+      textStale: false,
+      recaptureOption: "none",
+      editorKey: "1:1:0-1:7",
+    });
+    expect(run(result, (a) => a.buildSave(0))).toEqual({ error: PLACE_ANCHORS });
+
+    anchorP1(result, 4);
+    expect(current(result).draft.textStale).toBe(true);
+    place(result, "end", page1, 7);
+    expect(current(result).draft).toMatchObject({ textStale: false, capturedPlainText: P1_PLAIN });
+    expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({
+      formatted_selected_text: AI_TEXT,
+      raw_selected_text: P1_PLAIN,
+      page_start: 1,
+      page_end: 1,
+    });
+  });
+
+  it.each([
+    { kind: "legacy", scene: legacyScene, textStale: true, recaptureOption: "recapture" },
+    { kind: "anchored", scene: savedV2Scene, textStale: false, recaptureOption: "revert" },
+  ])(
+    "keys a proposal requested before any capture to the $kind saved text's selection",
+    ({ scene, textStale, recaptureOption }) => {
+      const { result, rerender } = renderDraft(textIndexFrom([], { total: 3 }));
+      run(result, (a) => a.loadScene(scene));
+      ready(result, run(result, (a) => a.startProposal()));
+      rerender({ index: FULL_INDEX });
+      // A capture that appears later doesn't become the proposal's word check.
+      expect(current(result).draft.proposal.capturedPlainText).toBe("");
+
+      run(result, (a) => a.acceptProposal());
+
+      expect(current(result).draft).toMatchObject({
+        text: AI_TEXT,
+        textOrigin: "ai",
+        textStale,
+        legacyText: false,
+        recaptureOption,
+      });
+      expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({
+        formatted_selected_text: AI_TEXT,
+        page_start: scene.page_start,
+      });
+    }
+  );
+
+  it("takes the selection from the latest request, not a superseded one", () => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    const first = run(result, (a) => a.startProposal());
+    place(result, "end", page1, 4);
+    const second = run(result, (a) => a.startProposal());
+    ready(result, first, "## OLD");
+    ready(result, second);
+    expect(current(result).draft.proposal).toEqual({
+      status: "ready",
+      markdown: AI_TEXT,
+      error: "",
+      capturedPlainText: P1_SHORT_PLAIN,
+    });
+
+    // Back on the superseded request's selection, the latest proposal's text is stale.
+    place(result, "end", page1, 7);
+    run(result, (a) => a.acceptProposal());
+
+    expect(current(result).draft).toMatchObject({ text: AI_TEXT, textStale: true, editorKey: "1:1:0-1:4" });
+  });
+
+  it("leaves nothing of a discarded request to accept", () => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    run(result, (a) => a.editText("## EDITED\n\nTyped by hand."));
+    const discarded = run(result, (a) => a.startProposal());
+    run(result, (a) => a.discardProposal());
+    place(result, "end", page1, 4);
+    ready(result, discarded);
+    run(result, (a) => a.acceptProposal());
+
+    expect(current(result).draft).toMatchObject({
+      textOrigin: "edited",
+      textStale: true,
+      editorKey: "0:1:0-1:7",
+      proposal: null,
+    });
+
+    // A new request formats the current capture, so its accepted text is fresh.
+    ready(result, run(result, (a) => a.startProposal()));
+    expect(current(result).draft.proposal.capturedPlainText).toBe(P1_SHORT_PLAIN);
+    run(result, (a) => a.acceptProposal());
+    expect(current(result).draft).toMatchObject({ text: AI_TEXT, textOrigin: "ai", textStale: false, editorKey: "1:1:0-1:4" });
   });
 });
 

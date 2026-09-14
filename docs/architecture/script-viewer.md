@@ -49,6 +49,25 @@ Before a deletion request, call `draftActions.prepareDelete(sceneId)` and retain
 
 The page still updates the saved-scene collection and shows the request result. Networking stays in the page; whether a response can replace the draft belongs to the draft module. These rules fix the earlier I1/I2 response races.
 
+### AI proposals keep the selection they were requested for
+
+`startProposal()` reads the committed draft and stores the proposal's selection with its token:
+
+- **With a capture:** the capture's anchor key, plus its plain text as the proposal's word-check baseline (`draft.proposal.capturedPlainText`). This applies even when the draft text is stale, because the request sends that capture.
+- **Without a capture** (no anchor pair, or pages not yet indexed): the draft text's own anchor key, and `""` as the baseline, which means no word check. The key is empty for a legacy scene or for text typed without a capture. The request still sends plain text derived from the draft text.
+
+Accepting a ready proposal is always explicit and is never refused. The proposal becomes `"ai"` text keyed to the stored selection, and the usual stale-text rule applies:
+
+- **Stale:** a capture exists under a different anchor pair. This happens when the anchors moved while the request was pending or after it was ready, when they were cleared and placed on another pair, or when suggested anchors appear for a legacy scene.
+- **Fresh again:** the anchors return to the requested pair.
+- **Never stale:** there is no capture, for example while the anchors are cleared.
+
+Saving is unchanged: stale text is saved as it is, and a draft with no script location is still refused.
+
+The editor dialog checks the draft against the current capture (`draft.capturedPlainText`) and checks the proposal against its stored baseline. A capture that changes or appears later never replaces that baseline. A newer `startProposal`, `discardProposal`, `loadScene` or `reset` replaces or drops the proposal along with its selection. Request tokens still decide whether a response applies.
+
+These rules fix H2, where an accepted proposal was keyed to the anchors at accept time and so looked fresh for anchors it was never requested for.
+
 ### Existing compatibility behavior
 
 These behaviors look questionable but are kept on purpose. Each is pinned by a test named "existing compatibility behavior", so a fix has to change that test deliberately.
@@ -58,7 +77,6 @@ These behaviors look questionable but are kept on purpose. Each is pinned by a t
 | B5 | With explicit anchors but no capture (one anchor removed, or pages not yet indexed), a saved scene keeps its previously stored location while the page shows different anchors. |
 | B6 | Saving stale text stores the new capture's location and raw text alongside the old or edited scene text. |
 | C3 | Captured text can change while indexing progresses (the estimated action margin moves), but the editor dialog keeps the text it mounted with. |
-| H2 | An accepted AI proposal is keyed to the anchors at accept time, so a proposal requested for earlier anchors doesn't show as stale. |
 
 ## Entry points and ownership
 
@@ -108,10 +126,10 @@ const [draft, draftActions] = useSceneDraft(textIndex);
 | `startTime`, `endTime`, `tags` | Film timing as typed, and the selected tags in order. |
 | `text`, `textOrigin` | The scene text saving would store, and where it came from. |
 | `textStale`, `legacyText` | Stale text; saved text that belongs to no anchor pair. |
-| `capturedPlainText` | The capture's plain text when the text isn't stale, else `""` (the editor's word check). |
+| `capturedPlainText` | The capture's plain text when the text isn't stale, else `""` (the draft's word check). |
 | `recaptureOption`, `recaptureReplacesEdits` | `"none"`, `"recapture"` or `"revert"`, which the page turns into a button label; and whether re-capture would replace edited or AI text, in which case the page confirms first. |
 | `editorKey` | Remount key for the editor. It stays the same on the first edit, so the caret isn't lost, and changes on reset, load, re-capture and accepting a proposal. |
-| `proposal` | `null` or `{ status, markdown, error }`. |
+| `proposal` | `null` or `{ status, markdown, error, capturedPlainText }`. `capturedPlainText` is the plain text of the capture the request was made from, else `""`; it is the baseline for the proposal's word check. The token and requested anchor key stay private. |
 | `previewScene` | A scene-shaped preview for the panel's card and the dialog's page label. |
 | `dirty` | Whether there are unsaved changes, used for the discard prompt. |
 
@@ -120,7 +138,7 @@ const [draft, draftActions] = useSceneDraft(textIndex);
 Timing rules:
 
 - Actions read the draft from the latest **commit**, through a ref assigned in a layout effect, never during render. Several actions called in one event all see the same draft, and `draft` shows their changes only after React commits. There are no synchronous state reads.
-- `startProposal()` returns `null` for blank text, or the request data together with a fresh token. `proposalReady` and `proposalFailed` apply only if their token still matches. The token counter lives in a ref and is incremented at call time, never in the reducer, which `StrictMode` runs twice.
+- `startProposal()` returns `null` for blank text, or the request data together with a fresh token. The proposal's selection and word-check baseline are taken from the same committed view as the request data. `proposalReady` and `proposalFailed` apply only if their token still matches. `acceptProposal()` reads nothing from the view; the proposal carries its selection. The token counter lives in a ref and is incremented at call time, never in the reducer, which `StrictMode` runs twice.
 - Capture work (`captureAnchoredRange`) reruns only when the text index or the anchors in effect change. Anchor objects keep their identity while no anchor input changes, so memoized PDF pages don't re-render.
 
 ## Name mappings
@@ -150,6 +168,7 @@ Timing rules:
 | Text origin, stale text, the editor key, the dirty check | `useSceneDraft` |
 | Confirm wording and button labels | `ui/ScriptViewerPage.jsx` |
 | AI requests | `startProposal` (what is sent) and `requestAiFormat` in the page (snapshots and the network call) |
+| AI proposal selection and word-check baseline | `startProposal` and the `proposalAccept` transition in `useSceneDraft`; the proposal check in `ui/DraftEditorModal.jsx` |
 | Indexing | `model/useScriptTextIndex.js` |
 
 ## Tests
@@ -163,9 +182,14 @@ npm test --prefix client
 Vitest runs with jsdom (`client/vitest.config.js`, setup in `client/src/test/setup.js`). The script viewer has two suites:
 
 - **`ui/ScriptViewerPage.test.jsx`** characterizes the page end to end: capture, indexing, editing, re-capture, suggestions, saving, prompts, keys, AI proposals, visitors, and page-frame prop identity. It doubles only the edges: the API client, the session, `react-pdf`, the text indexer (a store the test publishes indexes to), page windowing, `PdfPageFrame` (which records the props of each render), AI page snapshots and `window.confirm`. Capture runs through a passthrough spy. The panel, dialogs, editor, anchors, capture and screenplay code are real.
-- **`model/sceneDraft.test.jsx`** tests the hook's interface directly: the committed-view rule, identities, capture work, request tokens under `StrictMode`, re-capture options, editor keys, undo limits, and the exact save mapping.
+- **`model/sceneDraft.test.jsx`** tests the hook's interface directly: the committed-view rule, identities, capture work, request tokens under `StrictMode`, AI proposal provenance, re-capture options, editor keys, undo limits, and the exact save mapping.
 
 Both suites cover persistence response races: switching drafts, preserving newer edits, attaching the id from a first save, and keeping newer changes after deletion. Hook tests also cover an edit/reset and a response queued in the same React batch.
+
+AI proposal provenance (H2) is covered in both suites.
+
+- **Hook tests** check each case: an unchanged selection; anchors moved while pending and after readiness; cleared anchors; proposals requested for legacy and anchored saved scenes before any capture; and superseded and discarded requests.
+- **Page tests (P13)** check the dialog's proposal word check and the panel's stale callout after the anchors move.
 
 Shared fixtures live in `test/`. `textIndexFixtures.js` builds synthetic screenplay pages through the real line builder. Its `textIndexFrom` repeats the indexer's publish step (page offsets and the action margin), so keep it in step with `useScriptTextIndex.js`. `pageHarness.js` holds the page suite's doubles and helpers.
 

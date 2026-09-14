@@ -54,8 +54,9 @@ function FidelitySummary({ subject, fidelity }) {
 /**
  * Expanded draft editor. Edits apply to the draft immediately; an AI proposal
  * is shown side by side with the draft and only replaces it when accepted.
- * Both are checked against the captured text by word count, ignoring word
- * order, whitespace, and normalized punctuation styles.
+ * The draft is checked against the current captured text, and a proposal
+ * against the captured text its request was made from, by word count,
+ * ignoring word order, whitespace, and normalized punctuation styles.
  */
 export function DraftEditorModal({
   title,
@@ -75,6 +76,7 @@ export function DraftEditorModal({
   const [mode, setMode] = useState("script");
   const proposalReady = proposal?.status === "ready";
   const proposalMarkdown = proposalReady ? proposal.markdown : "";
+  const proposalBaselineText = proposal?.capturedPlainText ?? "";
   const showProposal = Boolean(proposal) && proposal.status !== "error";
 
   const draftFidelity = useMemo(
@@ -83,10 +85,10 @@ export function DraftEditorModal({
   );
   const proposalFidelity = useMemo(
     () =>
-      baselineText && proposalMarkdown
-        ? compareWordFidelity(baselineText, screenplayToPlainText(proposalMarkdown))
+      proposalBaselineText && proposalMarkdown
+        ? compareWordFidelity(proposalBaselineText, screenplayToPlainText(proposalMarkdown))
         : null,
-    [baselineText, proposalMarkdown]
+    [proposalBaselineText, proposalMarkdown]
   );
 
   return (

@@ -729,6 +729,7 @@ describe("AI proposals", () => {
     const block = editorBlock(1);
     click(inDialog().getByRole("button", { name: "Accept proposal" }));
     expect(inPanel().getByText("AI formatted")).toBeTruthy();
+    expect(inPanel().queryByText(ANCHORS_MOVED)).toBeNull();
     expect(inPanel().queryByText(PROPOSAL_READY)).toBeNull();
     expect(editorBlock(1)).not.toBe(block);
     expect(editorBlock(1).value).toBe("INT. ROADSIDE DINER - NIGHT");
@@ -817,9 +818,7 @@ describe("AI proposals", () => {
     expect(inPanel().getByRole("button", { name: "Format with AI" }).disabled).toBe(false);
   });
 
-  it("[H2] existing compatibility behavior: an accepted proposal is keyed to the anchors at accept time (P13)", async () => {
-    // Why this may be a bug: a proposal generated for earlier anchors is
-    // treated as fresh for the current anchors, so no stale warning appears.
+  it("P13 [H2] keeps a proposal's requested selection and word check when the anchors move while it is pending", async () => {
     await renderViewer(ScriptViewerRoute);
     publishWholeScript();
     placeAnchorsWithKeys([1, 0], [1, 7]);
@@ -828,13 +827,42 @@ describe("AI proposals", () => {
     expect(pending.formats[0].args[0].capturedText).toBe(CAPTURE_P1.plainText);
     hoverLine(1, 4);
     pressKey("]");
-    await settle(pending.formats[0], { markdown: AI_MARKDOWN });
+    // The formatter returns exactly the words it was sent, which the moved capture no longer has.
+    await settle(pending.formats[0], { markdown: CAPTURE_P1.markdown });
 
     click(inPanel().getByRole("button", { name: "Review" }));
+    expect(inDialog().getByText(/^AI proposal: [\d,]+ captured words match by count/)).toBeTruthy();
+    expect(inDialog().getByText(/^Draft: [\d,]+ captured words match by count/)).toBeTruthy();
     click(inDialog().getByRole("button", { name: "Accept proposal" }));
+    expect(inDialog().getByRole("button", { name: "Re-capture from anchors" })).toBeTruthy();
+    expect(inDialog().getByText("The word check runs once text is captured from anchors.")).toBeTruthy();
     closeEditor();
     expect(inPanel().getByText("AI formatted")).toBeTruthy();
+    expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
+  });
+
+  it("P13 [H2] marks an accepted proposal stale when the anchors moved after it was ready", async () => {
+    await renderViewer(ScriptViewerRoute);
+    publishWholeScript();
+    placeAnchorsWithKeys([1, 0], [1, 7]);
+
+    await requestAi(1);
+    await settle(pending.formats[0], { markdown: CAPTURE_P1.markdown });
+    hoverLine(1, 4);
+    pressKey("]");
+    expect(inPanel().getByText(PROPOSAL_READY)).toBeTruthy();
+
+    click(inPanel().getByRole("button", { name: "Review" }));
+    expect(inDialog().getByText(/^AI proposal: [\d,]+ captured words match by count/)).toBeTruthy();
+    click(inDialog().getByRole("button", { name: "Accept proposal" }));
+    closeEditor();
+    expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
+
+    // Returning to the requested selection makes the accepted text fresh again.
+    hoverLine(1, 7);
+    pressKey("]");
     expect(inPanel().queryByText(ANCHORS_MOVED)).toBeNull();
+    expect(inPanel().getByText("AI formatted")).toBeTruthy();
   });
 });
 
