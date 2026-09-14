@@ -72,6 +72,8 @@ Each page slice exposes a small public API through its `index.js` file. Higher l
 
 The script-viewer route is loaded on demand so the PDF renderer and editor are kept out of the initial application bundle.
 
+See the [script viewer architecture guide](docs/architecture/script-viewer.md) for draft ownership, saved text and location rules, and where to change viewer behavior.
+
 ## Requirements
 
 - Node.js 24.13.1, pinned in `.nvmrc` and `server/Dockerfile`. With nvm installed, run `nvm install` and `nvm use` from the repository root.
@@ -225,6 +227,7 @@ Client (from `client/`, or append `--prefix client` from the root):
 npm run dev
 npm run build
 npm run lint
+npm test
 npm run preview
 ```
 
@@ -234,7 +237,7 @@ Server (from `server/`, or append `--prefix server` from the root):
 npm run dev
 ```
 
-The server's `test` script is still an unimplemented placeholder. There is no tracked automated test suite or CI workflow yet.
+Client tests run with Vitest and jsdom (`npm test --prefix client`); they currently cover the script viewer's scene draft workflow. The server's `test` script is still an unimplemented placeholder, and there is no CI workflow.
 
 ## Local-only Importer
 

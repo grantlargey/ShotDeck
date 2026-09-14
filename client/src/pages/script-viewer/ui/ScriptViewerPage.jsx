@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Document, pdfjs } from "react-pdf";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -16,22 +16,13 @@ import { api } from "@/shared/api";
 import { cx } from "@/shared/lib/cx";
 import { useDocumentTitle } from "@/shared/lib/document-title";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { screenplayToPlainText } from "@/shared/lib/screenplay";
-import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
+import { formatSecondsToHms } from "@/shared/lib/time";
 import { CloseIcon, IconButton, LoadingState } from "@/shared/ui";
 import { SceneModalButton, SceneViewerModal } from "@/widgets/scene-detail-modal";
 import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
 import { isTypingTarget } from "../lib/pdfViewport.js";
-import {
-  anchorsFromGeometry,
-  buildSceneSegmentsByPage,
-  createLineAnchor,
-  findOverlappingSavedScene,
-  hasAnyAnchor,
-  suggestAnchorsFromSavedText,
-} from "../model/anchors.js";
-import { captureAnchoredRange } from "../model/captureRange.js";
-import { buildScenePayload, createEmptyDraft, draftReducer, isDraftDirty } from "../model/sceneDraft.js";
+import { anchorsFromGeometry, buildSceneSegmentsByPage, findOverlappingSavedScene } from "../model/anchors.js";
+import { useSceneDraft } from "../model/sceneDraft.js";
 import { usePdfPageWindowing } from "../model/usePdfPageWindowing.js";
 import { useScriptTextIndex } from "../model/useScriptTextIndex.js";
 import { AnchorContextMenu } from "./AnchorContextMenu.jsx";
@@ -47,6 +38,13 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 const NO_SEGMENTS = [];
 const MENU_WIDTH = 296;
 const MENU_HEIGHT = 360;
+
+// The editor dialog's re-capture button, by the draft's re-capture option.
+const RECAPTURE_LABELS = {
+  none: "",
+  recapture: "Re-capture from anchors",
+  revert: "Revert to captured text",
+};
 
 function parsePageParam(value) {
   const page = Number(value);
@@ -96,7 +94,6 @@ function ScriptViewerPage() {
   const [notice, setNotice] = useState(null);
   const [pdfDocument, setPdfDocument] = useState(null);
   const [pdfLoadError, setPdfLoadError] = useState("");
-  const [draft, dispatch] = useReducer(draftReducer, undefined, createEmptyDraft);
   const [activeTab, setActiveTab] = useState("capture");
   const [menu, setMenu] = useState(null);
   const [modal, setModal] = useState(null);
@@ -113,12 +110,14 @@ function ScriptViewerPage() {
 
   const hoverRef = useRef(null);
   const scenesSectionRef = useRef(null);
-  const aiRequestRef = useRef(0);
   const deepLinkedSceneRef = useRef("");
 
   const numPages = pdfDocument?.numPages ?? 0;
   const windowing = usePdfPageWindowing(numPages);
   const textIndex = useScriptTextIndex(pdfDocument);
+  // What the draft's text and script location are, and what saving stores, lives in useSceneDraft.
+  const [draft, draftActions] = useSceneDraft(textIndex);
+  const draftSceneId = draft.savedScene?.id ?? "";
 
   useEffect(() => {
     let cancelled = false;
@@ -140,43 +139,18 @@ function ScriptViewerPage() {
     };
   }, [movieId, scriptId]);
 
-  // ---------- Derived draft state ----------
+  // ---------- Page views of the draft ----------
 
-  const suggestedAnchors = useMemo(() => {
-    if (!draft.baseline || draft.suggestionsDismissed || hasAnyAnchor(draft.anchors)) return null;
-    return suggestAnchorsFromSavedText(draft.baseline, textIndex.pages);
-  }, [draft.baseline, draft.suggestionsDismissed, draft.anchors, textIndex.pages]);
-
-  const anchors = suggestedAnchors || draft.anchors;
-  const capture = useMemo(() => captureAnchoredRange(textIndex, anchors), [textIndex, anchors]);
-  const markdown = draft.textOrigin === "capture" ? capture?.markdown ?? "" : draft.markdown;
-  const captureStale = Boolean(capture) && draft.textOrigin !== "capture" && capture.key !== draft.textAnchorKey;
-  const editorSeed = draft.textOrigin === "capture" ? capture?.key ?? "" : draft.textAnchorKey;
   const sceneSegmentsByPage = useMemo(() => buildSceneSegmentsByPage(scenes), [scenes]);
   const overlapScene = useMemo(
-    () => findOverlappingSavedScene(scenes, anchors, draft.sceneId),
-    [scenes, anchors, draft.sceneId]
+    () => findOverlappingSavedScene(scenes, draft.anchors, draftSceneId),
+    [scenes, draft.anchors, draftSceneId]
   );
-  const tagsDisabled = !markdown.trim();
+  const tagsDisabled = !draft.text.trim();
   const visibleTab = tagsDisabled ? "capture" : activeTab;
-  const dirty = isDraftDirty(draft, markdown);
   const title = movie?.title || "Script";
   const runtimeSeconds = movie?.runtime_minutes ? Number(movie.runtime_minutes) * 60 : 0;
   useDocumentTitle(movie ? `${movie.title} script` : "Script");
-
-  const draftScene = useMemo(
-    () => ({
-      id: draft.sceneId || "draft",
-      start_time_seconds: parseTimeInputToSeconds(draft.startTime),
-      end_time_seconds: parseTimeInputToSeconds(draft.endTime),
-      page_start: capture?.pageStart ?? draft.baseline?.page_start ?? null,
-      page_end: capture?.pageEnd ?? draft.baseline?.page_end ?? null,
-      tags: draft.tags,
-      formatted_selected_text: markdown,
-      first_image_annotation: draft.baseline?.first_image_annotation ?? null,
-    }),
-    [draft.sceneId, draft.startTime, draft.endTime, draft.baseline, draft.tags, capture, markdown]
-  );
 
   // ---------- Navigation and scrolling ----------
 
@@ -198,10 +172,10 @@ function ScriptViewerPage() {
     const target = scenes.find((scene) => scene.id === sceneIdFromQuery);
     if (!target) return;
     deepLinkedSceneRef.current = sceneIdFromQuery;
-    if (canEdit) dispatch({ type: "loadScene", scene: target });
+    if (canEdit) draftActions.loadScene(target);
     else setFocusSceneId(target.id);
     setPendingScroll(sceneScrollTarget(target));
-  }, [sessionReady, canEdit, sceneIdFromQuery, scenes]);
+  }, [sessionReady, canEdit, sceneIdFromQuery, scenes, draftActions]);
 
   const runPendingScroll = useStableHandler((target) => {
     scrollToPoint(target.page, target.offsetPt, { behavior: "auto", onDone: () => setPendingScroll(null) });
@@ -218,13 +192,13 @@ function ScriptViewerPage() {
   }, [notice]);
 
   function confirmDiscardChanges() {
-    return !dirty || window.confirm("Discard unsaved changes to the current scene?");
+    return !draft.dirty || window.confirm("Discard unsaved changes to the current scene?");
   }
 
   function selectScene(scene, { scroll = true } = {}) {
-    if (draft.sceneId !== scene.id) {
+    if (draftSceneId !== scene.id) {
       if (!confirmDiscardChanges()) return;
-      dispatch({ type: "loadScene", scene });
+      draftActions.loadScene(scene);
       setActiveTab("capture");
     }
     if (scroll) {
@@ -235,7 +209,7 @@ function ScriptViewerPage() {
 
   function startNewScene() {
     if (!confirmDiscardChanges()) return;
-    dispatch({ type: "reset" });
+    draftActions.reset();
     setActiveTab("capture");
   }
 
@@ -270,14 +244,8 @@ function ScriptViewerPage() {
 
   // ---------- Anchors ----------
 
-  function setAnchorAtLine(kind, pageNumber, line) {
-    const page = textIndex.pages.get(pageNumber);
-    if (!page || !line) return;
-    dispatch({ type: "setAnchor", kind, anchor: createLineAnchor(page, line), currentAnchors: anchors });
-  }
-
   function jumpToAnchor(kind) {
-    const anchor = anchors[kind];
+    const anchor = draft.anchors[kind];
     if (anchor) scrollToPoint(anchor.page, anchor.top);
   }
 
@@ -287,9 +255,6 @@ function ScriptViewerPage() {
     hoverRef.current = hover;
   }, []);
   const handlePageRendered = useStableHandler((pageNumber) => windowing.onPageRendered(pageNumber));
-  const handleRemoveAnchor = useStableHandler((kind) =>
-    dispatch({ type: "removeAnchor", kind, currentAnchors: anchors })
-  );
   const handleSelectSceneFromPage = useStableHandler((scene) =>
     canEdit ? selectScene(scene, { scroll: false }) : showScene(scene)
   );
@@ -319,9 +284,9 @@ function ScriptViewerPage() {
     const modifier = event.metaKey || event.ctrlKey;
 
     if (modifier && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "z") {
-      if (draft.anchorHistory.length === 0) return;
+      if (!draft.canUndoAnchors) return;
       event.preventDefault();
-      dispatch({ type: "undoAnchors" });
+      draftActions.undoAnchors();
       return;
     }
 
@@ -329,7 +294,7 @@ function ScriptViewerPage() {
     const hover = hoverRef.current;
     if (!hover) return;
     event.preventDefault();
-    setAnchorAtLine(event.key === "[" ? "start" : "end", hover.pageNumber, hover.line);
+    draftActions.setAnchorAtLine(event.key === "[" ? "start" : "end", hover.pageNumber, hover.line);
   });
 
   useEffect(() => {
@@ -339,77 +304,57 @@ function ScriptViewerPage() {
 
   // ---------- Draft text ----------
 
-  function normalizeTime(field) {
-    const seconds = parseTimeInputToSeconds(draft[field]);
-    if (seconds !== null) {
-      dispatch({ type: "setTime", field, value: formatSecondsToHms(seconds, { fallback: "00:00:00" }) });
-    }
-  }
-
   function recapture() {
-    if (!capture) return;
-    const replacesEdits = draft.textOrigin === "edited" || draft.textOrigin === "ai";
     if (
-      replacesEdits &&
+      draft.recaptureReplacesEdits &&
       !window.confirm("Replace the current text with a fresh capture from the anchors? Your text edits will be lost.")
     ) {
       return;
     }
-    dispatch({ type: "applyCapture", anchors, capture });
-  }
-
-  function editMarkdown(nextMarkdown) {
-    dispatch({
-      type: "editMarkdown",
-      markdown: nextMarkdown,
-      anchorKey: draft.textOrigin === "capture" ? capture?.key : undefined,
-    });
+    draftActions.recapture();
   }
 
   async function requestAiFormat() {
-    const capturedText = capture?.plainText || screenplayToPlainText(markdown);
-    if (!capturedText.trim()) return;
-
-    aiRequestRef.current += 1;
-    const requestId = aiRequestRef.current;
-    dispatch({ type: "proposalStart", requestId });
+    const request = draftActions.startProposal();
+    if (!request) return;
 
     try {
       const snapshots =
-        capture && pdfDocument
-          ? await renderSelectionSnapshots(pdfDocument, anchors)
+        request.snapshotAnchors && pdfDocument
+          ? await renderSelectionSnapshots(pdfDocument, request.snapshotAnchors)
           : { pageImages: [], omittedPageCount: 0 };
+      const { capturedText, draftMarkdown, pageStart, pageEnd } = request;
       const result = await api.formatScreenplaySelection({
         capturedText,
-        draftMarkdown: markdown,
-        pageStart: capture?.pageStart ?? draft.baseline?.page_start ?? null,
-        pageEnd: capture?.pageEnd ?? draft.baseline?.page_end ?? null,
+        draftMarkdown,
+        pageStart,
+        pageEnd,
         ...snapshots,
       });
-      dispatch({ type: "proposalReady", requestId, markdown: result?.markdown || "" });
+      draftActions.proposalReady(request.token, result?.markdown || "");
     } catch (error) {
-      dispatch({ type: "proposalError", requestId, error: getErrorMessage(error, "AI formatting failed.") });
+      draftActions.proposalFailed(request.token, getErrorMessage(error, "AI formatting failed."));
     }
   }
 
   // ---------- Persistence ----------
 
   async function saveScene() {
-    const { error, payload } = buildScenePayload({ draft, capture, markdown, runtimeSeconds });
+    const { error, payload } = draftActions.buildSave(runtimeSeconds);
     if (error) {
       setNotice({ tone: "error", text: error });
       return;
     }
 
-    const wasEditing = Boolean(draft.sceneId);
+    const wasEditing = Boolean(draftSceneId);
     setSaving(true);
     setNotice(null);
     try {
       const saved = wasEditing
-        ? await scriptSceneActions.update(movieId, scriptId, draft.sceneId, payload)
+        ? await scriptSceneActions.update(movieId, scriptId, draftSceneId, payload)
         : await scriptSceneActions.create(movieId, scriptId, payload);
       setScenes((prev) => sortScriptScenes([...prev.filter((scene) => scene.id !== saved.id), saved]));
-      dispatch({ type: "loadScene", scene: saved });
+      draftActions.loadScene(saved);
       setNotice({ tone: "info", text: wasEditing ? "Scene updated." : "Scene saved." });
     } catch (saveError) {
       setNotice({ tone: "error", text: getErrorMessage(saveError, "Failed to save the scene.") });
@@ -425,7 +370,7 @@ function ScriptViewerPage() {
     try {
       await scriptSceneActions.delete(movieId, scriptId, scene.id);
       setScenes((prev) => prev.filter((row) => row.id !== scene.id));
-      if (draft.sceneId === scene.id) dispatch({ type: "reset" });
+      if (draftSceneId === scene.id) draftActions.reset();
       // Deleting from the scene viewer closes it, whichever scene it had stepped to.
       setModal((current) => (current?.kind === "scene" ? null : current));
       setNotice({ tone: "info", text: "Scene deleted." });
@@ -447,6 +392,7 @@ function ScriptViewerPage() {
   }
 
   const pageNumbers = Array.from({ length: windowing.renderedPageCount }, (_, index) => index + 1);
+  const { anchors } = draft;
 
   return (
     <div className={styles.page}>
@@ -505,10 +451,10 @@ function ScriptViewerPage() {
                         inRange ? (pageNumber === anchors.end.page ? anchors.end.bottom : Infinity) : null
                       }
                       sceneSegments={sceneSegmentsByPage.get(pageNumber) || NO_SEGMENTS}
-                      activeSceneId={canEdit ? draft.sceneId : focusSceneId}
+                      activeSceneId={canEdit ? draftSceneId : focusSceneId}
                       onLineContextMenu={openLineMenu}
                       onHoverLine={handleHoverLine}
-                      onRemoveAnchor={handleRemoveAnchor}
+                      onRemoveAnchor={draftActions.removeAnchor}
                       onSelectScene={handleSelectSceneFromPage}
                       onRendered={handlePageRendered}
                     />
@@ -524,46 +470,46 @@ function ScriptViewerPage() {
 
         {canEdit && (
           <AnnotatorPanel
-            editing={Boolean(draft.sceneId)}
-            sceneLabel={draft.baseline ? formatTiming(draft.baseline) : "Untitled scene"}
+            editing={Boolean(draftSceneId)}
+            sceneLabel={draft.savedScene ? formatTiming(draft.savedScene) : "Untitled scene"}
             onNewScene={startNewScene}
             activeTab={visibleTab}
             onTabChange={setActiveTab}
             tagsDisabled={tagsDisabled}
             anchors={anchors}
-            anchorsSuggested={Boolean(suggestedAnchors)}
-            canUndo={draft.anchorHistory.length > 0}
+            anchorsSuggested={draft.anchorsSuggested}
+            canUndo={draft.canUndoAnchors}
             indexStatus={{ complete: textIndex.complete, loaded: textIndex.pages.size, total: numPages }}
             onJumpToAnchor={jumpToAnchor}
-            onRemoveAnchor={handleRemoveAnchor}
-            onClearAnchors={() => dispatch({ type: "clearAnchors" })}
-            onUndoAnchors={() => dispatch({ type: "undoAnchors" })}
+            onRemoveAnchor={draftActions.removeAnchor}
+            onClearAnchors={draftActions.clearAnchors}
+            onUndoAnchors={draftActions.undoAnchors}
             overlapScene={overlapScene}
             onEditOverlapScene={() => overlapScene && selectScene(overlapScene)}
             startTime={draft.startTime}
             endTime={draft.endTime}
             runtimeSeconds={runtimeSeconds}
-            onTimeChange={(field, value) => dispatch({ type: "setTime", field, value })}
-            onTimeBlur={normalizeTime}
-            markdown={markdown}
+            onTimeChange={draftActions.setTime}
+            onTimeBlur={draftActions.normalizeTime}
+            markdown={draft.text}
             textOrigin={draft.textOrigin}
-            captureStale={captureStale}
-            legacyText={draft.textOrigin === "saved" && !draft.textAnchorKey}
-            draftScene={draftScene}
+            captureStale={draft.textStale}
+            legacyText={draft.legacyText}
+            draftScene={draft.previewScene}
             movieTitle={title}
             proposal={draft.proposal}
             onRecapture={recapture}
             onExpandDraft={() => setModal({ kind: "draft" })}
             onRequestAi={requestAiFormat}
             onReviewProposal={() => setModal({ kind: "draft" })}
-            onDiscardProposal={() => dispatch({ type: "proposalDiscard" })}
+            onDiscardProposal={draftActions.discardProposal}
             tags={draft.tags}
-            onToggleTag={(tag) => dispatch({ type: "toggleTag", tag })}
-            onClearTags={() => dispatch({ type: "clearTags" })}
+            onToggleTag={draftActions.toggleTag}
+            onClearTags={draftActions.clearTags}
             saving={saving}
-            deleting={Boolean(draft.sceneId) && deletingSceneId === draft.sceneId}
+            deleting={Boolean(draftSceneId) && deletingSceneId === draftSceneId}
             onSave={saveScene}
-            onDelete={() => deleteScene(draft.baseline)}
+            onDelete={() => deleteScene(draft.savedScene)}
           />
         )}
       </div>
@@ -571,7 +517,7 @@ function ScriptViewerPage() {
       <SavedScenesGrid
         ref={scenesSectionRef}
         scenes={scenes}
-        selectedSceneId={canEdit ? draft.sceneId : focusSceneId}
+        selectedSceneId={canEdit ? draftSceneId : focusSceneId}
         title={title}
         readOnly={!canEdit}
         onSelect={(scene) => selectScene(scene)}
@@ -582,11 +528,11 @@ function ScriptViewerPage() {
         <AnchorContextMenu
           menu={menu}
           anchors={anchors}
-          canUndo={draft.anchorHistory.length > 0}
-          onSetAnchor={setAnchorAtLine}
-          onRemoveAnchor={handleRemoveAnchor}
-          onClearAnchors={() => dispatch({ type: "clearAnchors" })}
-          onUndo={() => dispatch({ type: "undoAnchors" })}
+          canUndo={draft.canUndoAnchors}
+          onSetAnchor={draftActions.setAnchorAtLine}
+          onRemoveAnchor={draftActions.removeAnchor}
+          onClearAnchors={draftActions.clearAnchors}
+          onUndo={draftActions.undoAnchors}
           onSelectScene={(scene) => selectScene(scene, { scroll: false })}
           onClose={closeMenu}
         />
@@ -595,24 +541,16 @@ function ScriptViewerPage() {
       {modal?.kind === "draft" && (
         <DraftEditorModal
           title={title}
-          meta={`${draft.sceneId ? "Editing saved scene" : "New scene draft"} · ${formatScriptScenePages(draftScene)}`}
-          editorKey={`${draft.editorRevision}:${editorSeed}`}
-          markdown={markdown}
-          onChangeMarkdown={editMarkdown}
-          baselineText={capture && !captureStale ? capture.plainText : ""}
+          meta={`${draftSceneId ? "Editing saved scene" : "New scene draft"} · ${formatScriptScenePages(draft.previewScene)}`}
+          editorKey={draft.editorKey}
+          markdown={draft.text}
+          onChangeMarkdown={draftActions.editText}
+          baselineText={draft.capturedPlainText}
           proposal={draft.proposal}
           onRequestAi={requestAiFormat}
-          onAcceptProposal={() => dispatch({ type: "proposalAccept", anchorKey: capture?.key })}
-          onDiscardProposal={() => dispatch({ type: "proposalDiscard" })}
-          recaptureLabel={
-            !capture
-              ? ""
-              : captureStale
-                ? "Re-capture from anchors"
-                : draft.textOrigin !== "capture"
-                  ? "Revert to captured text"
-                  : ""
-          }
+          onAcceptProposal={draftActions.acceptProposal}
+          onDiscardProposal={draftActions.discardProposal}
+          recaptureLabel={RECAPTURE_LABELS[draft.recaptureOption]}
           onRecapture={recapture}
           onClose={closeModal}
         />

@@ -1,3 +1,4 @@
+import { useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { displayScriptSceneText, safeScriptSceneTags } from "@/entities/script-scene";
 import { screenplayToPlainText } from "@/shared/lib/screenplay";
 import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
@@ -5,23 +6,33 @@ import {
   anchorPairKey,
   anchorsFromGeometry,
   anchorsToGeometry,
+  createLineAnchor,
   hasAnyAnchor,
   NO_ANCHORS,
   placeAnchor,
+  suggestAnchorsFromSavedText,
   withoutSuggestions,
 } from "./anchors.js";
+import { captureAnchoredRange } from "./captureRange.js";
 
 /*
- * Draft state for the annotator panel.
+ * The scene draft: the captured scene an admin is creating or editing in the
+ * script viewer, before it is saved.
  *
- * `textOrigin` records where the draft text came from:
- * - "capture": live text derived from the anchors (not stored in the draft)
- * - "edited":  the user changed the text by hand
- * - "ai":      the user accepted an AI proposal
+ * Text origin records where the draft's scene text came from:
+ * - "capture": captured text, read live from the anchors in effect (not stored)
+ * - "edited":  the admin changed the text by hand
+ * - "ai":      the admin accepted an AI proposal
  * - "saved":   text loaded from a saved scene
  *
- * `textAnchorKey` is the anchor pair the text belongs to, which lets the panel
- * notice when anchors move after the text was edited or saved.
+ * Text of any other origin is stored with the anchor pair key it belongs to
+ * (`textAnchorKey`). When a capture exists under a different key the text is
+ * stale; saved text with no key belongs to a legacy scene.
+ *
+ * Suggested anchors are derived, never stored. They are in effect for a saved
+ * scene with no explicit anchors until the admin clears them, and stay out of
+ * undo history, the dirty check and the saved script location until an anchor
+ * change or a re-capture makes them explicit.
  */
 
 const HISTORY_LIMIT = 50;
@@ -30,10 +41,9 @@ function timeField(seconds) {
   return seconds === null || seconds === undefined ? "" : formatSecondsToHms(seconds, { fallback: "" });
 }
 
-export function createEmptyDraft() {
+function createEmptyDraft() {
   return {
-    sceneId: "",
-    baseline: null,
+    savedScene: null,
     anchors: NO_ANCHORS,
     anchorHistory: [],
     suggestionsDismissed: false,
@@ -41,7 +51,8 @@ export function createEmptyDraft() {
     endTime: "",
     tags: [],
     textOrigin: "capture",
-    markdown: "",
+    // Ignored while the origin is "capture".
+    text: "",
     textAnchorKey: "",
     editorRevision: 0,
     proposal: null,
@@ -65,20 +76,23 @@ function draftFromScene(scene, editorRevision) {
   const anchors = anchorsFromGeometry(scene.anchor_geometry) || NO_ANCHORS;
   return {
     ...createEmptyDraft(),
-    sceneId: scene.id,
-    baseline: scene,
+    savedScene: scene,
     anchors,
     startTime: timeField(scene.start_time_seconds),
     endTime: timeField(scene.end_time_seconds),
     tags: safeScriptSceneTags(scene.tags),
     textOrigin: "saved",
-    markdown: displayScriptSceneText(scene),
+    text: displayScriptSceneText(scene),
     textAnchorKey: anchorPairKey(anchors),
     editorRevision,
   };
 }
 
-export function draftReducer(draft, action) {
+/**
+ * Pure draft transitions. Actions that depend on the derived view (anchors in
+ * effect, the capture) carry it as payload from the committed view.
+ */
+function reduceDraft(draft, action) {
   switch (action.type) {
     case "reset":
       return { ...createEmptyDraft(), editorRevision: draft.editorRevision + 1 };
@@ -121,32 +135,32 @@ export function draftReducer(draft, action) {
     case "clearTags":
       return { ...draft, tags: [] };
 
-    case "editMarkdown":
+    case "editText":
       return {
         ...draft,
-        markdown: action.markdown,
+        text: action.text,
         textOrigin: "edited",
         textAnchorKey: action.anchorKey ?? draft.textAnchorKey,
       };
 
-    case "applyCapture":
+    case "recapture":
       return {
         ...withAnchors(draft, withoutSuggestions(action.anchors)),
         textOrigin: "capture",
-        markdown: action.capture.markdown,
+        text: action.capture.markdown,
         textAnchorKey: action.capture.key,
         editorRevision: draft.editorRevision + 1,
       };
 
     case "proposalStart":
-      return { ...draft, proposal: { requestId: action.requestId, status: "loading", markdown: "", error: "" } };
+      return { ...draft, proposal: { token: action.token, status: "loading", markdown: "", error: "" } };
 
     case "proposalReady":
-      if (draft.proposal?.requestId !== action.requestId) return draft;
+      if (draft.proposal?.token !== action.token) return draft;
       return { ...draft, proposal: { ...draft.proposal, status: "ready", markdown: action.markdown } };
 
-    case "proposalError":
-      if (draft.proposal?.requestId !== action.requestId) return draft;
+    case "proposalFailed":
+      if (draft.proposal?.token !== action.token) return draft;
       return { ...draft, proposal: { ...draft.proposal, status: "error", error: action.error } };
 
     case "proposalDiscard":
@@ -156,7 +170,7 @@ export function draftReducer(draft, action) {
       if (draft.proposal?.status !== "ready") return draft;
       return {
         ...draft,
-        markdown: draft.proposal.markdown,
+        text: draft.proposal.markdown,
         textOrigin: "ai",
         textAnchorKey: action.anchorKey ?? draft.textAnchorKey,
         editorRevision: draft.editorRevision + 1,
@@ -168,20 +182,22 @@ export function draftReducer(draft, action) {
   }
 }
 
-export function isDraftDirty(draft, markdown) {
-  if (!draft.sceneId) {
-    return (
-      hasAnyAnchor(draft.anchors) ||
-      Boolean(markdown.trim() || draft.startTime || draft.endTime || draft.tags.length)
-    );
+/**
+ * A new draft is dirty once it has any explicit anchor, text, time or tag. A
+ * saved scene's draft is dirty when its times, tags (in order), text or
+ * explicit anchor pair differ from the saved scene.
+ */
+function isDraftDirty(draft, text) {
+  if (!draft.savedScene?.id) {
+    return hasAnyAnchor(draft.anchors) || Boolean(text.trim() || draft.startTime || draft.endTime || draft.tags.length);
   }
 
-  const scene = draft.baseline;
+  const scene = draft.savedScene;
   return (
     draft.startTime !== timeField(scene.start_time_seconds) ||
     draft.endTime !== timeField(scene.end_time_seconds) ||
     draft.tags.join("|") !== safeScriptSceneTags(scene.tags).join("|") ||
-    markdown !== displayScriptSceneText(scene) ||
+    text !== displayScriptSceneText(scene) ||
     anchorPairKey(draft.anchors) !== anchorPairKey(anchorsFromGeometry(scene.anchor_geometry))
   );
 }
@@ -214,23 +230,29 @@ export function getTimingError(startTime, endTime, runtimeSeconds, { checkFormat
 }
 
 /**
- * Validates the draft and shapes the API payload. Location fields come from
- * the live capture when the user has placed anchors; otherwise a saved scene
- * keeps its stored location.
+ * What saving the draft would store, or why it can't be saved: film timing is
+ * checked first, then text, then script location.
+ *
+ * The script location comes from the capture only when the draft has explicit
+ * anchors. Otherwise a saved scene keeps its stored location, even when the
+ * anchors shown differ from it (one anchor removed, or pages not yet indexed).
+ * Raw text follows the location: the capture's plain text, else the saved
+ * scene's raw text, else plain text derived from the scene text. The scene
+ * text is saved as it is, even when stale.
  */
-export function buildScenePayload({ draft, capture, markdown, runtimeSeconds = 0 }) {
+function buildSavePayload(draft, capture, text, runtimeSeconds = 0) {
   const timingError = getTimingError(draft.startTime, draft.endTime, runtimeSeconds, { requireBoth: true });
   if (timingError) {
     return { error: timingError };
   }
   const start = parseTimeInputToSeconds(draft.startTime);
   const end = parseTimeInputToSeconds(draft.endTime);
-  if (!markdown.trim()) {
+  if (!text.trim()) {
     return { error: "Place start and end anchors in the script to capture the scene text." };
   }
 
   const useCapture = Boolean(capture) && hasAnyAnchor(draft.anchors);
-  const baseline = draft.baseline;
+  const savedScene = draft.savedScene;
   let location = null;
 
   if (useCapture) {
@@ -243,15 +265,15 @@ export function buildScenePayload({ draft, capture, markdown, runtimeSeconds = 0
       context_suffix: capture.contextSuffix || null,
       anchor_geometry: anchorsToGeometry(draft.anchors),
     };
-  } else if (baseline) {
+  } else if (savedScene) {
     location = {
-      page_start: baseline.page_start ?? null,
-      page_end: baseline.page_end ?? null,
-      start_offset: baseline.start_offset ?? null,
-      end_offset: baseline.end_offset ?? null,
-      context_prefix: baseline.context_prefix ?? null,
-      context_suffix: baseline.context_suffix ?? null,
-      anchor_geometry: Array.isArray(baseline.anchor_geometry) ? baseline.anchor_geometry : [],
+      page_start: savedScene.page_start ?? null,
+      page_end: savedScene.page_end ?? null,
+      start_offset: savedScene.start_offset ?? null,
+      end_offset: savedScene.end_offset ?? null,
+      context_prefix: savedScene.context_prefix ?? null,
+      context_suffix: savedScene.context_suffix ?? null,
+      anchor_geometry: Array.isArray(savedScene.anchor_geometry) ? savedScene.anchor_geometry : [],
     };
   }
 
@@ -263,13 +285,218 @@ export function buildScenePayload({ draft, capture, markdown, runtimeSeconds = 0
     payload: {
       start_time_seconds: start,
       end_time_seconds: end,
-      selected_text: markdown,
+      selected_text: text,
       raw_selected_text: useCapture
         ? capture.plainText
-        : baseline?.raw_selected_text || screenplayToPlainText(markdown),
-      formatted_selected_text: markdown,
+        : savedScene?.raw_selected_text || screenplayToPlainText(text),
+      formatted_selected_text: text,
       ...location,
       tags: draft.tags,
     },
   };
+}
+
+function recaptureOptionFor(capture, textStale, textOrigin) {
+  if (!capture) return "none";
+  if (textStale) return "recapture";
+  return textOrigin === "capture" ? "none" : "revert";
+}
+
+/**
+ * The scene draft being captured or edited in the script viewer: its state
+ * transitions and what saving it would store.
+ *
+ * `draft` is derived for the current committed render. `draftActions` keeps
+ * one identity for the life of the hook, and each action reads the latest
+ * committed draft when it is called, never an uncommitted render. Several
+ * actions in one event therefore see the same draft, and `draft` shows their
+ * changes once React commits them.
+ *
+ * @param textIndex the value returned by useScriptTextIndex(pdfDocument)
+ * @returns [draft, draftActions]
+ */
+export function useSceneDraft(textIndex) {
+  const [state, dispatch] = useReducer(reduceDraft, undefined, createEmptyDraft);
+
+  const suggestedAnchors = useMemo(
+    () =>
+      state.savedScene && !state.suggestionsDismissed && !hasAnyAnchor(state.anchors)
+        ? suggestAnchorsFromSavedText(state.savedScene, textIndex.pages)
+        : null,
+    [state.savedScene, state.suggestionsDismissed, state.anchors, textIndex.pages]
+  );
+  const anchors = suggestedAnchors || state.anchors;
+  const capture = useMemo(() => captureAnchoredRange(textIndex, anchors), [textIndex, anchors]);
+
+  const text = state.textOrigin === "capture" ? capture?.markdown ?? "" : state.text;
+  const textStale = Boolean(capture) && state.textOrigin !== "capture" && capture.key !== state.textAnchorKey;
+  const editorSeed = state.textOrigin === "capture" ? capture?.key ?? "" : state.textAnchorKey;
+
+  const previewScene = useMemo(
+    () => ({
+      start_time_seconds: parseTimeInputToSeconds(state.startTime),
+      end_time_seconds: parseTimeInputToSeconds(state.endTime),
+      page_start: capture?.pageStart ?? state.savedScene?.page_start ?? null,
+      page_end: capture?.pageEnd ?? state.savedScene?.page_end ?? null,
+      tags: state.tags,
+      formatted_selected_text: text,
+    }),
+    [state.startTime, state.endTime, state.savedScene, state.tags, capture, text]
+  );
+
+  // The request token stays private.
+  const proposal = useMemo(
+    () =>
+      state.proposal
+        ? { status: state.proposal.status, markdown: state.proposal.markdown, error: state.proposal.error }
+        : null,
+    [state.proposal]
+  );
+
+  // Assigned after every commit, never during render, so actions only see committed drafts.
+  const latestRef = useRef(null);
+  const tokenRef = useRef(0);
+  useLayoutEffect(() => {
+    latestRef.current = { state, textIndex, anchors, capture, text };
+  });
+
+  const [draftActions] = useState(() => ({
+    /** Replaces the draft with a saved scene. */
+    loadScene(scene) {
+      dispatch({ type: "loadScene", scene });
+    },
+
+    /** Starts a new, empty draft. */
+    reset() {
+      dispatch({ type: "reset" });
+    },
+
+    /** Places a start or end anchor on an indexed line; does nothing for unindexed pages. */
+    setAnchorAtLine(kind, pageNumber, line) {
+      const { textIndex: index, anchors: current } = latestRef.current;
+      const page = index.pages.get(pageNumber);
+      if (!page || !line) return;
+      dispatch({ type: "setAnchor", kind, anchor: createLineAnchor(page, line), currentAnchors: current });
+    },
+
+    removeAnchor(kind) {
+      dispatch({ type: "removeAnchor", kind, currentAnchors: latestRef.current.anchors });
+    },
+
+    /** Removes explicit anchors and dismisses suggestions until another scene loads. */
+    clearAnchors() {
+      dispatch({ type: "clearAnchors" });
+    },
+
+    undoAnchors() {
+      dispatch({ type: "undoAnchors" });
+    },
+
+    setTime(field, value) {
+      dispatch({ type: "setTime", field, value });
+    },
+
+    /** Reformats a parseable time as HH:MM:SS and leaves anything else as typed. */
+    normalizeTime(field) {
+      const seconds = parseTimeInputToSeconds(latestRef.current.state[field]);
+      if (seconds !== null) {
+        dispatch({ type: "setTime", field, value: formatSecondsToHms(seconds, { fallback: "00:00:00" }) });
+      }
+    },
+
+    toggleTag(tag) {
+      dispatch({ type: "toggleTag", tag });
+    },
+
+    clearTags() {
+      dispatch({ type: "clearTags" });
+    },
+
+    /** Replaces the scene text by hand; the first edit keeps the captured text's anchor key. */
+    editText(markdown) {
+      const { state: current, capture: currentCapture } = latestRef.current;
+      dispatch({
+        type: "editText",
+        text: markdown,
+        anchorKey: current.textOrigin === "capture" ? currentCapture?.key : undefined,
+      });
+    },
+
+    /** Replaces the text with fresh captured text and makes the anchors in effect explicit. */
+    recapture() {
+      const { anchors: current, capture: currentCapture } = latestRef.current;
+      if (!currentCapture) return;
+      dispatch({ type: "recapture", anchors: current, capture: currentCapture });
+    },
+
+    /**
+     * Starts an AI proposal and returns what to send, or null (changing
+     * nothing) when there is no text to format.
+     */
+    startProposal() {
+      const { state: current, anchors: currentAnchors, capture: currentCapture, text: currentText } = latestRef.current;
+      const capturedText = currentCapture?.plainText || screenplayToPlainText(currentText);
+      if (!capturedText.trim()) return null;
+
+      tokenRef.current += 1;
+      const token = tokenRef.current;
+      dispatch({ type: "proposalStart", token });
+      return {
+        token,
+        capturedText,
+        draftMarkdown: currentText,
+        pageStart: currentCapture?.pageStart ?? current.savedScene?.page_start ?? null,
+        pageEnd: currentCapture?.pageEnd ?? current.savedScene?.page_end ?? null,
+        snapshotAnchors: currentCapture ? currentAnchors : null,
+      };
+    },
+
+    /** Applies only if `token` belongs to the current proposal. */
+    proposalReady(token, markdown) {
+      dispatch({ type: "proposalReady", token, markdown });
+    },
+
+    /** Applies only if `token` belongs to the current proposal. */
+    proposalFailed(token, message) {
+      dispatch({ type: "proposalFailed", token, error: message });
+    },
+
+    /** Uses a ready proposal as the text, keyed to the capture at accept time. */
+    acceptProposal() {
+      dispatch({ type: "proposalAccept", anchorKey: latestRef.current.capture?.key });
+    },
+
+    discardProposal() {
+      dispatch({ type: "proposalDiscard" });
+    },
+
+    /** Returns `{ error }` or `{ payload }` for saving the committed draft. */
+    buildSave(runtimeSeconds) {
+      const { state: current, capture: currentCapture, text: currentText } = latestRef.current;
+      return buildSavePayload(current, currentCapture, currentText, runtimeSeconds);
+    },
+  }));
+
+  const draft = {
+    savedScene: state.savedScene,
+    anchors,
+    anchorsSuggested: Boolean(suggestedAnchors),
+    canUndoAnchors: state.anchorHistory.length > 0,
+    startTime: state.startTime,
+    endTime: state.endTime,
+    tags: state.tags,
+    text,
+    textOrigin: state.textOrigin,
+    textStale,
+    legacyText: state.textOrigin === "saved" && !state.textAnchorKey,
+    capturedPlainText: capture && !textStale ? capture.plainText : "",
+    recaptureOption: recaptureOptionFor(capture, textStale, state.textOrigin),
+    recaptureReplacesEdits: Boolean(capture) && (state.textOrigin === "edited" || state.textOrigin === "ai"),
+    editorKey: `${state.editorRevision}:${editorSeed}`,
+    proposal,
+    previewScene,
+    dirty: isDraftDirty(state, text),
+  };
+
+  return [draft, draftActions];
 }
