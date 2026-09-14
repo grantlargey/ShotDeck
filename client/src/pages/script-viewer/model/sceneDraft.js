@@ -41,8 +41,11 @@ function timeField(seconds) {
   return seconds === null || seconds === undefined ? "" : formatSecondsToHms(seconds, { fallback: "" });
 }
 
-function createEmptyDraft() {
+function createEmptyDraft(generation = 0) {
   return {
+    // Loading or starting a draft invalidates earlier persistence responses,
+    // even when the admin leaves a scene and later reopens that same scene.
+    generation,
     savedScene: null,
     anchors: NO_ANCHORS,
     anchorHistory: [],
@@ -72,10 +75,10 @@ function withAnchors(draft, anchors) {
   };
 }
 
-function draftFromScene(scene, editorRevision) {
+function draftFromScene(scene, editorRevision, generation) {
   const anchors = anchorsFromGeometry(scene.anchor_geometry) || NO_ANCHORS;
   return {
-    ...createEmptyDraft(),
+    ...createEmptyDraft(generation),
     savedScene: scene,
     anchors,
     startTime: timeField(scene.start_time_seconds),
@@ -95,10 +98,33 @@ function draftFromScene(scene, editorRevision) {
 function reduceDraft(draft, action) {
   switch (action.type) {
     case "reset":
-      return { ...createEmptyDraft(), editorRevision: draft.editorRevision + 1 };
+      return { ...createEmptyDraft(draft.generation + 1), editorRevision: draft.editorRevision + 1 };
 
     case "loadScene":
-      return draftFromScene(action.scene, draft.editorRevision + 1);
+      return draftFromScene(action.scene, draft.editorRevision + 1, draft.generation + 1);
+
+    case "saveComplete":
+      if (draft.generation !== action.snapshot.generation) return draft;
+      if (draft === action.snapshot) {
+        return draftFromScene(action.scene, draft.editorRevision + 1, draft.generation + 1);
+      }
+      // Acknowledge the saved version without replacing newer local edits.
+      // For a first save, keep its id so the next save updates this record.
+      return { ...draft, savedScene: action.scene };
+
+    case "deleteComplete":
+      if (draft.savedScene?.id !== action.sceneId) return draft;
+      if (draft === action.snapshot) {
+        return { ...createEmptyDraft(draft.generation + 1), editorRevision: draft.editorRevision + 1 };
+      }
+      // The row is gone, but changes made while deleting belong to the admin.
+      // Preserve them as a new draft rather than clearing or updating a deleted row.
+      return {
+        ...draft,
+        generation: draft.generation + 1,
+        savedScene: null,
+        textOrigin: draft.textOrigin === "saved" ? "edited" : draft.textOrigin,
+      };
 
     case "setAnchor":
       return withAnchors(draft, placeAnchor(action.currentAnchors, action.kind, action.anchor));
@@ -470,10 +496,25 @@ export function useSceneDraft(textIndex) {
       dispatch({ type: "proposalDiscard" });
     },
 
-    /** Returns `{ error }` or `{ payload }` for saving the committed draft. */
+    /**
+     * Returns `{ error }` or `{ payload, applySaved }` for the committed draft.
+     * Call applySaved with the server response. It reconciles the saved baseline
+     * only if this draft is still open, preserving changes made during the request.
+     */
     buildSave(runtimeSeconds) {
       const { state: current, capture: currentCapture, text: currentText } = latestRef.current;
-      return buildSavePayload(current, currentCapture, currentText, runtimeSeconds);
+      const result = buildSavePayload(current, currentCapture, currentText, runtimeSeconds);
+      if (result.error) return result;
+      return {
+        ...result,
+        applySaved: (scene) => dispatch({ type: "saveComplete", scene, snapshot: current }),
+      };
+    },
+
+    /** Returns a completion callback for deleting a scene without erasing another draft. */
+    prepareDelete(sceneId) {
+      const snapshot = latestRef.current.state;
+      return () => dispatch({ type: "deleteComplete", sceneId, snapshot });
     },
   }));
 

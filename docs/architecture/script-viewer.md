@@ -4,7 +4,7 @@ The script viewer is the page where admins capture scenes from a film's script, 
 
 ## What will a scene draft save, and why?
 
-Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave(runtimeSeconds)`, which returns either `{ error }` or the exact `{ payload }` the page sends to create or update the captured scene.
+Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave(runtimeSeconds)`, which returns either `{ error }` or `{ payload, applySaved }`. The page sends `payload` to create or update the captured scene, then passes the returned scene to `applySaved`.
 
 **Validation**, in order:
 
@@ -37,6 +37,18 @@ Offsets stay `null` until the whole script has been indexed. Suggested anchors n
 
 **Film timing and tags**: times are parsed to seconds, and tags are sent in the order they were selected.
 
+### Responses arriving after the draft changes
+
+`buildSave` captures the draft being saved. Its `applySaved(scene)` callback reconciles the response in the reducer, where it sees all queued changes:
+
+- If the same draft is unchanged, load the returned scene normally.
+- If that draft has newer changes, update its saved baseline and keep its current text, timing, tags, anchors, undo history, and editor key. Those newer edits remain unsaved. A newly created scene receives its saved id, so the next save updates it instead of creating a duplicate.
+- If the admin loaded or started another draft, leave it alone. Leaving and reopening the same scene also counts as a new draft.
+
+Before a deletion request, call `draftActions.prepareDelete(sceneId)` and retain its completion callback. Call it only after the request succeeds. It clears an unchanged deleted draft, leaves a different scene alone, and preserves newer changes to the deleted scene as a new unsaved draft. A legacy draft without explicit anchors may need a new capture before it can be saved as a new scene. Deletion also invalidates older saves for that draft.
+
+The page still updates the saved-scene collection and shows the request result. Networking stays in the page; whether a response can replace the draft belongs to the draft module. These rules fix the earlier I1/I2 response races.
+
 ### Existing compatibility behavior
 
 These behaviors look questionable but are kept on purpose. Each is pinned by a test named "existing compatibility behavior", so a fix has to change that test deliberately.
@@ -47,8 +59,6 @@ These behaviors look questionable but are kept on purpose. Each is pinned by a t
 | B6 | Saving stale text stores the new capture's location and raw text alongside the old or edited scene text. |
 | C3 | Captured text can change while indexing progresses (the estimated action margin moves), but the editor dialog keeps the text it mounted with. |
 | H2 | An accepted AI proposal is keyed to the anchors at accept time, so a proposal requested for earlier anchors doesn't show as stale. |
-| I1 | A successful save always loads the saved scene, even if the admin switched scenes while the request was in flight. |
-| I2 | Deleting resets the draft if it held the deleted scene when the delete started, even if another scene was loaded since. |
 
 ## Entry points and ownership
 
@@ -105,7 +115,7 @@ const [draft, draftActions] = useSceneDraft(textIndex);
 | `previewScene` | A scene-shaped preview for the panel's card and the dialog's page label. |
 | `dirty` | Whether there are unsaved changes, used for the discard prompt. |
 
-`draftActions` has one identity for the life of the hook, so its functions can be passed straight to memoized components: `loadScene`, `reset`, `setAnchorAtLine`, `removeAnchor`, `clearAnchors`, `undoAnchors`, `setTime`, `normalizeTime`, `toggleTag`, `clearTags`, `editText`, `recapture`, `startProposal`, `proposalReady`, `proposalFailed`, `acceptProposal`, `discardProposal`, `buildSave`.
+`draftActions` has one identity for the life of the hook, so its functions can be passed straight to memoized components: `loadScene`, `reset`, `setAnchorAtLine`, `removeAnchor`, `clearAnchors`, `undoAnchors`, `setTime`, `normalizeTime`, `toggleTag`, `clearTags`, `editText`, `recapture`, `startProposal`, `proposalReady`, `proposalFailed`, `acceptProposal`, `discardProposal`, `buildSave`, `prepareDelete`. The callbacks returned by `buildSave` and `prepareDelete` belong to individual requests.
 
 Timing rules:
 
@@ -155,8 +165,12 @@ Vitest runs with jsdom (`client/vitest.config.js`, setup in `client/src/test/set
 - **`ui/ScriptViewerPage.test.jsx`** characterizes the page end to end: capture, indexing, editing, re-capture, suggestions, saving, prompts, keys, AI proposals, visitors, and page-frame prop identity. It doubles only the edges: the API client, the session, `react-pdf`, the text indexer (a store the test publishes indexes to), page windowing, `PdfPageFrame` (which records the props of each render), AI page snapshots and `window.confirm`. Capture runs through a passthrough spy. The panel, dialogs, editor, anchors, capture and screenplay code are real.
 - **`model/sceneDraft.test.jsx`** tests the hook's interface directly: the committed-view rule, identities, capture work, request tokens under `StrictMode`, re-capture options, editor keys, undo limits, and the exact save mapping.
 
+Both suites cover persistence response races: switching drafts, preserving newer edits, attaching the id from a first save, and keeping newer changes after deletion. Hook tests also cover an edit/reset and a response queued in the same React batch.
+
 Shared fixtures live in `test/`. `textIndexFixtures.js` builds synthetic screenplay pages through the real line builder. Its `textIndexFrom` repeats the indexer's publish step (page offsets and the action margin), so keep it in step with `useScriptTextIndex.js`. `pageHarness.js` holds the page suite's doubles and helpers.
 
 A test named "[ID] existing compatibility behavior: …", with a "Why this may be a bug" comment, pins behavior kept on purpose (see the table above).
 
 jsdom has no layout, so real PDF rendering, pointer snapping and caret behavior need a browser. Check them manually against a non-production database: place anchors with `[` and `]`, edit in the dialog, re-capture, accept an AI proposal, save and reload.
+
+Persistence was also verified on 2026-09-14 using Chromium, the real Express routes and serializers, and a disposable Postgres database with synthetic records. Login/session cookies, capture/save, reload/reopen, update, and delete passed. A delayed real save response preserved a newer time edit, which could then be saved to the same row. Only PDF delivery was replaced with a synthetic local fixture; all external browser traffic was blocked. This does not verify S3 credentials/CORS, actual AI responses, concurrent database overlap enforcement, or production deployment.

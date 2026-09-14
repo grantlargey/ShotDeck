@@ -340,7 +340,7 @@ function ScriptViewerPage() {
   // ---------- Persistence ----------
 
   async function saveScene() {
-    const { error, payload } = draftActions.buildSave(runtimeSeconds);
+    const { error, payload, applySaved } = draftActions.buildSave(runtimeSeconds);
     if (error) {
       setNotice({ tone: "error", text: error });
       return;
@@ -354,7 +354,7 @@ function ScriptViewerPage() {
         ? await scriptSceneActions.update(movieId, scriptId, draftSceneId, payload)
         : await scriptSceneActions.create(movieId, scriptId, payload);
       setScenes((prev) => sortScriptScenes([...prev.filter((scene) => scene.id !== saved.id), saved]));
-      draftActions.loadScene(saved);
+      applySaved(saved);
       setNotice({ tone: "info", text: wasEditing ? "Scene updated." : "Scene saved." });
     } catch (saveError) {
       setNotice({ tone: "error", text: getErrorMessage(saveError, "Failed to save the scene.") });
@@ -366,11 +366,12 @@ function ScriptViewerPage() {
   async function deleteScene(scene) {
     if (!scene || !window.confirm(`Delete the scene at ${formatTiming(scene)}? This can't be undone.`)) return;
 
+    const completeDelete = draftActions.prepareDelete(scene.id);
     setDeletingSceneId(scene.id);
     try {
       await scriptSceneActions.delete(movieId, scriptId, scene.id);
       setScenes((prev) => prev.filter((row) => row.id !== scene.id));
-      if (draftSceneId === scene.id) draftActions.reset();
+      completeDelete();
       // Deleting from the scene viewer closes it, whichever scene it had stepped to.
       setModal((current) => (current?.kind === "scene" ? null : current));
       setNotice({ tone: "info", text: "Scene deleted." });

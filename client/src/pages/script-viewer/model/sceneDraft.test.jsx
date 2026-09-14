@@ -493,6 +493,61 @@ describe("anchor undo", () => {
   });
 });
 
+describe("persistence completions", () => {
+  it("acknowledges a save without replacing newer text or remounting its editor", () => {
+    const { result } = renderDraft();
+    run(result, a => a.loadScene(savedV2Scene));
+    const save = run(result, a => a.buildSave(0));
+    run(result, a => a.editText("## NEWER TEXT\n\nStill editing."));
+    const editorKey = current(result).draft.editorKey;
+    const saved = { ...savedV2Scene, ...save.payload };
+    act(() => save.applySaved(saved));
+    expect(current(result).draft.savedScene).toBe(saved);
+    expect(current(result).draft.text).toBe("## NEWER TEXT\n\nStill editing.");
+    expect(current(result).draft.editorKey).toBe(editorKey);
+    expect(current(result).draft.dirty).toBe(true);
+  });
+
+  it("preserves edits queued before a save response in the same React batch", () => {
+    const { result } = renderDraft();
+    run(result, a => a.loadScene(savedV2Scene));
+    const save = run(result, a => a.buildSave(0));
+    act(() => {
+      current(result).actions.setTime("endTime", "00:11:30");
+      save.applySaved({ ...savedV2Scene, ...save.payload });
+    });
+    expect(current(result).draft.endTime).toBe("00:11:30");
+    expect(current(result).draft.dirty).toBe(true);
+  });
+
+  it("ignores a save response after a reset queued in the same React batch", () => {
+    const { result } = renderDraft();
+    run(result, a => a.loadScene(savedV2Scene));
+    const save = run(result, a => a.buildSave(0));
+    act(() => {
+      current(result).actions.reset();
+      save.applySaved({ ...savedV2Scene, ...save.payload });
+    });
+    expect(current(result).draft.savedScene).toBeNull();
+    expect(current(result).draft.text).toBe("");
+  });
+
+  it("detaches newer edits from a deleted row and invalidates its pending save", () => {
+    const { result } = renderDraft();
+    run(result, a => a.loadScene(savedV2Scene));
+    const save = run(result, a => a.buildSave(0));
+    const deleted = run(result, a => a.prepareDelete(savedV2Scene.id));
+    act(() => {
+      current(result).actions.editText("## UNSAVED\n\nKeep this text.");
+      deleted();
+      save.applySaved({ ...savedV2Scene, ...save.payload });
+    });
+    expect(current(result).draft.savedScene).toBeNull();
+    expect(current(result).draft.text).toBe("## UNSAVED\n\nKeep this text.");
+    expect(current(result).draft.dirty).toBe(true);
+  });
+});
+
 describe("buildSave", () => {
   const PLACE_ANCHORS = "Place start and end anchors in the script to capture the scene text.";
 
@@ -527,6 +582,7 @@ describe("buildSave", () => {
 
     const markdown = [RAIN, BELL, "### MAYA", `> ${MAYA_SPEECH}`].join("\n\n");
     expect(run(result, (a) => a.buildSave(7200))).toEqual({
+      applySaved: expect.any(Function),
       payload: {
         start_time_seconds: 60,
         end_time_seconds: 150,
@@ -575,6 +631,7 @@ describe("buildSave", () => {
     run(result, (a) => a.loadScene(scene));
 
     expect(run(result, (a) => a.buildSave(0))).toEqual({
+      applySaved: expect.any(Function),
       payload: {
         start_time_seconds: 60,
         end_time_seconds: 90,

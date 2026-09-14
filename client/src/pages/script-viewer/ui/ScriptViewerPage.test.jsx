@@ -898,9 +898,7 @@ describe("saving and deleting", () => {
     });
   });
 
-  it("[I1] existing compatibility behavior: a save response replaces a draft switched during the request (P16)", async () => {
-    // Why this may be a bug: changes made while a save is in flight are
-    // silently replaced.
+  it("[I1] preserves a different draft when a save response arrives (P16)", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene, otherScene], sceneId: savedV2Scene.id });
     publishWholeScript();
 
@@ -912,13 +910,64 @@ describe("saving and deleting", () => {
 
     await settle(pending.saves[0]);
     expect(pending.saves[0].args[2]).toBe(savedV2Scene.id);
-    expect(sceneTitle()).toBe(V2_TIMING);
-    expect(inPanel().getByText("A truck idles in the lot while someone watches the diner.")).toBeTruthy();
+    expect(sceneTitle()).toBe(OTHER_TIMING);
+    expect(timeInput("Start").value).toBe("00:05:00");
     expect(toast("Scene updated.")).toBeTruthy();
   });
 
-  it("[I2] existing compatibility behavior: a delete response resets a draft loaded after the delete started (P17)", async () => {
-    // Why this may be a bug: the newly loaded scene draft is cleared.
+  it("[I1] preserves edits made to the same scene during a save", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene], sceneId: savedV2Scene.id });
+    publishWholeScript();
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    typeTime("End", "00:11:30");
+    await settle(pending.saves[0]);
+    expect(timeInput("End").value).toBe("00:11:30");
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(lastSavePayload().end_time_seconds).toBe(690);
+    expect(pending.saves[1].args[2]).toBe(savedV2Scene.id);
+  });
+
+  it("[I1] binds an edited new draft to its created scene so the next save updates it", async () => {
+    await renderViewer(ScriptViewerRoute);
+    publishWholeScript();
+    placeAnchorsWithKeys([1, 0], [1, 7]);
+    typeTime("Start", "00:10:00");
+    typeTime("End", "00:11:00");
+    click(inPanel().getByRole("button", { name: "Save scene", exact: true }));
+    typeTime("End", "00:11:30");
+    await settle(pending.saves[0]);
+    expect(timeInput("End").value).toBe("00:11:30");
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(fakeApi.updateScriptScene).toHaveBeenCalledTimes(1);
+    expect(pending.saves[1].args[2]).toBe("scene-new-1");
+    expect(lastSavePayload().end_time_seconds).toBe(690);
+  });
+
+  it("[I1] preserves a newly started draft when an earlier save completes", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene], sceneId: savedV2Scene.id });
+    publishWholeScript();
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    click(inPanel().getByRole("button", { name: "New scene", exact: true }));
+    typeTime("Start", "00:30:00");
+    await settle(pending.saves[0]);
+    expect(eyebrow()).toBe("New scene");
+    expect(timeInput("Start").value).toBe("00:30:00");
+  });
+
+  it("[I1] does not replace a scene that was left and reopened during its save", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene, otherScene], sceneId: savedV2Scene.id });
+    publishWholeScript();
+    typeTime("End", "00:11:30");
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    answerConfirm(true);
+    click(sceneCard(OTHER_TIMING));
+    click(sceneCard(V2_TIMING));
+    await settle(pending.saves[0]);
+    expect(timeInput("End").value).toBe("00:11:00");
+  });
+
+  it("[I2] preserves a different draft when deletion finishes (P17)", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene, otherScene], sceneId: savedV2Scene.id });
     publishWholeScript();
 
@@ -931,9 +980,35 @@ describe("saving and deleting", () => {
     expect(eyebrow()).toBe("Editing saved scene");
 
     await settle(pending.deletes[0]);
-    expect(eyebrow()).toBe("New scene");
-    expect(sceneTitle()).toBe("Untitled scene");
+    expect(eyebrow()).toBe("Editing saved scene");
+    expect(sceneTitle()).toBe(OTHER_TIMING);
     expect(toast("Scene deleted.")).toBeTruthy();
+  });
+
+  it("[I2] clears an unchanged deleted draft", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene], sceneId: savedV2Scene.id });
+    publishWholeScript();
+    answerConfirm(true);
+    click(inPanel().getByRole("button", { name: "Delete", exact: true }));
+    await settle(pending.deletes[0]);
+    expect(eyebrow()).toBe("New scene");
+    expect(timeInput("Start").value).toBe("");
+  });
+
+  it("[I2] keeps edits made during deletion as a new unsaved draft", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene], sceneId: savedV2Scene.id });
+    publishWholeScript();
+    answerConfirm(true);
+    click(inPanel().getByRole("button", { name: "Delete", exact: true }));
+    typeTime("End", "00:11:30");
+    await settle(pending.deletes[0]);
+    expect(eyebrow()).toBe("New scene");
+    expect(timeInput("End").value).toBe("00:11:30");
+    click(inPanel().getByRole("button", { name: "Save scene", exact: true }));
+    expect(fakeApi.updateScriptScene).not.toHaveBeenCalled();
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(lastSavePayload().end_time_seconds).toBe(690);
+    expect(lastSavePayload().formatted_selected_text).toBe(SAVED_V2_TEXT);
   });
 });
 
