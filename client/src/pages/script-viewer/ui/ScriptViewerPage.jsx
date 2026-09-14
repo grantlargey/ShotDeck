@@ -4,13 +4,13 @@ import { Document, pdfjs } from "react-pdf";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
-import { getStillProjectPath } from "@/entities/annotation";
+import { getStillProjectPath } from "@/entities/annotation/model/still.js";
 import {
   formatScriptScenePages,
   getScriptScenePageRange,
   sortScriptScenes,
-} from "@/entities/script-scene";
-import { useSession } from "@/entities/session";
+} from "@/entities/script-scene/model/capturedScene.js";
+import { useSession } from "@/entities/session/model/useSession.js";
 import { getMovie } from "@/shared/api/movies.js";
 import { formatScreenplaySelection } from "@/shared/api/screenplayFormat.js";
 import { createScriptScene, deleteScriptScene, listScriptScenes, updateScriptScene } from "@/shared/api/scriptScenes.js";
@@ -19,8 +19,11 @@ import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
-import { CloseIcon, IconButton, LoadingState } from "@/shared/ui";
-import { SceneModalButton, SceneViewerModal } from "@/widgets/scene-detail-modal";
+import { IconButton } from "@/shared/ui/IconButton.jsx";
+import { CloseIcon } from "@/shared/ui/icons.jsx";
+import { LoadingState } from "@/shared/ui/LoadingState.jsx";
+import { SceneModalButton } from "@/widgets/scene-detail-modal/ui/SceneDetailModal.jsx";
+import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
 import { isTypingTarget } from "../lib/pdfViewport.js";
 import { anchorsFromGeometry, buildSceneSegmentsByPage, findOverlappingSavedScene } from "../model/anchors.js";

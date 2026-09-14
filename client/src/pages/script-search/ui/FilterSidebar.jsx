@@ -1,5 +1,8 @@
-import { TagCategoryList } from "@/entities/script-scene";
-import { Button, CloseIcon, IconButton, SegmentedControl } from "@/shared/ui";
+import { TagCategoryList } from "@/entities/script-scene/ui/TagCategoryList.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { IconButton } from "@/shared/ui/IconButton.jsx";
+import { CloseIcon } from "@/shared/ui/icons.jsx";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import styles from "./ScriptSearchPage.module.css";
 
 const MATCH_OPTIONS = [

@@ -1,8 +1,11 @@
 import { cx } from "@/shared/lib/cx.js";
-import { useSignedMediaUrl } from "@/shared/lib/media";
-import { getScreenplaySceneHeading } from "@/shared/lib/screenplay";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { getScreenplaySceneHeading } from "@/shared/lib/screenplay/grammar.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
-import { Badge, ImageIcon, ScreenplayView, Skeleton } from "@/shared/ui";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { ImageIcon } from "@/shared/ui/icons.jsx";
+import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
+import { Skeleton } from "@/shared/ui/Skeleton.jsx";
 import {
   displayScriptSceneText,
   formatScriptScenePages,

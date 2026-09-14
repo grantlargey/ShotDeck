@@ -1,10 +1,13 @@
 import { useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { useSession } from "@/entities/session";
+import { useSession } from "@/entities/session/model/useSession.js";
 import { changePassword } from "@/shared/api/auth.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
-import { Button, Callout, Field, Input } from "@/shared/ui";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Field } from "@/shared/ui/Field.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
 import styles from "./LoginPage.module.css";
 
 const MIN_PASSWORD_LENGTH = 12;

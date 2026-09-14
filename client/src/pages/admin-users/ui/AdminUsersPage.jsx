@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
-import { useSession } from "@/entities/session";
+import { useSession } from "@/entities/session/model/useSession.js";
 import { createAdmin, disableAdmin, enableAdmin, listAdmins, resetAdminPassword } from "@/shared/api/auth.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
-import { Badge, Button, Callout, Dialog, Field, Input, PageHeader, PlusIcon } from "@/shared/ui";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Dialog } from "@/shared/ui/Dialog.jsx";
+import { Field } from "@/shared/ui/Field.jsx";
+import { PlusIcon } from "@/shared/ui/icons.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
+import { PageHeader } from "@/shared/ui/PageHeader.jsx";
 import styles from "./AdminUsersPage.module.css";
 
 const MIN_PASSWORD_LENGTH = 12;

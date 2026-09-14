@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { pdfjs } from "react-pdf";
-import { buildPageTextLines } from "@/shared/lib/pdf-text";
-import { estimateActionMargin } from "@/shared/lib/screenplay";
+import { buildPageTextLines } from "@/shared/lib/pdf-text/pageTextLines.js";
+import { estimateActionMargin } from "@/shared/lib/screenplay/layoutClassifier.js";
 
 const CONCURRENCY = 4;
 const PUBLISH_EVERY_PAGES = 8;

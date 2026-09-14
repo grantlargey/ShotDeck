@@ -1,25 +1,21 @@
 import { lazy, Suspense } from "react";
 import { matchPath, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { HomePage } from "@/pages/home";
-import { LoginPage } from "@/pages/login";
-import { MovieDetailPage } from "@/pages/movie-detail";
-import { MovieFormPage } from "@/pages/movie-form";
-import { MoviesListPage } from "@/pages/movies-list";
-import { ScriptSearchPage } from "@/pages/script-search";
-import { LoadingState } from "@/shared/ui";
-import { SiteHeader } from "@/widgets/site-header";
+import HomePage from "@/pages/home/ui/HomePage.jsx";
+import LoginPage from "@/pages/login/ui/LoginPage.jsx";
+import MovieDetailPage from "@/pages/movie-detail/ui/MovieDetailPage.jsx";
+import MovieFormPage from "@/pages/movie-form/ui/MovieFormPage.jsx";
+import MoviesListPage from "@/pages/movies-list/ui/MoviesListPage.jsx";
+import ScriptSearchPage from "@/pages/script-search/ui/ScriptSearchPage.jsx";
+import { LoadingState } from "@/shared/ui/LoadingState.jsx";
+import SiteHeader from "@/widgets/site-header/ui/SiteHeader.jsx";
 import { ErrorBoundary } from "./ErrorBoundary.jsx";
 import { RequireAdmin } from "./RequireAdmin.jsx";
 import page from "./styles/page.module.css";
 
 // Load the PDF renderer and editor when their route is opened.
-const ScriptViewerPage = lazy(() =>
-  import("@/pages/script-viewer").then((module) => ({ default: module.ScriptViewerPage }))
-);
+const ScriptViewerPage = lazy(() => import("@/pages/script-viewer/ui/ScriptViewerPage.jsx"));
 // Only the owner opens this, so visitors never download it.
-const AdminUsersPage = lazy(() =>
-  import("@/pages/admin-users").then((module) => ({ default: module.AdminUsersPage }))
-);
+const AdminUsersPage = lazy(() => import("@/pages/admin-users/ui/AdminUsersPage.jsx"));
 
 const SCRIPT_VIEWER_PATH = "/movies/:movieId/scripts/:scriptId";
 const FULL_BLEED_PATHS = ["/", "/script-search", SCRIPT_VIEWER_PATH];

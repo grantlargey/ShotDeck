@@ -1,15 +1,21 @@
 // client/src/pages/movie-form/ui/MovieFormPage.jsx
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { buildMovieSavePayload, createMovieEditForm, MovieDetailsFields } from "@/entities/movie";
+import { buildMovieSavePayload, createMovieEditForm } from "@/entities/movie/model/movieForms.js";
+import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
 import { createMovie, getMovie, updateMovie } from "@/shared/api/movies.js";
 import { saveScript } from "@/shared/api/scripts.js";
 import { uploadMediaFile } from "@/shared/api/uploads.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
-import { useFilePreviewUrl } from "@/shared/lib/media";
+import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
 import { parseTimeInputToMinutes } from "@/shared/lib/time.js";
-import { Badge, Button, Callout, FileDropzone, PageHeader, SectionHeading } from "@/shared/ui";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { FileDropzone } from "@/shared/ui/FileDropzone.jsx";
+import { PageHeader } from "@/shared/ui/PageHeader.jsx";
+import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import styles from "./MovieFormPage.module.css";
 
 export default function MovieFormPage({ mode }) {

@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { Page } from "react-pdf";
-import { findLineAtY } from "@/shared/lib/pdf-text";
+import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./PdfPageFrame.module.css";
 

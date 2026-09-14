@@ -1,14 +1,9 @@
 import { Link } from "react-router-dom";
-import {
-  Badge,
-  BrandLogo,
-  Button,
-  ChevronLeftIcon,
-  EyeIcon,
-  EyeOffIcon,
-  IconButton,
-  SearchIcon,
-} from "@/shared/ui";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { BrandLogo } from "@/shared/ui/BrandLogo.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { IconButton } from "@/shared/ui/IconButton.jsx";
+import { ChevronLeftIcon, EyeIcon, EyeOffIcon, SearchIcon } from "@/shared/ui/icons.jsx";
 import styles from "./ScriptViewerPage.module.css";
 
 /**

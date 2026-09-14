@@ -1,4 +1,7 @@
-import { Badge, Button, FileInput, SectionHeading } from "@/shared/ui";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { FileInput } from "@/shared/ui/FileInput.jsx";
+import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import styles from "./MovieDetailPage.module.css";
 
 /**

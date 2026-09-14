@@ -1,8 +1,12 @@
 import { useState } from "react";
-import { useSession } from "@/entities/session";
+import { useSession } from "@/entities/session/model/useSession.js";
 import { changePassword } from "@/shared/api/auth.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
-import { Button, Callout, Dialog, Field, Input } from "@/shared/ui";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Dialog } from "@/shared/ui/Dialog.jsx";
+import { Field } from "@/shared/ui/Field.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
 import styles from "./ChangePasswordDialog.module.css";
 
 const MIN_PASSWORD_LENGTH = 12;

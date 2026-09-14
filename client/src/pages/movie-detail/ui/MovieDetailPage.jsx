@@ -1,35 +1,38 @@
 // client/src/pages/movie-detail/ui/MovieDetailPage.jsx
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { getStillThumbnail, sortAnnotationsByTime } from "@/entities/annotation";
-import { buildMovieSavePayload, createMovieEditForm, getMovieCoverUrl, MovieDetailsFields } from "@/entities/movie";
-import { getSceneScriptPath } from "@/entities/script-scene";
-import { useSession } from "@/entities/session";
+import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
+import { getStillThumbnail } from "@/entities/annotation/model/still.js";
+import { getMovieCoverUrl } from "@/entities/movie/model/movieFilters.js";
+import { buildMovieSavePayload, createMovieEditForm } from "@/entities/movie/model/movieForms.js";
+import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
+import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
+import { useSession } from "@/entities/session/model/useSession.js";
 import { createAnnotation, deleteAnnotation, listAnnotations, updateAnnotation } from "@/shared/api/annotations.js";
 import { getMovie, updateMovie } from "@/shared/api/movies.js";
 import { listScripts, saveScript } from "@/shared/api/scripts.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
-import { useFilePreviewUrl, useSignedMediaUrl } from "@/shared/lib/media";
+import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import {
   formatSecondsToHms,
   parseTimeInputToMinutes,
   parseTimeInputToSeconds,
 } from "@/shared/lib/time.js";
-import {
-  Button,
-  Callout,
-  Dialog,
-  EmptyState,
-  Field,
-  FileDropzone,
-  FileInput,
-  Input,
-  PlusIcon,
-  SectionHeading,
-  Skeleton,
-} from "@/shared/ui";
-import { SceneModalButton, SceneViewerModal } from "@/widgets/scene-detail-modal";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Dialog } from "@/shared/ui/Dialog.jsx";
+import { EmptyState } from "@/shared/ui/EmptyState.jsx";
+import { Field } from "@/shared/ui/Field.jsx";
+import { FileDropzone } from "@/shared/ui/FileDropzone.jsx";
+import { FileInput } from "@/shared/ui/FileInput.jsx";
+import { PlusIcon } from "@/shared/ui/icons.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
+import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
+import { Skeleton } from "@/shared/ui/Skeleton.jsx";
+import { SceneModalButton } from "@/widgets/scene-detail-modal/ui/SceneDetailModal.jsx";
+import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
 import { MovieHeader, MovieHeaderSkeleton } from "./MovieHeader.jsx";
 import { MovieScriptPanel } from "./MovieScriptPanel.jsx";

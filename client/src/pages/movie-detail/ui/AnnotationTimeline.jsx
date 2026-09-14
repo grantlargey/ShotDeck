@@ -1,13 +1,13 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   findNearestAnnotationIndex,
-  getStillThumbnail,
   getTimelineBins,
   getTimelinePositionPercent,
   getTimelineScale,
-} from "@/entities/annotation";
+} from "@/entities/annotation/model/annotationTimeline.js";
+import { getStillThumbnail } from "@/entities/annotation/model/still.js";
 import { cx } from "@/shared/lib/cx.js";
-import { useSignedMediaUrl } from "@/shared/lib/media";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./AnnotationTimeline.module.css";
 

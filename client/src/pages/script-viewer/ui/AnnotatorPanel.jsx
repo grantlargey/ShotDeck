@@ -1,20 +1,22 @@
 import { useState } from "react";
-import { getScriptTagLabel, SCRIPT_TAG_CATEGORIES, SceneCard, TagCategoryList } from "@/entities/script-scene";
+import {
+  getScriptTagLabel,
+  SCRIPT_TAG_CATEGORIES,
+} from "@/entities/script-scene/model/scriptTagCategories.js";
+import { SceneCard } from "@/entities/script-scene/ui/SceneCard.jsx";
+import { TagCategoryList } from "@/entities/script-scene/ui/TagCategoryList.jsx";
 import { cx } from "@/shared/lib/cx.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
-import {
-  Badge,
-  Button,
-  Callout,
-  Chip,
-  CloseIcon,
-  EmptyState,
-  Field,
-  IconButton,
-  Input,
-  PlusIcon,
-  SegmentedControl,
-} from "@/shared/ui";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Chip } from "@/shared/ui/Chip.jsx";
+import { EmptyState } from "@/shared/ui/EmptyState.jsx";
+import { Field } from "@/shared/ui/Field.jsx";
+import { IconButton } from "@/shared/ui/IconButton.jsx";
+import { CloseIcon, PlusIcon } from "@/shared/ui/icons.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { undoShortcutLabel } from "../lib/platform.js";
 import { getTimingError } from "../model/sceneDraft.js";
 import styles from "./AnnotatorPanel.module.css";

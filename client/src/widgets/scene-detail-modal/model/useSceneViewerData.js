@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { sortAnnotationsByTime } from "@/entities/annotation";
-import { sortScriptScenes } from "@/entities/script-scene";
+import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
+import { sortScriptScenes } from "@/entities/script-scene/model/capturedScene.js";
 import { listAnnotations } from "@/shared/api/annotations.js";
 import { listScriptScenes } from "@/shared/api/scriptScenes.js";
 

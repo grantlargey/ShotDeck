@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { cx } from "@/shared/lib/cx.js";
-import { Button, ChevronLeftIcon, ChevronRightIcon, CloseIcon, IconButton } from "@/shared/ui";
+import { Button } from "@/shared/ui/Button.jsx";
+import { IconButton } from "@/shared/ui/IconButton.jsx";
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "@/shared/ui/icons.jsx";
 import styles from "./SceneDetailModal.module.css";
 
 function isTypingTarget(target) {

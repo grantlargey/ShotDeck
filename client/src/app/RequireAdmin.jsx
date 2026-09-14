@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
-import { useSession } from "@/entities/session";
-import { LoadingState } from "@/shared/ui";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { LoadingState } from "@/shared/ui/LoadingState.jsx";
 
 /**
  * Wraps routes only admins may open. Visitors are sent to sign in and come

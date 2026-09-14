@@ -1,6 +1,9 @@
 import { useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
-import { displayScriptSceneText, safeScriptSceneTags } from "@/entities/script-scene";
-import { screenplayToPlainText } from "@/shared/lib/screenplay";
+import {
+  displayScriptSceneText,
+  safeScriptSceneTags,
+} from "@/entities/script-scene/model/capturedScene.js";
+import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
 import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time.js";
 import {
   anchorPairKey,

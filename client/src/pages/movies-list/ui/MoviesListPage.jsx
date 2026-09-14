@@ -1,30 +1,25 @@
 // client/src/pages/movies-list/ui/MoviesListPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { MOVIE_CREDITS } from "@/entities/movie/model/movieCredits.js";
 import {
   filterAndSortMovies,
   getMovieCreditNames,
   getMovieYears,
-  MOVIE_CREDITS,
-  MovieCard,
-  MovieCardGrid,
-  MovieCardSkeleton,
-} from "@/entities/movie";
-import { useSession } from "@/entities/session";
+} from "@/entities/movie/model/movieFilters.js";
+import { MovieCard, MovieCardGrid, MovieCardSkeleton } from "@/entities/movie/ui/MovieCard.jsx";
+import { useSession } from "@/entities/session/model/useSession.js";
 import { deleteMovie, listMovies } from "@/shared/api/movies.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
-import {
-  Button,
-  Callout,
-  DropdownMenu,
-  EmptyState,
-  Input,
-  PageHeader,
-  SearchIcon,
-  Select,
-} from "@/shared/ui";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { DropdownMenu } from "@/shared/ui/DropdownMenu.jsx";
+import { EmptyState } from "@/shared/ui/EmptyState.jsx";
+import { SearchIcon } from "@/shared/ui/icons.jsx";
+import { Input, Select } from "@/shared/ui/Input.jsx";
+import { PageHeader } from "@/shared/ui/PageHeader.jsx";
 import styles from "./MoviesListPage.module.css";
 
 const SORT_OPTIONS = [

@@ -1,26 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { getStillProjectPath } from "@/entities/annotation";
-import {
-  getSceneScriptPath,
-  getScriptTagLabel,
-  SceneCard,
-  SceneCardSkeleton,
-} from "@/entities/script-scene";
+import { getStillProjectPath } from "@/entities/annotation/model/still.js";
+import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
+import { getScriptTagLabel } from "@/entities/script-scene/model/scriptTagCategories.js";
+import { SceneCard, SceneCardSkeleton } from "@/entities/script-scene/ui/SceneCard.jsx";
 import { searchScriptScenes } from "@/shared/api/scriptScenes.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
-import {
-  Button,
-  Callout,
-  Chip,
-  EmptyState,
-  ScriptIcon,
-  SegmentedControl,
-  Select,
-  SplitViewIcon,
-} from "@/shared/ui";
-import { SceneViewerModal } from "@/widgets/scene-detail-modal";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Chip } from "@/shared/ui/Chip.jsx";
+import { EmptyState } from "@/shared/ui/EmptyState.jsx";
+import { ScriptIcon, SplitViewIcon } from "@/shared/ui/icons.jsx";
+import { Select } from "@/shared/ui/Input.jsx";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
+import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import {
   buildFilterGroups,
   countSceneTags,
