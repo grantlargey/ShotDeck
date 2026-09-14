@@ -9,9 +9,8 @@ export {
   formatScriptScenePages,
   getScriptScenePageRange,
   safeScriptSceneTags,
-} from "./model/scriptSceneText.js";
-export { sortScriptScenes } from "./model/scriptSceneSorting.js";
+} from "./model/capturedScene.js";
+export { getSceneScriptPath, sortScriptScenes } from "./model/capturedScene.js";
 export { findFirstStillInScene, findSceneAtTime, getSceneFirstStill } from "./model/sceneStill.js";
-export { getSceneScriptPath } from "./model/sceneLinks.js";
 export { SceneCard, SceneCardSkeleton } from "./ui/SceneCard.jsx";
 export { TagCategoryList } from "./ui/TagCategoryList.jsx";

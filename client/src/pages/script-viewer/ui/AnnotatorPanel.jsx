@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { getScriptTagLabel, SCRIPT_TAG_CATEGORIES, SceneCard, TagCategoryList } from "@/entities/script-scene";
-import { cx } from "@/shared/lib/cx";
-import { formatSecondsToHms } from "@/shared/lib/time";
+import { cx } from "@/shared/lib/cx.js";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
 import {
   Badge,
   Button,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSession, login, logout } from "@/shared/api/auth.js";
 import { markSessionActive, SESSION_EXPIRED_EVENT } from "@/shared/api/request.js";
-import { SessionContext } from "./sessionContext.js";
+import { SessionContext } from "./useSession.js";
 
 /**
  * Resolves the current admin from the API's session cookie once per page load

@@ -5,7 +5,7 @@ import {
   groupScriptTagsByCategory,
 } from "@/entities/script-scene";
 import { useSignedMediaUrl } from "@/shared/lib/media";
-import { formatSecondsToHms } from "@/shared/lib/time";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
 import { ImageIcon, ScreenplayView, ScriptIcon, SegmentedControl } from "@/shared/ui";
 import {
   createSceneViewerCursor,

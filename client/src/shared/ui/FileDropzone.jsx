@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { UploadIcon } from "./icons.jsx";
 import styles from "./FileDropzone.module.css";
 

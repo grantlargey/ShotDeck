@@ -1,4 +1,4 @@
-import { formatMinutesToHms } from "@/shared/lib/time";
+import { formatMinutesToHms } from "@/shared/lib/time.js";
 
 export function createMovieEditForm(movie) {
   return {

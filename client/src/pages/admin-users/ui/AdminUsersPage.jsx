@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSession } from "@/entities/session";
 import { createAdmin, disableAdmin, enableAdmin, listAdmins, resetAdminPassword } from "@/shared/api/auth.js";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage } from "@/shared/lib/errors";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
 import { Badge, Button, Callout, Dialog, Field, Input, PageHeader, PlusIcon } from "@/shared/ui";
 import styles from "./AdminUsersPage.module.css";
 

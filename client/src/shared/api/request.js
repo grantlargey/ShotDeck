@@ -1,4 +1,4 @@
-import { ApiError } from "@/shared/lib/errors";
+import { ApiError } from "@/shared/lib/errors.js";
 
 export const API_BASE =
   import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||

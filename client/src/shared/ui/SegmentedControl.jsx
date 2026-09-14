@@ -1,4 +1,4 @@
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { Badge } from "./Badge.jsx";
 import styles from "./SegmentedControl.module.css";
 

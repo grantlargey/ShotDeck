@@ -1,5 +1,5 @@
 // client/src/shared/api/uploads.js
-import { ApiError, ValidationError } from "@/shared/lib/errors";
+import { ApiError, ValidationError } from "@/shared/lib/errors.js";
 import { req } from "./request.js";
 
 function presignUpload({ movieId, type, contentType }) {

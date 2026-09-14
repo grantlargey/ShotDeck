@@ -3,8 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { getRecentMovies, MovieCard, MovieCardGrid, MovieCardSkeleton } from "@/entities/movie";
 import { useSession } from "@/entities/session";
 import { listMovies } from "@/shared/api/movies.js";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage } from "@/shared/lib/errors";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
 import {
   Button,
   Callout,

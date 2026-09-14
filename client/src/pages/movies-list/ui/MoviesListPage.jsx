@@ -12,9 +12,9 @@ import {
 } from "@/entities/movie";
 import { useSession } from "@/entities/session";
 import { deleteMovie, listMovies } from "@/shared/api/movies.js";
-import { cx } from "@/shared/lib/cx";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage } from "@/shared/lib/errors";
+import { cx } from "@/shared/lib/cx.js";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
 import {
   Button,
   Callout,

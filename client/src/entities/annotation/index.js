@@ -5,5 +5,4 @@ export {
   getTimelineScale,
   sortAnnotationsByTime,
 } from "./model/annotationTimeline.js";
-export { getStillThumbnail } from "./model/stillImage.js";
-export { getStillProjectPath } from "./model/stillLinks.js";
+export { getStillProjectPath, getStillThumbnail } from "./model/still.js";

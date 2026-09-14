@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { Badge, Checkbox, ChevronDownIcon } from "@/shared/ui";
 import styles from "./TagCategoryList.module.css";
 

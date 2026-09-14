@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { MOVIE_CREDITS } from "@/entities/movie";
-import { cx } from "@/shared/lib/cx";
-import { formatMinutesToHms } from "@/shared/lib/time";
+import { cx } from "@/shared/lib/cx.js";
+import { formatMinutesToHms } from "@/shared/lib/time.js";
 import { Skeleton } from "@/shared/ui";
 import styles from "./MovieDetailPage.module.css";
 

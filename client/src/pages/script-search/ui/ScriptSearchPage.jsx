@@ -8,8 +8,8 @@ import {
   SceneCardSkeleton,
 } from "@/entities/script-scene";
 import { searchScriptScenes } from "@/shared/api/scriptScenes.js";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage } from "@/shared/lib/errors";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
 import {
   Button,
   Callout,

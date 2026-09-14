@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/shared/lib/errors";
+import { ApiError } from "@/shared/lib/errors.js";
 import { captureAnchoredRange } from "../model/captureRange.js";
 import {
   annotator,

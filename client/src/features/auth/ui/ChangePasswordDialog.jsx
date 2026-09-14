@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSession } from "@/entities/session";
 import { changePassword } from "@/shared/api/auth.js";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { Button, Callout, Dialog, Field, Input } from "@/shared/ui";
 import styles from "./ChangePasswordDialog.module.css";
 

@@ -2,21 +2,20 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getStillThumbnail, sortAnnotationsByTime } from "@/entities/annotation";
-import { buildMovieSavePayload, createMovieEditForm, getMovieCoverUrl } from "@/entities/movie";
-import { getCurrentScript } from "@/entities/script";
+import { buildMovieSavePayload, createMovieEditForm, getMovieCoverUrl, MovieDetailsFields } from "@/entities/movie";
 import { getSceneScriptPath } from "@/entities/script-scene";
 import { useSession } from "@/entities/session";
 import { createAnnotation, deleteAnnotation, listAnnotations, updateAnnotation } from "@/shared/api/annotations.js";
 import { getMovie, updateMovie } from "@/shared/api/movies.js";
 import { listScripts, saveScript } from "@/shared/api/scripts.js";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { useFilePreviewUrl, useSignedMediaUrl } from "@/shared/lib/media";
 import {
   formatSecondsToHms,
   parseTimeInputToMinutes,
   parseTimeInputToSeconds,
-} from "@/shared/lib/time";
+} from "@/shared/lib/time.js";
 import {
   Button,
   Callout,
@@ -32,7 +31,6 @@ import {
 } from "@/shared/ui";
 import { SceneModalButton, SceneViewerModal } from "@/widgets/scene-detail-modal";
 import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
-import { MovieEditPanel } from "./MovieEditPanel.jsx";
 import { MovieHeader, MovieHeaderSkeleton } from "./MovieHeader.jsx";
 import { MovieScriptPanel } from "./MovieScriptPanel.jsx";
 import styles from "./MovieDetailPage.module.css";
@@ -340,7 +338,8 @@ export default function MovieDetailPage() {
   }
 
   const coverUrl = movie ? getMovieCoverUrl(movie) || null : null;
-  const currentScript = getCurrentScript(scripts);
+  // A movie has at most one script; the API still returns it in a list.
+  const currentScript = scripts[0] || null;
 
   function openScript() {
     if (currentScript) nav(`/movies/${id}/scripts/${currentScript.id}`);
@@ -386,12 +385,20 @@ export default function MovieDetailPage() {
         {err && !viewerStillId && <Callout tone="error">{err}</Callout>}
 
         {editMode && canEdit && (
-          <MovieEditPanel
-            editForm={editForm}
-            setEditForm={setEditForm}
-            onCancel={cancelMovieEdits}
-            onSave={saveMovieEdits}
-          />
+          <section aria-labelledby="project-edit-heading">
+            <SectionHeading id="project-edit-heading" title="Edit details" />
+            <MovieDetailsFields
+              values={editForm}
+              onChange={(field, value) => setEditForm((f) => ({ ...f, [field]: value }))}
+            />
+
+            <div className={styles.panelActions}>
+              <Button onClick={cancelMovieEdits}>Cancel</Button>
+              <Button variant="primary" onClick={saveMovieEdits}>
+                Save changes
+              </Button>
+            </div>
+          </section>
         )}
 
         <MovieScriptPanel

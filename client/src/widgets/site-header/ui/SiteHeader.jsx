@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "@/entities/session";
 import { ChangePasswordDialog } from "@/features/auth";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { BrandLogo, Button, ChevronDownIcon, DropdownMenu, PlusIcon } from "@/shared/ui";
 import styles from "./SiteHeader.module.css";
 

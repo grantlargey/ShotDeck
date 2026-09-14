@@ -2,8 +2,8 @@ import { useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useSession } from "@/entities/session";
 import { changePassword } from "@/shared/api/auth.js";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { Button, Callout, Field, Input } from "@/shared/ui";
 import styles from "./LoginPage.module.css";
 

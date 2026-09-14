@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { Button, ChevronLeftIcon, ChevronRightIcon, CloseIcon, IconButton } from "@/shared/ui";
 import styles from "./SceneDetailModal.module.css";
 

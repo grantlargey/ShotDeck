@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from "react";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { IconButton } from "./IconButton.jsx";
 import { CloseIcon } from "./icons.jsx";
 import styles from "./Dialog.module.css";

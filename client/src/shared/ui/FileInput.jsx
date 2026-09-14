@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { Button } from "./Button.jsx";
 import styles from "./forms.module.css";
 

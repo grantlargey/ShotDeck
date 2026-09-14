@@ -1,5 +1,7 @@
-import { useContext } from "react";
-import { SessionContext } from "./sessionContext.js";
+import { createContext, useContext } from "react";
+
+/** Provided by SessionProvider; read it through useSession. */
+export const SessionContext = createContext(null);
 
 /**
  * Who is using the site: `user` (an admin account or null), `isAdmin`,

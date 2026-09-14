@@ -5,10 +5,10 @@ import { buildMovieSavePayload, createMovieEditForm, MovieDetailsFields } from "
 import { createMovie, getMovie, updateMovie } from "@/shared/api/movies.js";
 import { saveScript } from "@/shared/api/scripts.js";
 import { uploadMediaFile } from "@/shared/api/uploads.js";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { useFilePreviewUrl } from "@/shared/lib/media";
-import { parseTimeInputToMinutes } from "@/shared/lib/time";
+import { parseTimeInputToMinutes } from "@/shared/lib/time.js";
 import { Badge, Button, Callout, FileDropzone, PageHeader, SectionHeading } from "@/shared/ui";
 import styles from "./MovieFormPage.module.css";
 

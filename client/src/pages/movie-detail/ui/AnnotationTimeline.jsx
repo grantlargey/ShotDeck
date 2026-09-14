@@ -6,9 +6,9 @@ import {
   getTimelinePositionPercent,
   getTimelineScale,
 } from "@/entities/annotation";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media";
-import { formatSecondsToHms } from "@/shared/lib/time";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./AnnotationTimeline.module.css";
 
 // One density bar per this many pixels of strip width.

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { Skeleton } from "@/shared/ui";
 import { getMovieCoverUrl } from "../model/movieFilters.js";
 import styles from "./MovieCard.module.css";

@@ -1,4 +1,4 @@
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import styles from "./Chip.module.css";
 
 /** Removable selection chip, e.g. an active filter or an applied tag. */
