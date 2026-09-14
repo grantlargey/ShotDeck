@@ -1,9 +1,6 @@
 import { ApiError } from "@/shared/lib/errors.js";
 
-export const API_BASE =
-  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||
-  import.meta.env.VITE_API_URL?.replace(/\/$/, "") ||
-  "http://localhost:4000";
+export const API_BASE = import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "http://localhost:4000";
 
 /** Fired on `window` when the API refuses a request that needed the admin session that was active. */
 export const SESSION_EXPIRED_EVENT = "scriptdeck:session-expired";

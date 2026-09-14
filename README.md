@@ -152,7 +152,6 @@ The AWS SDK needs credentials in the environment where the API runs. A host's AW
 Client configuration:
 
 - `VITE_API_BASE` - Public API base URL, defaults to `http://localhost:4000`.
-- `VITE_API_URL` - Retained fallback alias used only when `VITE_API_BASE` is unset or empty. Prefer `VITE_API_BASE` for new configurations.
 
 Restart the Vite dev server after changing client environment files, or rebuild for a deployed frontend. Vite embeds these values in browser assets, so they must not contain secrets.
 

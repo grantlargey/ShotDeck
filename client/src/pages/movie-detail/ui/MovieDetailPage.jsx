@@ -3,7 +3,6 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
 import { getStillThumbnail } from "@/entities/annotation/model/still.js";
-import { getMovieCoverUrl } from "@/entities/movie/model/movieFilters.js";
 import { buildMovieSavePayload, createMovieEditForm } from "@/entities/movie/model/movieForms.js";
 import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
@@ -340,7 +339,7 @@ export default function MovieDetailPage() {
     setEditMode(false);
   }
 
-  const coverUrl = movie ? getMovieCoverUrl(movie) || null : null;
+  const coverUrl = movie?.cover_image_url || null;
   // A movie has at most one script; the API still returns it in a list.
   const currentScript = scripts[0] || null;
 

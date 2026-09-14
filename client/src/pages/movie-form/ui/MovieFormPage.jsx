@@ -50,8 +50,7 @@ export default function MovieFormPage({ mode }) {
 
         setForm(createMovieEditForm(m));
 
-        // Prefer cover_url / cover_image_url if backend provides it
-        setExistingCoverUrl(m.cover_url || m.cover_image_url || "");
+        setExistingCoverUrl(m.cover_image_url || "");
       } catch (e) {
         setErr(getErrorMessage(e, "Failed to load project."));
       }
