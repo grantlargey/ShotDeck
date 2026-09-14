@@ -13,7 +13,7 @@ import {
   suggestAnchorsFromSavedText,
   withoutSuggestions,
 } from "./anchors.js";
-import { captureAnchoredRange } from "./captureRange.js";
+import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.js";
 
 /*
  * The scene draft: the captured scene an admin is creating or editing in the
@@ -271,21 +271,34 @@ export function getTimingError(startTime, endTime, runtimeSeconds, { checkFormat
   return "";
 }
 
+const CAPTURE_UNAVAILABLE_ERRORS = {
+  start: "Place a start anchor in the script before saving.",
+  end: "Place an end anchor in the script before saving.",
+  indexing: "Wait for the pages between the anchors to finish indexing, then save again.",
+  unreadable: "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.",
+};
+
 /**
  * What saving the draft would store, or why it can't be saved: film timing is
- * checked first, then text, then script location.
+ * checked first, then that explicit anchors have a capture, then text, then
+ * script location.
  *
- * The script location comes from the capture only when the draft has explicit
- * anchors. Otherwise a saved scene keeps its stored location, even when the
- * anchors shown differ from it (one anchor removed, or pages not yet indexed).
- * Raw text follows the location: the capture's plain text, else the saved
- * scene's raw text, else plain text derived from the scene text. The scene
- * text is saved as it is, even when stale.
+ * With explicit anchors the script location comes from the capture, and saving
+ * is refused without one, so the saved location always matches the anchors
+ * shown. Without explicit anchors (none, or only suggested ones) a saved scene
+ * keeps its stored location. Raw text follows the location: the capture's
+ * plain text, else the saved scene's raw text, else plain text derived from
+ * the scene text. The scene text is saved as it is, even when stale.
  */
-function buildSavePayload(draft, capture, text, runtimeSeconds = 0) {
+function buildSavePayload(draft, textIndex, capture, text, runtimeSeconds = 0) {
   const timingError = getTimingError(draft.startTime, draft.endTime, runtimeSeconds, { requireBoth: true });
   if (timingError) {
     return { error: timingError };
+  }
+  // Explicit anchors are never combined with suggestions, so the capture is theirs.
+  const useCapture = hasAnyAnchor(draft.anchors);
+  if (useCapture && !capture) {
+    return { error: CAPTURE_UNAVAILABLE_ERRORS[captureUnavailableReason(textIndex, draft.anchors)] };
   }
   const start = parseTimeInputToSeconds(draft.startTime);
   const end = parseTimeInputToSeconds(draft.endTime);
@@ -293,7 +306,6 @@ function buildSavePayload(draft, capture, text, runtimeSeconds = 0) {
     return { error: "Place start and end anchors in the script to capture the scene text." };
   }
 
-  const useCapture = Boolean(capture) && hasAnyAnchor(draft.anchors);
   const savedScene = draft.savedScene;
   let location = null;
 
@@ -530,8 +542,8 @@ export function useSceneDraft(textIndex) {
      * only if this draft is still open, preserving changes made during the request.
      */
     buildSave(runtimeSeconds) {
-      const { state: current, capture: currentCapture, text: currentText } = latestRef.current;
-      const result = buildSavePayload(current, currentCapture, currentText, runtimeSeconds);
+      const { state: current, textIndex: index, capture: currentCapture, text: currentText } = latestRef.current;
+      const result = buildSavePayload(current, index, currentCapture, currentText, runtimeSeconds);
       if (result.error) return result;
       return {
         ...result,

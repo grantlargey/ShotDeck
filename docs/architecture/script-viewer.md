@@ -9,10 +9,11 @@ Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneD
 **Validation**, in order:
 
 1. Film timing: both times present, `HH:MM:SS` or `MM:SS`, end not before start, and not past the film's runtime when it is known (`getTimingError`).
-2. Scene text isn't blank.
-3. A script location exists.
+2. Explicit anchors have a capture. See [Explicit anchors need a capture to save](#explicit-anchors-need-a-capture-to-save).
+3. Scene text isn't blank.
+4. A script location exists.
 
-The second and third checks share the message "Place start and end anchors in the script to capture the scene text."
+The third and fourth checks share the message "Place start and end anchors in the script to capture the scene text."
 
 **Scene text** (`selected_text` and `formatted_selected_text`, both set to `draft.text`) depends on the text origin:
 
@@ -27,11 +28,11 @@ Text of any origin other than `"capture"` remembers the anchor pair it belongs t
 
 **Script location** (`page_start`, `page_end`, `start_offset`, `end_offset`, `context_prefix`, `context_suffix`, `anchor_geometry`):
 
-- From the current capture, when there is one **and** the draft has explicit anchors. Empty context becomes `null`, and geometry is written as version-2 entries.
-- Otherwise from the saved scene, as stored. Missing fields become `null`, and non-array geometry becomes `[]`.
+- With explicit anchors, from the current capture. Empty context becomes `null`, and geometry is written as version-2 entries. Without a capture, saving is refused.
+- Without explicit anchors (none, or only suggested ones), from the saved scene, as stored. Missing fields become `null`, and non-array geometry becomes `[]`.
 - Otherwise there's no location, and saving is refused.
 
-Offsets stay `null` until the whole script has been indexed. Suggested anchors never become the saved location on their own; an anchor change or a re-capture must first make them explicit.
+A capture needs only the pages in its range, but offsets stay `null` until the whole script has been indexed. Suggested anchors never become the saved location on their own; an anchor change or a re-capture must first make them explicit.
 
 **Raw text** (`raw_selected_text`) follows the location: the capture's plain text, else the saved scene's raw text, else plain text derived from the scene text.
 
@@ -68,13 +69,33 @@ The editor dialog checks the draft against the current capture (`draft.capturedP
 
 These rules fix H2, where an accepted proposal was keyed to the anchors at accept time and so looked fresh for anchors it was never requested for.
 
+### Explicit anchors need a capture to save
+
+With explicit anchors, the script location and raw text come from the capture, so saving needs one. Without a capture, `buildSave` returns an error after the timing check and before the blank-text check. The page shows it as an error notice and sends no request. `captureUnavailableReason` in `model/captureRange.js` says why there is no capture:
+
+| Why | Message |
+|---|---|
+| The start or end anchor is missing | "Place a start anchor in the script before saving." or "Place an end anchor in the script before saving." |
+| A page in the range isn't indexed yet, and indexing is still running | "Wait for the pages between the anchors to finish indexing, then save again." |
+| Anything else: indexing finished without a page in the range (such as a scanned page), an anchor's page has no text lines, or a stored end anchor is on an earlier page than the start | "The script text between the anchors can't be read. Move the anchors to lines with text, then save again." |
+
+A refused save leaves the draft as it was, and saving again works once the capture exists. Only the pages in the range must be indexed.
+
+Unchanged:
+
+- **Without explicit anchors** (a legacy scene, suggested anchors, or a saved scene whose anchors were all cleared), a saved scene keeps its stored location.
+- **Stale text (B6)** still saves the current capture's location and raw text alongside the draft's text.
+
+A saved scene opens with its stored anchors as explicit anchors. Until its range is indexed, updating it, even only its timing or tags, asks the admin to wait.
+
+This fixes B5, where explicit anchors without a capture saved the scene's previously stored location while the page showed different anchors.
+
 ### Existing compatibility behavior
 
 These behaviors look questionable but are kept on purpose. Each is pinned by a test named "existing compatibility behavior", so a fix has to change that test deliberately.
 
 | ID | Behavior |
 |---|---|
-| B5 | With explicit anchors but no capture (one anchor removed, or pages not yet indexed), a saved scene keeps its previously stored location while the page shows different anchors. |
 | B6 | Saving stale text stores the new capture's location and raw text alongside the old or edited scene text. |
 | C3 | Captured text can change while indexing progresses (the estimated action margin moves), but the editor dialog keeps the text it mounted with. |
 
@@ -102,7 +123,7 @@ All paths are under `client/src/pages/script-viewer/`.
 | `ui/ScriptViewerPage.jsx` | The route module and page: data loading, PDF, dialogs, navigation, and wiring the draft to the UI. |
 | `model/sceneDraft.js` | `useSceneDraft` and `getTimingError` (also used by `AnnotatorPanel`). |
 | `model/anchors.js` | Pure anchor helpers: geometry v2 read and write, placement and swapping, suggestions from saved text, scene segments, overlap. |
-| `model/captureRange.js` | `captureAnchoredRange(textIndex, anchors)`: captured text, key, pages, offsets and context. Expensive. |
+| `model/captureRange.js` | `captureAnchoredRange(textIndex, anchors)`: captured text, key, pages, offsets and context. Expensive. `captureUnavailableReason(textIndex, anchors)` says why there is no capture. |
 | `model/useScriptTextIndex.js` | Indexes every page's text lines in the background on a separate pdf.js worker. Publishes a new index object every 8 pages and on completion. |
 | `model/usePdfPageWindowing.js` | Page sizing, mobile windowing and scrolling. |
 | `ui/PdfPageFrame.jsx` | One memoized page plus its overlay: markers, range, scene bars, hover line. |
@@ -162,6 +183,7 @@ Timing rules:
 | To change | Look in |
 |---|---|
 | What gets saved | `buildSave` in `model/sceneDraft.js` |
+| Why a save is refused without a capture | `buildSavePayload` in `model/sceneDraft.js`; the reasons in `captureUnavailableReason` (`model/captureRange.js`) |
 | Suggested anchors | `suggestAnchorsFromSavedText` in `model/anchors.js`, and the suggestions memo in `useSceneDraft` |
 | Captured text layout | `model/captureRange.js` and `@/shared/lib/screenplay` |
 | Line geometry and pointer snapping | `@/shared/lib/pdf-text` |
@@ -190,6 +212,11 @@ AI proposal provenance (H2) is covered in both suites.
 
 - **Hook tests** check each case: an unchanged selection; anchors moved while pending and after readiness; cleared anchors; proposals requested for legacy and anchored saved scenes before any capture; and superseded and discarded requests.
 - **Page tests (P13)** check the dialog's proposal word check and the panel's stale callout after the anchors move.
+
+Saving explicit anchors without a capture (B5) is covered in both suites.
+
+- **Hook tests** check each message and its order after the timing check, a saved scene with a removed anchor, retrying once the range is indexed but the script isn't, indexing that finished without a range page, an anchor page with no lines, and legacy scenes with and without suggested anchors.
+- **Page tests (P14)** check that a refused save sends no request and keeps the draft, then saves once the end anchor is placed again or the range is indexed.
 
 Shared fixtures live in `test/`. `textIndexFixtures.js` builds synthetic screenplay pages through the real line builder. Its `textIndexFrom` repeats the indexer's publish step (page offsets and the action margin), so keep it in step with `useScriptTextIndex.js`. `pageHarness.js` holds the page suite's doubles and helpers.
 

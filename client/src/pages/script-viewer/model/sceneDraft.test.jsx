@@ -6,6 +6,7 @@ import {
   page1,
   page2,
   page3,
+  positionedPage,
   savedV2Scene,
   sceneRow,
   SCRIPT_PAGES,
@@ -858,6 +859,113 @@ describe("buildSave", () => {
     expect(payload.anchor_geometry).toBe(scene.anchor_geometry);
     expect(payload.raw_selected_text).toBe(legacyScene.raw_selected_text);
     expect(payload.page_start).toBe(1);
+  });
+});
+
+describe("[B5] explicit anchors need a capture to save", () => {
+  const PLACE_START = "Place a start anchor in the script before saving.";
+  const PLACE_END = "Place an end anchor in the script before saving.";
+  const WAIT_FOR_INDEX = "Wait for the pages between the anchors to finish indexing, then save again.";
+  const UNREADABLE = "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.";
+  const save = (result) => run(result, (a) => a.buildSave(0));
+
+  function setTiming(result) {
+    run(result, (a) => a.setTime("startTime", "00:01:00"));
+    run(result, (a) => a.setTime("endTime", "00:02:00"));
+  }
+
+  it("asks for the missing anchor after checking timing and before checking for empty text", () => {
+    const { result } = renderDraft();
+    place(result, "start", page1, 0);
+    expect(save(result)).toEqual({ error: "Enter a start and an end time for this scene." });
+
+    setTiming(result);
+    expect(current(result).draft.text).toBe("");
+    expect(save(result)).toEqual({ error: PLACE_END });
+
+    place(result, "end", page1, 7);
+    run(result, (a) => a.removeAnchor("start"));
+    expect(save(result)).toEqual({ error: PLACE_START });
+  });
+
+  it("refuses a saved scene with a removed anchor, keeps the draft, and saves the capture once the anchor is back", () => {
+    const EDITED = "## EDITED\n\nKeep this text.";
+    const { result } = renderDraft();
+    run(result, (a) => a.loadScene(savedV2Scene));
+    run(result, (a) => a.editText(EDITED));
+    run(result, (a) => a.removeAnchor("end"));
+
+    expect(save(result)).toEqual({ error: PLACE_END });
+    expect(current(result).draft).toMatchObject({
+      text: EDITED,
+      textOrigin: "edited",
+      anchors: { start: { page: 3, line: 0 }, end: null },
+      startTime: "00:10:00",
+      dirty: true,
+    });
+
+    place(result, "end", page3, 3);
+    expect(save(result).payload).toMatchObject({
+      formatted_selected_text: EDITED,
+      page_start: 3,
+      page_end: 3,
+      start_offset: 419,
+      context_prefix: null,
+      anchor_geometry: savedV2Scene.anchor_geometry,
+    });
+  });
+
+  it("asks to wait while the range's pages index, then saves before the whole script is indexed", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([page1], { total: 3 }));
+    run(result, (a) => a.loadScene(savedV2Scene));
+
+    expect(save(result)).toEqual({ error: WAIT_FOR_INDEX });
+    expect(current(result).draft).toMatchObject({ textOrigin: "saved", text: savedV2Scene.formatted_selected_text, dirty: false });
+
+    rerender({ index: textIndexFrom([page1, page3], { total: 3 }) });
+    expect(save(result).payload).toMatchObject({
+      formatted_selected_text: savedV2Scene.formatted_selected_text,
+      page_start: 3,
+      page_end: 3,
+      start_offset: null,
+      end_offset: null,
+      anchor_geometry: savedV2Scene.anchor_geometry,
+    });
+  });
+
+  it("stops asking to wait once indexing has finished without a page in the range", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([page1, page3], { total: 3 }));
+    place(result, "start", page1, 0);
+    place(result, "end", page3, 3);
+    setTiming(result);
+    expect(save(result)).toEqual({ error: WAIT_FOR_INDEX });
+
+    // Page 2 never produced text, as with a scanned page.
+    rerender({ index: textIndexFrom([page1, page3], { total: 3, complete: true }) });
+    expect(save(result)).toEqual({ error: UNREADABLE });
+  });
+
+  it("doesn't ask to wait when an indexed page has no line for an anchor", () => {
+    const { result } = renderDraft(textIndexFrom([page1, positionedPage(3, [])], { total: 3 }));
+    run(result, (a) => a.loadScene(savedV2Scene));
+
+    expect(save(result)).toEqual({ error: UNREADABLE });
+  });
+
+  it.each([
+    { when: "before its pages are indexed", index: textIndexFrom([], { total: 3 }), suggested: false },
+    { when: "with suggested anchors and their capture", index: FULL_INDEX, suggested: true },
+  ])("still saves a legacy scene's stored location $when", ({ index, suggested }) => {
+    const { result } = renderDraft(index);
+    run(result, (a) => a.loadScene(legacyScene));
+    expect(current(result).draft.anchorsSuggested).toBe(suggested);
+
+    expect(save(result).payload).toMatchObject({
+      raw_selected_text: legacyScene.raw_selected_text,
+      page_start: 1,
+      page_end: 2,
+      anchor_geometry: [],
+    });
   });
 });
 

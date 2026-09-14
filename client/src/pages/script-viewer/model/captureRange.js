@@ -8,6 +8,17 @@ import { anchorPairKey, resolveAnchorLine } from "./anchors.js";
 
 const CONTEXT_LENGTH = 180;
 
+/** The indexed pages from the start anchor's page to the end anchor's, or null while any is missing. */
+function rangePages(textIndex, start, end) {
+  const pages = [];
+  for (let pageNumber = start.page; pageNumber <= end.page; pageNumber += 1) {
+    const page = textIndex.pages.get(pageNumber);
+    if (!page) return null;
+    pages.push(page);
+  }
+  return pages;
+}
+
 /**
  * Captures the script text between two line anchors from the PDF text index
  * and converts it to screenplay markdown by page layout. Returns null until
@@ -17,12 +28,8 @@ export function captureAnchoredRange(textIndex, anchors) {
   const { start, end } = anchors || {};
   if (!start || !end) return null;
 
-  const pages = [];
-  for (let pageNumber = start.page; pageNumber <= end.page; pageNumber += 1) {
-    const page = textIndex.pages.get(pageNumber);
-    if (!page) return null;
-    pages.push(page);
-  }
+  const pages = rangePages(textIndex, start, end);
+  if (!pages) return null;
 
   const firstPage = pages[0];
   const lastPage = pages[pages.length - 1];
@@ -65,4 +72,19 @@ export function captureAnchoredRange(textIndex, anchors) {
       .join("\n")
       .slice(0, CONTEXT_LENGTH),
   };
+}
+
+/**
+ * Why captureAnchoredRange returned null for these anchors: "start" or "end"
+ * when that anchor is missing, "indexing" while a page in the range still
+ * awaits the text index, else "unreadable". Unreadable covers a range page the
+ * finished index has no text for, an anchor page with no text lines, and an
+ * end anchor on an earlier page than the start; waiting won't fix those.
+ */
+export function captureUnavailableReason(textIndex, anchors) {
+  const { start, end } = anchors || {};
+  if (!start) return "start";
+  if (!end) return "end";
+  if (!rangePages(textIndex, start, end)) return textIndex.complete ? "unreadable" : "indexing";
+  return "unreadable";
 }

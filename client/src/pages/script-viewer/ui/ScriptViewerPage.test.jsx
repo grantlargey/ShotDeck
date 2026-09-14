@@ -38,7 +38,6 @@ import {
   page1,
   page2,
   page3,
-  SAVED_V2_RAW,
   SAVED_V2_TEXT,
   savedV2Scene,
   SCRIPT_PAGES,
@@ -869,32 +868,65 @@ describe("AI proposals", () => {
 // ---------- P14–P17: compatibility behavior around saving and deleting ----------
 
 describe("saving and deleting", () => {
-  it("[B5] existing compatibility behavior: explicit anchors without a capture save the previously stored script location (P14)", async () => {
-    // Why this may be a bug: the saved script location silently differs from
-    // the anchors the admin sees.
+  it("P14 [B5] asks for a removed anchor instead of saving the stored location, sends nothing, and keeps the draft", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene], sceneId: savedV2Scene.id });
     publishWholeScript();
 
     openLineMenu(3, 1);
     click(menuItem(/^Remove end anchor/));
+    typeTime("End", "00:11:30");
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+
+    expect(toast("Place an end anchor in the script before saving.")).toBeTruthy();
+    expect(fakeApi.updateScriptScene).not.toHaveBeenCalled();
     expect(inPanel().getByText("Start · p. 3 · line 1")).toBeTruthy();
     expect(inPanel().getByText("Not placed")).toBeTruthy();
+    expect(timeInput("End").value).toBe("00:11:30");
+    expect(inPanel().getByText("Saved")).toBeTruthy();
 
+    hoverLine(3, 4);
+    pressKey("]");
     click(inPanel().getByRole("button", { name: "Update scene" }));
-    expect(lastSavePayload()).toEqual({
-      start_time_seconds: 600,
-      end_time_seconds: 660,
-      selected_text: SAVED_V2_TEXT,
-      raw_selected_text: SAVED_V2_RAW,
-      formatted_selected_text: SAVED_V2_TEXT,
+    expect(fakeApi.updateScriptScene).toHaveBeenCalledTimes(1);
+    expect(lastSavePayload()).toMatchObject({
+      end_time_seconds: 690,
       page_start: 3,
       page_end: 3,
-      start_offset: 400,
-      end_offset: 610,
-      context_prefix: "stored prefix",
-      context_suffix: "stored suffix",
-      anchor_geometry: savedV2Scene.anchor_geometry,
-      tags: savedV2Scene.tags,
+      start_offset: 419,
+      end_offset: 681,
+      anchor_geometry: [GEOMETRY.p3Line1, GEOMETRY.p3Line5],
+    });
+  });
+
+  it("P14 [B5] asks to wait for the range's pages to index, then saves before the whole script is indexed", async () => {
+    await renderViewer(ScriptViewerRoute);
+    publishPages([page1, page3], { total: 3 });
+    placeAnchorsWithKeys([1, 0], [3, 3]);
+    expect(inPanel().getByText("Capturing text between the anchors…")).toBeTruthy();
+
+    // Timing is still checked first.
+    click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(toast("Enter a start and an end time for this scene.")).toBeTruthy();
+    typeTime("Start", "00:01:00");
+    typeTime("End", "00:02:00");
+    click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(toast("Wait for the pages between the anchors to finish indexing, then save again.")).toBeTruthy();
+    expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
+    expect(inPanel().getByText("Start · p. 1 · line 1")).toBeTruthy();
+    expect(inPanel().getByText("End · p. 3 · line 4")).toBeTruthy();
+
+    publishPages([page1, page2, page3], { total: 3 });
+    click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(lastSavePayload()).toMatchObject({
+      start_time_seconds: 60,
+      end_time_seconds: 120,
+      page_start: 1,
+      page_end: 3,
+      // B7: offsets stay null until the whole script is indexed.
+      start_offset: null,
+      end_offset: null,
+      anchor_geometry: [GEOMETRY.p1Line1, { kind: "end", page: 3, line: 3 }],
     });
   });
 
