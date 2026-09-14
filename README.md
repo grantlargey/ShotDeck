@@ -10,9 +10,9 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 - `client/src/app/` - Frontend app entry composition, routing, and global styles.
 - `client/src/pages/` - Page slices such as `movies-list`, `movie-detail`, and `script-viewer`.
 - `client/src/widgets/` - Reusable app-level UI blocks such as the site header.
-- `client/src/features/` - User-action workflows such as movie saves, uploads, annotation writes, and script scene mutations.
-- `client/src/entities/` - Business entity helpers for movies, annotations, scripts, and script scenes.
-- `client/src/shared/` - Shared API domain clients, upload helpers, generic UI primitives, and reusable libraries.
+- `client/src/features/` - User-action UI that isn't tied to one page, such as the change-password dialog.
+- `client/src/entities/` - Domain models and single-entity UI for movies, stills, captured scenes, and the admin session.
+- `client/src/shared/` - API operations by backend domain, generic UI primitives, and reusable libraries.
 - `server/` - Node.js backend package.
 - `server/src/index.js` - Small server entrypoint that imports the app and listens on `PORT`.
 - `server/src/app.js` - Express composition root: middleware, CORS, route mounting, and error middleware.
@@ -64,13 +64,13 @@ In practice:
 - `app` wires routing and global application concerns.
 - `pages` contain route-level screens and page-local UI.
 - `widgets` contain larger reusable UI blocks.
-- `features` contain reusable user actions that combine API calls and upload steps.
-- `entities` contain business-domain constants and pure helpers.
-- `shared` contains reusable infrastructure such as domain API clients, uploads, UI primitives, and time formatting.
+- `features` contain user-action UI that isn't tied to one page, such as the change-password dialog.
+- `entities` contain domain models (constants and pure helpers) and the UI that renders one entity, such as a movie or scene card.
+- `shared` contains reusable infrastructure: API operations (`shared/api/<domain>.js`), UI primitives (`shared/ui/`), and libraries such as time formatting and the screenplay grammar (`shared/lib/`).
 
-Each page slice exposes a small public API through its `index.js` file. Higher layers import from those public APIs rather than reaching into another slice's internal `ui` files.
+Every operation, helper and component has one owning module, and callers import it directly from that file, for example `import { getMovie } from "@/shared/api/movies.js"` or `import { Button } from "@/shared/ui/Button.jsx"`. There are no `index.js` barrels, re-export files or aggregate API objects, and no modules that only forward calls to another module. A workflow that combines requests, such as uploading a file and then saving the record that points to it, is one operation in its API owner, for example `saveScript` in `shared/api/scripts.js`.
 
-The script-viewer route is loaded on demand so the PDF renderer and editor are kept out of the initial application bundle.
+The script-viewer and admin routes are loaded on demand from their page modules, so the PDF renderer and editor are kept out of the initial application bundle.
 
 See the [script viewer architecture guide](docs/architecture/script-viewer.md) for draft ownership, saved text and location rules, and where to change viewer behavior.
 

@@ -135,7 +135,7 @@ Known limits:
 
 ## Entry points and ownership
 
-The route `/movies/:movieId/scripts/:scriptId` is declared in `client/src/app/App.jsx`, which lazy-loads `@/pages/script-viewer`. The slice exports `ScriptViewerRoute` from `ui/ScriptViewerPage.jsx`. It keys the page by `scriptId`, so switching scripts remounts the page and starts a fresh draft.
+The route `/movies/:movieId/scripts/:scriptId` is declared in `client/src/app/App.jsx`, which lazy-loads `@/pages/script-viewer/ui/ScriptViewerPage.jsx`, whose default export is `ScriptViewerRoute`. It keys the page by `scriptId`, so switching scripts remounts the page and starts a fresh draft.
 
 | `useSceneDraft` (`model/sceneDraft.js`) | `ScriptViewerPage.jsx` |
 |---|---|
@@ -220,8 +220,8 @@ Timing rules:
 | Why a save is refused without a capture | `buildSavePayload` in `model/sceneDraft.js`; the reasons in `captureUnavailableReason` (`model/captureRange.js`) |
 | When saving asks to confirm stale text | `confirmStaleText` in `buildSavePayload` (`model/sceneDraft.js`); the prompt in `saveScene` (`ui/ScriptViewerPage.jsx`) |
 | Suggested anchors | `suggestAnchorsFromSavedText` in `model/anchors.js`, and the suggestions memo in `useSceneDraft` |
-| Captured text layout | `model/captureRange.js` and `@/shared/lib/screenplay` |
-| Line geometry and pointer snapping | `@/shared/lib/pdf-text` |
+| Captured text layout | `model/captureRange.js`, `@/shared/lib/screenplay/layoutClassifier.js` and `@/shared/lib/screenplay/grammar.js` |
+| Line geometry and pointer snapping | `@/shared/lib/pdf-text/pageTextLines.js` |
 | Text origin, stale text, the editor key, the dirty check | `useSceneDraft` |
 | Focus when the editor's text is replaced from outside | `ScreenplayEditor` in `ui/ScreenplayEditor.jsx` |
 | Confirm wording and button labels | `ui/ScriptViewerPage.jsx` |
@@ -239,7 +239,7 @@ npm test --prefix client
 
 Vitest runs with jsdom (`client/vitest.config.js`, setup in `client/src/test/setup.js`). The script viewer has two suites:
 
-- **`ui/ScriptViewerPage.test.jsx`** characterizes the page end to end: capture, indexing, editing, re-capture, suggestions, saving, prompts, keys, AI proposals, visitors, and page-frame prop identity. It doubles only the edges: the API client, the session, `react-pdf`, the text indexer (a store the test publishes indexes to), page windowing, `PdfPageFrame` (which records the props of each render), AI page snapshots and `window.confirm`. Capture runs through a passthrough spy. The panel, dialogs, editor, anchors, capture and screenplay code are real.
+- **`ui/ScriptViewerPage.test.jsx`** characterizes the page end to end: capture, indexing, editing, re-capture, suggestions, saving, prompts, keys, AI proposals, visitors, and page-frame prop identity. It doubles only the edges: the API modules the page calls (`@/shared/api/*.js`), the session hook, `react-pdf`, the text indexer (a store the test publishes indexes to), page windowing, `PdfPageFrame` (which records the props of each render), AI page snapshots and `window.confirm`. Capture runs through a passthrough spy. The panel, dialogs, editor, anchors, capture and screenplay code are real.
 - **`model/sceneDraft.test.jsx`** tests the hook's interface directly: the committed-view rule, identities, capture work, request tokens under `StrictMode`, AI proposal provenance, re-capture options, editor keys, undo limits, and the exact save mapping.
 
 Both suites cover persistence response races: switching drafts, preserving newer edits, attaching the id from a first save, and keeping newer changes after deletion. Hook tests also cover an edit/reset and a response queued in the same React batch.
