@@ -2,15 +2,20 @@ import { act, render, renderHook } from "@testing-library/react";
 import { Component, StrictMode, useLayoutEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  LEGACY_RAW,
   legacyScene,
+  OTHER_TEXT,
+  otherScene,
   page1,
   page2,
   page3,
   positionedPage,
+  SAVED_V2_TEXT,
   savedV2Scene,
   sceneRow,
   SCRIPT_PAGES,
   textIndexFrom,
+  v2Geometry,
 } from "../test/textIndexFixtures.js";
 import { captureAnchoredRange } from "./captureRange.js";
 import { useSceneDraft } from "./sceneDraft.js";
@@ -778,6 +783,7 @@ describe("buildSave", () => {
     const markdown = [RAIN, BELL, "### MAYA", `> ${MAYA_SPEECH}`].join("\n\n");
     expect(run(result, (a) => a.buildSave(7200))).toEqual({
       applySaved: expect.any(Function),
+      confirmStaleText: false,
       payload: {
         start_time_seconds: 60,
         end_time_seconds: 150,
@@ -827,6 +833,7 @@ describe("buildSave", () => {
 
     expect(run(result, (a) => a.buildSave(0))).toEqual({
       applySaved: expect.any(Function),
+      confirmStaleText: false,
       payload: {
         start_time_seconds: 60,
         end_time_seconds: 90,
@@ -966,6 +973,256 @@ describe("[B5] explicit anchors need a capture to save", () => {
       page_end: 2,
       anchor_geometry: [],
     });
+  });
+});
+
+describe("[B6] stale text under explicit anchors needs confirmation to save", () => {
+  const EDITED = "## EDITED HEADING\n\nWords typed by hand.";
+  const AI_TEXT = "## AI HEADING\n\nWords from the formatter.";
+  const PLACE_ANCHORS = "Place start and end anchors in the script to capture the scene text.";
+  /** Captured plain text for p3 lines 1–5. */
+  const P3_PLAIN = [
+    "EXT. PARKING LOT - NIGHT",
+    "Headlights sweep across the gravel as a truck pulls in slow. Its engine ticks in the cold while the wipers keep going.",
+    "Inside the cab, a figure watches the diner window and waits. Nobody gets out, and nobody in the diner seems to notice.",
+  ].join("\n\n");
+  /** The raw text and script location captured from p1 lines 1–5. */
+  const P1_SHORT_CAPTURE = {
+    raw_selected_text: P1_SHORT_PLAIN,
+    page_start: 1,
+    page_end: 1,
+    start_offset: 0,
+    end_offset: 242,
+    context_prefix: null,
+    context_suffix: `MAYA\nKitchen closed an hour ago.\nCoffee is all I can do.`,
+    anchor_geometry: v2Geometry(page1, 0, page1, 4),
+  };
+  const save = (result) => run(result, (a) => a.buildSave(0));
+
+  function setTiming(result) {
+    run(result, (a) => a.setTime("startTime", "00:01:00"));
+    run(result, (a) => a.setTime("endTime", "00:02:00"));
+  }
+
+  function anchorP1(result, endLine = 7) {
+    place(result, "start", page1, 0);
+    place(result, "end", page1, endLine);
+  }
+
+  /** What building a save, and so confirming or canceling it, must leave alone. */
+  function draftState(result) {
+    const { draft } = current(result);
+    const { text, textOrigin, textStale, legacyText, editorKey, dirty, anchors, savedScene, recaptureOption } = draft;
+    return { text, textOrigin, textStale, legacyText, editorKey, dirty, anchors, savedScene, recaptureOption };
+  }
+
+  it.each([
+    {
+      origin: "saved",
+      setup: (result) => {
+        run(result, (a) => a.loadScene(savedV2Scene));
+        place(result, "end", page3, 4);
+      },
+      payload: {
+        start_time_seconds: 600,
+        end_time_seconds: 660,
+        selected_text: SAVED_V2_TEXT,
+        raw_selected_text: P3_PLAIN,
+        formatted_selected_text: SAVED_V2_TEXT,
+        page_start: 3,
+        page_end: 3,
+        start_offset: 419,
+        end_offset: 681,
+        context_prefix: null,
+        context_suffix: null,
+        anchor_geometry: v2Geometry(page3, 0, page3, 4),
+        tags: savedV2Scene.tags,
+      },
+    },
+    {
+      origin: "edited",
+      setup: (result) => {
+        anchorP1(result);
+        setTiming(result);
+        run(result, (a) => a.editText(EDITED));
+        place(result, "end", page1, 4);
+      },
+      payload: {
+        start_time_seconds: 60,
+        end_time_seconds: 120,
+        selected_text: EDITED,
+        formatted_selected_text: EDITED,
+        ...P1_SHORT_CAPTURE,
+        tags: [],
+      },
+    },
+    {
+      origin: "ai",
+      setup: (result) => {
+        anchorP1(result);
+        setTiming(result);
+        acceptAiText(result, AI_TEXT);
+        place(result, "end", page1, 4);
+      },
+      payload: {
+        start_time_seconds: 60,
+        end_time_seconds: 120,
+        selected_text: AI_TEXT,
+        formatted_selected_text: AI_TEXT,
+        ...P1_SHORT_CAPTURE,
+        tags: [],
+      },
+    },
+  ])("asks to confirm stale $origin text, mapped with the current capture, without changing the draft", ({ origin, setup, payload }) => {
+    const { result } = renderDraft();
+    setup(result);
+    const before = draftState(result);
+    expect(before).toMatchObject({ textOrigin: origin, textStale: true, recaptureOption: "recapture" });
+
+    expect(save(result)).toEqual({ payload, applySaved: expect.any(Function), confirmStaleText: true });
+    expect(draftState(result)).toEqual(before);
+  });
+
+  it("doesn't ask for fresh text of any origin, including stale text whose anchors return", () => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    setTiming(result);
+    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { raw_selected_text: P1_PLAIN } });
+
+    run(result, (a) => a.editText(EDITED));
+    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { formatted_selected_text: EDITED } });
+    place(result, "end", page1, 4);
+    expect(save(result).confirmStaleText).toBe(true);
+    place(result, "end", page1, 7);
+    expect(save(result)).toMatchObject({
+      confirmStaleText: false,
+      payload: { formatted_selected_text: EDITED, raw_selected_text: P1_PLAIN },
+    });
+
+    acceptAiText(result, AI_TEXT);
+    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { formatted_selected_text: AI_TEXT } });
+
+    run(result, (a) => a.loadScene(savedV2Scene));
+    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { formatted_selected_text: SAVED_V2_TEXT } });
+  });
+
+  it("doesn't ask without explicit anchors, and asks once suggested anchors become explicit", () => {
+    const { result } = renderDraft();
+    run(result, (a) => a.loadScene(legacyScene));
+    expect(current(result).draft).toMatchObject({ anchorsSuggested: true, textStale: true, legacyText: true });
+    expect(save(result)).toMatchObject({
+      confirmStaleText: false,
+      payload: { raw_selected_text: LEGACY_RAW, page_start: 1, page_end: 2, anchor_geometry: [] },
+    });
+
+    place(result, "end", page2, 4);
+    expect(current(result).draft).toMatchObject({ anchorsSuggested: false, textStale: true, textOrigin: "saved" });
+    const explicit = save(result);
+    expect(explicit).toMatchObject({
+      confirmStaleText: true,
+      payload: { selected_text: LEGACY_RAW, page_start: 1, page_end: 2, anchor_geometry: v2Geometry(page1, 0, page2, 4) },
+    });
+    expect(explicit.payload.raw_selected_text).not.toBe(LEGACY_RAW);
+
+    // Clearing every anchor on a saved scene still keeps its stored location, without asking.
+    run(result, (a) => a.loadScene(savedV2Scene));
+    place(result, "end", page3, 4);
+    run(result, (a) => a.clearAnchors());
+    expect(save(result)).toMatchObject({
+      confirmStaleText: false,
+      payload: { raw_selected_text: savedV2Scene.raw_selected_text, anchor_geometry: savedV2Scene.anchor_geometry },
+    });
+  });
+
+  it("returns validation errors before asking: timing, then a missing capture, then blank text", () => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    run(result, (a) => a.editText(EDITED));
+    place(result, "end", page1, 4);
+    expect(current(result).draft.textStale).toBe(true);
+    expect(save(result)).toEqual({ error: "Enter a start and an end time for this scene." });
+
+    setTiming(result);
+    run(result, (a) => a.removeAnchor("end"));
+    expect(save(result)).toEqual({ error: "Place an end anchor in the script before saving." });
+
+    run(result, (a) => a.undoAnchors());
+    run(result, (a) => a.editText("   "));
+    expect(current(result).draft.textStale).toBe(true);
+    expect(save(result)).toEqual({ error: PLACE_ANCHORS });
+
+    run(result, (a) => a.editText(EDITED));
+    expect(save(result).confirmStaleText).toBe(true);
+  });
+
+  it("decides again for each save, so a confirmed payload never covers later edits", () => {
+    const NEWER = "## NEWER HEADING\n\nTyped after the prompt.";
+    const { result } = renderDraft();
+    anchorP1(result);
+    setTiming(result);
+    run(result, (a) => a.editText(EDITED));
+    place(result, "end", page1, 4);
+
+    const confirmed = save(result);
+    expect(confirmed.confirmStaleText).toBe(true);
+
+    run(result, (a) => a.editText(NEWER));
+    expect(save(result)).toMatchObject({ confirmStaleText: true, payload: { formatted_selected_text: NEWER } });
+    expect(confirmed.payload.formatted_selected_text).toBe(EDITED);
+
+    run(result, (a) => a.recapture());
+    expect(save(result)).toMatchObject({
+      confirmStaleText: false,
+      payload: { formatted_selected_text: [`## ${DINER}`, RAIN, BELL].join("\n\n"), raw_selected_text: P1_SHORT_PLAIN },
+    });
+  });
+
+  it("asks again after a response for a draft that changed during the save, but not once the response reloads it", () => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    setTiming(result);
+    acceptAiText(result, AI_TEXT);
+    place(result, "end", page1, 4);
+
+    const confirmed = save(result);
+    expect(confirmed.confirmStaleText).toBe(true);
+    const { editorKey } = current(result).draft;
+    run(result, (a) => a.setTime("endTime", "00:02:30"));
+    const created = sceneRow({ ...confirmed.payload, id: "scene-created" });
+    act(() => confirmed.applySaved(created));
+
+    expect(current(result).draft).toMatchObject({
+      savedScene: created,
+      text: AI_TEXT,
+      textOrigin: "ai",
+      textStale: true,
+      editorKey,
+      endTime: "00:02:30",
+      dirty: true,
+    });
+    const next = save(result);
+    expect(next).toMatchObject({ confirmStaleText: true, payload: { end_time_seconds: 150, formatted_selected_text: AI_TEXT } });
+
+    act(() => next.applySaved({ ...created, ...next.payload }));
+    expect(current(result).draft).toMatchObject({ textOrigin: "saved", textStale: false, dirty: false });
+    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { formatted_selected_text: AI_TEXT } });
+  });
+
+  it("asks for a draft opened during a confirmed save only by that draft's own text and anchors", () => {
+    const { result } = renderDraft();
+    run(result, (a) => a.loadScene(savedV2Scene));
+    place(result, "end", page3, 4);
+    const confirmed = save(result);
+    expect(confirmed.confirmStaleText).toBe(true);
+
+    run(result, (a) => a.loadScene(otherScene));
+    expect(save(result).confirmStaleText).toBe(false);
+    act(() => confirmed.applySaved({ ...savedV2Scene, ...confirmed.payload }));
+    expect(current(result).draft.savedScene).toBe(otherScene);
+    expect(save(result).confirmStaleText).toBe(false);
+
+    place(result, "end", page2, 4);
+    expect(save(result)).toMatchObject({ confirmStaleText: true, payload: { formatted_selected_text: OTHER_TEXT } });
   });
 });
 

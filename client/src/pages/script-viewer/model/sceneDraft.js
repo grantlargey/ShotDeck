@@ -288,7 +288,9 @@ const CAPTURE_UNAVAILABLE_ERRORS = {
  * shown. Without explicit anchors (none, or only suggested ones) a saved scene
  * keeps its stored location. Raw text follows the location: the capture's
  * plain text, else the saved scene's raw text, else plain text derived from
- * the scene text. The scene text is saved as it is, even when stale.
+ * the scene text. The scene text is saved as it is, even when stale, but stale
+ * text under explicit anchors sets `confirmStaleText`: it would be stored with
+ * another selection's location and raw text, so the admin must confirm first.
  */
 function buildSavePayload(draft, textIndex, capture, text, runtimeSeconds = 0) {
   const timingError = getTimingError(draft.startTime, draft.endTime, runtimeSeconds, { requireBoth: true });
@@ -347,7 +349,13 @@ function buildSavePayload(draft, textIndex, capture, text, runtimeSeconds = 0) {
       ...location,
       tags: draft.tags,
     },
+    confirmStaleText: useCapture && isTextStale(draft, capture),
   };
+}
+
+/** Stored text is stale when a capture exists under a different anchor pair; captured text never is. */
+function isTextStale(draft, capture) {
+  return Boolean(capture) && draft.textOrigin !== "capture" && capture.key !== draft.textAnchorKey;
 }
 
 function recaptureOptionFor(capture, textStale, textOrigin) {
@@ -383,7 +391,7 @@ export function useSceneDraft(textIndex) {
   const capture = useMemo(() => captureAnchoredRange(textIndex, anchors), [textIndex, anchors]);
 
   const text = state.textOrigin === "capture" ? capture?.markdown ?? "" : state.text;
-  const textStale = Boolean(capture) && state.textOrigin !== "capture" && capture.key !== state.textAnchorKey;
+  const textStale = isTextStale(state, capture);
   const editorSeed = state.textOrigin === "capture" ? capture?.key ?? "" : state.textAnchorKey;
 
   const previewScene = useMemo(
@@ -537,9 +545,12 @@ export function useSceneDraft(textIndex) {
     },
 
     /**
-     * Returns `{ error }` or `{ payload, applySaved }` for the committed draft.
-     * Call applySaved with the server response. It reconciles the saved baseline
-     * only if this draft is still open, preserving changes made during the request.
+     * Returns `{ error }` or `{ payload, applySaved, confirmStaleText }` for the
+     * committed draft. When `confirmStaleText` is true, send the payload only
+     * after the admin confirms; the answer covers this payload alone, and the
+     * next call decides again. Call applySaved with the server response. It
+     * reconciles the saved baseline only if this draft is still open,
+     * preserving changes made during the request.
      */
     buildSave(runtimeSeconds) {
       const { state: current, textIndex: index, capture: currentCapture, text: currentText } = latestRef.current;

@@ -124,6 +124,16 @@ const AI_MARKDOWN = "## INT. ROADSIDE DINER - NIGHT\n\nRain streaks the windows 
 // Version-2 anchor geometry entries, as the page saves them.
 const GEOMETRY = {
   p1Line1: { kind: "start", version: 2, unit: "pt", page: 1, line: 0, top: 86.2, bottom: 98.9, text: DINER },
+  p1Line5: {
+    kind: "end",
+    version: 2,
+    unit: "pt",
+    page: 1,
+    line: 4,
+    top: 158.2,
+    bottom: 170.9,
+    text: "shaking water from a battered canvas coat and hat.",
+  },
   p2Line4: { kind: "end", version: 2, unit: "pt", page: 2, line: 3, top: 122.2, bottom: 134.9, text: "by the window." },
   p3Line1: { kind: "start", version: 2, unit: "pt", page: 3, line: 0, top: 86.2, bottom: 98.9, text: PARKING_LOT },
   p3Line5: { kind: "end", version: 2, unit: "pt", page: 3, line: 4, top: 158.2, bottom: 170.9, text: NOBODY },
@@ -134,6 +144,8 @@ const OTHER_TIMING = "00:05:00 – 00:06:00";
 const LEGACY_TIMING = "00:02:00 – 00:03:00";
 const DISCARD_PROMPT = "Discard unsaved changes to the current scene?";
 const RECAPTURE_PROMPT = "Replace the current text with a fresh capture from the anchors? Your text edits will be lost.";
+const STALE_SAVE_PROMPT =
+  "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location and raw text will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
 const ANCHORS_MOVED = "The anchors moved after this text was captured.";
 const LEGACY_WORDING = "This scene was saved before screenplay formatting.";
 const PROPOSAL_READY = "An AI formatting proposal is ready. Nothing changes until you accept it.";
@@ -886,7 +898,10 @@ describe("saving and deleting", () => {
 
     hoverLine(3, 4);
     pressKey("]");
+    // The end anchor is back on another line than the saved text's, so that text is stale (B6).
+    answerConfirm(true);
     click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(window.confirm).toHaveBeenLastCalledWith(STALE_SAVE_PROMPT);
     expect(fakeApi.updateScriptScene).toHaveBeenCalledTimes(1);
     expect(lastSavePayload()).toMatchObject({
       end_time_seconds: 690,
@@ -930,9 +945,7 @@ describe("saving and deleting", () => {
     });
   });
 
-  it("[B6] existing compatibility behavior: saving stale text stores the new capture's location and raw text (P15)", async () => {
-    // Why this may be a bug: the record mixes scene text from one range with
-    // the script location and raw text of another.
+  it("P15 [B6] asks before saving stale Saved text with the current anchors; canceling sends nothing and keeps the draft", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene], sceneId: savedV2Scene.id });
     publishWholeScript();
 
@@ -940,7 +953,26 @@ describe("saving and deleting", () => {
     pressKey("]");
     expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
 
+    // Unscripted prompts answer false, which cancels.
     click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(window.confirm).toHaveBeenLastCalledWith(STALE_SAVE_PROMPT);
+    expect(fakeApi.updateScriptScene).not.toHaveBeenCalled();
+    expect(inPanel().getByText("Saved")).toBeTruthy();
+    expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
+    expect(inPanel().getByText("End · p. 3 · line 5")).toBeTruthy();
+    expect(timeInput("Start").value).toBe("00:10:00");
+    expect(inPanel().getByRole("button", { name: "Update scene" }).disabled).toBe(false);
+    expect(inPanel().getByRole("button", { name: "Re-capture from anchors" })).toBeTruthy();
+
+    answerConfirm(true);
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+    expect(window.confirm).toHaveBeenLastCalledWith(STALE_SAVE_PROMPT);
+    expect(fakeApi.updateScriptScene).toHaveBeenCalledTimes(1);
+    // Confirming changes nothing in the draft; only the response does.
+    expect(inPanel().getByText("Saved")).toBeTruthy();
+    expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
     expect(lastSavePayload()).toEqual({
       start_time_seconds: 600,
       end_time_seconds: 660,
@@ -956,6 +988,154 @@ describe("saving and deleting", () => {
       anchor_geometry: [GEOMETRY.p3Line1, GEOMETRY.p3Line5],
       tags: savedV2Scene.tags,
     });
+
+    // The response reloads the scene with text that belongs to its anchors, so the next save doesn't ask.
+    await settle(pending.saves[0]);
+    expect(toast("Scene updated.")).toBeTruthy();
+    expect(inPanel().queryByText(ANCHORS_MOVED)).toBeNull();
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+    expect(fakeApi.updateScriptScene).toHaveBeenCalledTimes(2);
+    expect(lastSavePayload()).toMatchObject({
+      formatted_selected_text: SAVED_V2_TEXT,
+      end_offset: 681,
+      anchor_geometry: [GEOMETRY.p3Line1, GEOMETRY.p3Line5],
+    });
+  });
+
+  it("P15 [B6] checks timing before asking about stale Edited text, and keeps re-capture as the prompted alternative", async () => {
+    await renderViewer(ScriptViewerRoute);
+    publishWholeScript();
+    placeAnchorsWithKeys([1, 0], [1, 7]);
+    openEditor();
+    fireEvent.change(editorBlock(1), { target: { value: "INT. DINER - LATE NIGHT" } });
+    closeEditor();
+    hoverLine(1, 4);
+    pressKey("]");
+    expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
+
+    click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(toast("Enter a start and an end time for this scene.")).toBeTruthy();
+    expect(window.confirm).not.toHaveBeenCalled();
+
+    typeTime("Start", "00:01:00");
+    typeTime("End", "00:02:00");
+    click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(window.confirm).toHaveBeenLastCalledWith(STALE_SAVE_PROMPT);
+    expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
+    // The timing error no longer applies once validation passes.
+    expect(screen.queryByText("Enter a start and an end time for this scene.")).toBeNull();
+    expect(inPanel().getByText("Edited")).toBeTruthy();
+    expect(inPanel().getByText("INT. DINER - LATE NIGHT")).toBeTruthy();
+    expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
+
+    // Re-capture still asks before replacing edited text.
+    answerConfirm(false);
+    click(inPanel().getByRole("button", { name: "Re-capture from anchors" }));
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+    expect(window.confirm).toHaveBeenLastCalledWith(RECAPTURE_PROMPT);
+    expect(inPanel().getByText("Edited")).toBeTruthy();
+    answerConfirm(true);
+    click(inPanel().getByRole("button", { name: "Re-capture from anchors" }));
+    expect(window.confirm).toHaveBeenCalledTimes(3);
+    expect(inPanel().getByText("Captured from PDF")).toBeTruthy();
+
+    click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(3);
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(lastSavePayload()).toMatchObject({
+      selected_text: [`## ${DINER}`, RAIN, BELL].join("\n\n"),
+      raw_selected_text: [DINER, RAIN, BELL].join("\n\n"),
+      page_start: 1,
+      page_end: 1,
+      anchor_geometry: [GEOMETRY.p1Line1, GEOMETRY.p1Line5],
+    });
+  });
+
+  it("P15 [B6] saves confirmed stale AI formatted text, and asks again for changes made while it saves", async () => {
+    await renderViewer(ScriptViewerRoute);
+    publishWholeScript();
+    placeAnchorsWithKeys([1, 0], [1, 7]);
+    typeTime("Start", "00:10:00");
+    typeTime("End", "00:11:00");
+    await requestAi(1);
+    await settle(pending.formats[0], { markdown: AI_MARKDOWN });
+    click(inPanel().getByRole("button", { name: "Review" }));
+    click(inDialog().getByRole("button", { name: "Accept proposal" }));
+    closeEditor();
+    hoverLine(1, 4);
+    pressKey("]");
+    expect(inPanel().getByText("AI formatted")).toBeTruthy();
+    expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
+
+    answerConfirm(true);
+    click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(window.confirm).toHaveBeenLastCalledWith(STALE_SAVE_PROMPT);
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(pending.saves[0].args.slice(0, 2)).toEqual(["m1", "s1"]);
+    expect(lastSavePayload()).toEqual({
+      start_time_seconds: 600,
+      end_time_seconds: 660,
+      selected_text: AI_MARKDOWN,
+      raw_selected_text: [DINER, RAIN, BELL].join("\n\n"),
+      formatted_selected_text: AI_MARKDOWN,
+      page_start: 1,
+      page_end: 1,
+      start_offset: 0,
+      end_offset: 242,
+      context_prefix: null,
+      context_suffix: `MAYA\nKitchen closed an hour ago.\nCoffee is all I can do.`,
+      anchor_geometry: [GEOMETRY.p1Line1, GEOMETRY.p1Line5],
+      tags: [],
+    });
+
+    typeTime("End", "00:11:30");
+    await settle(pending.saves[0]);
+    expect(toast("Scene saved.")).toBeTruthy();
+    expect(timeInput("End").value).toBe("00:11:30");
+    expect(inPanel().getByText("AI formatted")).toBeTruthy();
+    expect(inPanel().getByText(ANCHORS_MOVED)).toBeTruthy();
+
+    // The earlier answer doesn't carry over to the changed draft.
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+    expect(window.confirm).toHaveBeenLastCalledWith(STALE_SAVE_PROMPT);
+    expect(fakeApi.updateScriptScene).not.toHaveBeenCalled();
+
+    answerConfirm(true);
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(3);
+    expect(pending.saves[1].args[2]).toBe("scene-new-1");
+    expect(lastSavePayload()).toMatchObject({
+      end_time_seconds: 690,
+      formatted_selected_text: AI_MARKDOWN,
+      raw_selected_text: [DINER, RAIN, BELL].join("\n\n"),
+      anchor_geometry: [GEOMETRY.p1Line1, GEOMETRY.p1Line5],
+    });
+  });
+
+  it("P15 [B6] doesn't ask for a legacy scene's suggested anchors, and asks once they become explicit", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [legacyScene], sceneId: legacyScene.id });
+    publishWholeScript();
+    expect(inPanel().getByText("Suggested end · p. 2 · line 6")).toBeTruthy();
+    expect(inPanel().getByText(LEGACY_WORDING)).toBeTruthy();
+
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(lastSavePayload()).toMatchObject({ raw_selected_text: LEGACY_RAW, page_start: 1, page_end: 2, anchor_geometry: [] });
+    await settle(pending.saves[0]);
+
+    openLineMenu(2, 4);
+    click(menuItem(/^Set end anchor/));
+    expect(inPanel().getByText("End · p. 2 · line 5")).toBeTruthy();
+    click(inPanel().getByRole("button", { name: "Update scene" }));
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(window.confirm).toHaveBeenLastCalledWith(STALE_SAVE_PROMPT);
+    expect(fakeApi.updateScriptScene).toHaveBeenCalledTimes(1);
+    expect(inPanel().getByText("End · p. 2 · line 5")).toBeTruthy();
+    expect(inPanel().getByText("Saved")).toBeTruthy();
   });
 
   it("[I1] preserves a different draft when a save response arrives (P16)", async () => {

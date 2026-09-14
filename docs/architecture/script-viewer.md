@@ -4,7 +4,7 @@ The script viewer is the page where admins capture scenes from a film's script, 
 
 ## What will a scene draft save, and why?
 
-Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave(runtimeSeconds)`, which returns either `{ error }` or `{ payload, applySaved }`. The page sends `payload` to create or update the captured scene, then passes the returned scene to `applySaved`.
+Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave(runtimeSeconds)`, which returns either `{ error }` or `{ payload, applySaved, confirmStaleText }`. When `confirmStaleText` is true, the page asks the admin first and sends nothing if they cancel. The page sends `payload` to create or update the captured scene, then passes the returned scene to `applySaved`.
 
 **Validation**, in order:
 
@@ -24,7 +24,7 @@ The third and fourth checks share the message "Place start and end anchors in th
 | `"ai"` | An accepted AI proposal. |
 | `"saved"` | The saved scene's formatted text, else its raw text, else its selected text. |
 
-Text of any origin other than `"capture"` remembers the anchor pair it belongs to. When a capture exists under a different pair, the text is stale. Stale text is still saved as it is; re-capturing is the admin's choice.
+Text of any origin other than `"capture"` remembers the anchor pair it belongs to. When a capture exists under a different pair, the text is stale. Stale text is still saved as it is, but with explicit anchors only after the admin confirms. See [Stale text needs confirmation to save](#stale-text-needs-confirmation-to-save). Re-capturing is the alternative.
 
 **Script location** (`page_start`, `page_end`, `start_offset`, `end_offset`, `context_prefix`, `context_suffix`, `anchor_geometry`):
 
@@ -63,7 +63,7 @@ Accepting a ready proposal is always explicit and is never refused. The proposal
 - **Fresh again:** the anchors return to the requested pair.
 - **Never stale:** there is no capture, for example while the anchors are cleared.
 
-Saving is unchanged: stale text is saved as it is, and a draft with no script location is still refused.
+Saving follows the usual rules: stale AI text under explicit anchors needs confirmation (B6), and a draft with no script location is still refused.
 
 The editor dialog checks the draft against the current capture (`draft.capturedPlainText`) and checks the proposal against its stored baseline. A capture that changes or appears later never replaces that baseline. A newer `startProposal`, `discardProposal`, `loadScene` or `reset` replaces or drops the proposal along with its selection. Request tokens still decide whether a response applies.
 
@@ -84,11 +84,28 @@ A refused save leaves the draft as it was, and saving again works once the captu
 Unchanged:
 
 - **Without explicit anchors** (a legacy scene, suggested anchors, or a saved scene whose anchors were all cleared), a saved scene keeps its stored location.
-- **Stale text (B6)** still saves the current capture's location and raw text alongside the draft's text.
+- **Stale text** saves the current capture's location and raw text alongside the draft's text, once the admin confirms. See [Stale text needs confirmation to save](#stale-text-needs-confirmation-to-save).
 
 A saved scene opens with its stored anchors as explicit anchors. Until its range is indexed, updating it, even only its timing or tags, asks the admin to wait.
 
 This fixes B5, where explicit anchors without a capture saved the scene's previously stored location while the page showed different anchors.
+
+### Stale text needs confirmation to save
+
+With explicit anchors, saving stores the draft's text with the current capture's script location and raw text. If the text is stale (Saved, Edited or AI formatted text keyed to another anchor pair), the location and raw text belong to a different selection. `buildSave` then returns the usual payload with `confirmStaleText: true`, and the page asks:
+
+> This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location and raw text will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.
+
+- **Cancel:** no request is sent and the draft is unchanged. Re-capture stays available from the panel callout and the editor dialog, and still asks before replacing Edited or AI formatted text. Any earlier notice is cleared, because validation passed.
+- **Confirm:** the page sends exactly the payload it asked about, mapped as usual. `window.confirm` blocks, so the draft can't change between building the payload and the answer. Nothing is remembered: each save builds its own payload and decides again, so an answer never covers later edits or another draft.
+- **Afterwards:** confirming changes nothing in the draft. The response is reconciled as in [Responses arriving after the draft changes](#responses-arriving-after-the-draft-changes). An unchanged draft reloads the returned scene, whose text is now keyed to its stored anchors, so it is no longer stale. A draft that changed during the request keeps its stale text, and its next save asks again.
+
+The prompt comes after validation, so timing, a missing capture, blank text and a missing location are reported first. There's no prompt for:
+
+- captured text, or Saved, Edited or AI formatted text keyed to the capture's anchor pair;
+- drafts without explicit anchors: legacy scenes, suggested anchors (even though their legacy text is stale), and saved scenes whose anchors were all cleared. These keep their stored location. Once suggested anchors become explicit, legacy text is stale and the prompt applies.
+
+This fixes B6, where stale text was saved with another selection's location and raw text without acknowledgement.
 
 ### Existing compatibility behavior
 
@@ -96,7 +113,6 @@ These behaviors look questionable but are kept on purpose. Each is pinned by a t
 
 | ID | Behavior |
 |---|---|
-| B6 | Saving stale text stores the new capture's location and raw text alongside the old or edited scene text. |
 | C3 | Captured text can change while indexing progresses (the estimated action margin moves), but the editor dialog keeps the text it mounted with. |
 
 ## Entry points and ownership
@@ -111,7 +127,7 @@ The route `/movies/:movieId/scripts/:scriptId` is declared in `client/src/app/Ap
 | Text origin, stale text, legacy text, the editor remount key | `window.confirm` prompts and all UI wording, including re-capture button labels |
 | The dirty check | Keyboard and pointer wiring |
 | Re-capture rules, the AI proposal lifecycle and request tokens | Network calls: AI formatting, scene create, update and delete |
-| Save validation and payload (`buildSave`) | AI page snapshots and error-message mapping |
+| Save validation, payload, and whether saving needs confirmation (`buildSave`) | AI page snapshots and error-message mapping |
 | | The overlap warning, scene bars in the margin, admin vs visitor behavior |
 
 ## Module map
@@ -184,6 +200,7 @@ Timing rules:
 |---|---|
 | What gets saved | `buildSave` in `model/sceneDraft.js` |
 | Why a save is refused without a capture | `buildSavePayload` in `model/sceneDraft.js`; the reasons in `captureUnavailableReason` (`model/captureRange.js`) |
+| When saving asks to confirm stale text | `confirmStaleText` in `buildSavePayload` (`model/sceneDraft.js`); the prompt in `saveScene` (`ui/ScriptViewerPage.jsx`) |
 | Suggested anchors | `suggestAnchorsFromSavedText` in `model/anchors.js`, and the suggestions memo in `useSceneDraft` |
 | Captured text layout | `model/captureRange.js` and `@/shared/lib/screenplay` |
 | Line geometry and pointer snapping | `@/shared/lib/pdf-text` |
@@ -216,7 +233,22 @@ AI proposal provenance (H2) is covered in both suites.
 Saving explicit anchors without a capture (B5) is covered in both suites.
 
 - **Hook tests** check each message and its order after the timing check, a saved scene with a removed anchor, retrying once the range is indexed but the script isn't, indexing that finished without a range page, an anchor page with no lines, and legacy scenes with and without suggested anchors.
-- **Page tests (P14)** check that a refused save sends no request and keeps the draft, then saves once the end anchor is placed again or the range is indexed.
+- **Page tests (P14)** check that a refused save sends no request and keeps the draft, then saves once the end anchor is placed again or the range is indexed. The first test places the end anchor on a different line than the saved text's, so it now also confirms the B6 prompt.
+
+Saving stale text under explicit anchors (B6) is covered in both suites.
+
+- **Hook tests** check:
+  - `confirmStaleText` and the exact payload for stale Saved, Edited and AI formatted text, without changing the draft;
+  - no confirmation for fresh text of every origin, for anchors moved back to the text's pair, for legacy text with suggested anchors, or after all anchors are cleared;
+  - confirmation once suggested anchors become explicit;
+  - validation errors first;
+  - a new decision after later edits and re-capture;
+  - responses for a draft that changed during the request, an unchanged draft, and a different draft.
+- **Page tests (P15)** check:
+  - canceling and confirming stale Saved text, with the exact payload and no prompt after the response reloads the scene;
+  - the timing error before the prompt for stale Edited text, with re-capture still available behind its own prompt;
+  - confirmed AI formatted text, where an edit during the save keeps the text stale and the next save asks again;
+  - a legacy scene that asks only once its suggested anchors become explicit.
 
 Shared fixtures live in `test/`. `textIndexFixtures.js` builds synthetic screenplay pages through the real line builder. Its `textIndexFrom` repeats the indexer's publish step (page offsets and the action margin), so keep it in step with `useScriptTextIndex.js`. `pageHarness.js` holds the page suite's doubles and helpers.
 
@@ -225,3 +257,12 @@ A test named "[ID] existing compatibility behavior: …", with a "Why this may b
 jsdom has no layout, so real PDF rendering, pointer snapping and caret behavior need a browser. Check them manually against a non-production database: place anchors with `[` and `]`, edit in the dialog, re-capture, accept an AI proposal, save and reload.
 
 Persistence was also verified on 2026-09-14 using Chromium, the real Express routes and serializers, and a disposable Postgres database with synthetic records. Login/session cookies, capture/save, reload/reopen, update, and delete passed. A delayed real save response preserved a newer time edit, which could then be saved to the same row. Only PDF delivery was replaced with a synthetic local fixture; all external browser traffic was blocked. This does not verify S3 credentials/CORS, actual AI responses, concurrent database overlap enforcement, or production deployment.
+
+B6 was verified the same way on 2026-09-14, with S3 sends stubbed to fail:
+
+- A fresh capture saved without a prompt.
+- After reopening the scene from the database and moving its end anchor, canceling the prompt sent no request and left the draft and stored row unchanged.
+- Confirming stored the kept text with the new anchors' location and raw text. After a reload, the next update didn't ask.
+- Confirmed stale Edited text was saved while its response was held. A time edit made during the request survived the response, and the next save asked again and sent nothing when canceled.
+
+AI formatted text was covered only by the page tests, because the check calls no AI service.

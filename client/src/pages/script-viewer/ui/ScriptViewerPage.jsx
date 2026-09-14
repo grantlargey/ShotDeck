@@ -46,6 +46,10 @@ const RECAPTURE_LABELS = {
   revert: "Revert to captured text",
 };
 
+// Asked before saving stale text with the current anchors' location and raw text.
+const STALE_SAVE_PROMPT =
+  "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location and raw text will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
+
 function parsePageParam(value) {
   const page = Number(value);
   return value !== null && Number.isInteger(page) && page > 0 ? page : null;
@@ -340,15 +344,17 @@ function ScriptViewerPage() {
   // ---------- Persistence ----------
 
   async function saveScene() {
-    const { error, payload, applySaved } = draftActions.buildSave(runtimeSeconds);
+    const { error, payload, applySaved, confirmStaleText } = draftActions.buildSave(runtimeSeconds);
     if (error) {
       setNotice({ tone: "error", text: error });
       return;
     }
+    setNotice(null);
+    // The prompt blocks, so the answer covers exactly this payload; the next save asks again.
+    if (confirmStaleText && !window.confirm(STALE_SAVE_PROMPT)) return;
 
     const wasEditing = Boolean(draftSceneId);
     setSaving(true);
-    setNotice(null);
     try {
       const saved = wasEditing
         ? await scriptSceneActions.update(movieId, scriptId, draftSceneId, payload)
