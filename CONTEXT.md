@@ -22,6 +22,10 @@ _Avoid_: Anchor (for the whole location), selection
 The start and end time within the film that a captured scene covers.
 _Avoid_: Time range, timestamps
 
+**Overlapping scenes**:
+Captured scenes of the same script whose film timings share any moment besides the point where one ends and the other begins, or whose script locations share a line. Scenes can't overlap; scenes that only touch are fine.
+_Avoid_: Conflicting scenes, time collision
+
 **Legacy scene**:
 A captured scene whose script location has no usable pair of scene anchors, such as one saved before anchors existed.
 _Avoid_: Old scene, unanchored scene
@@ -67,3 +71,9 @@ _Avoid_: Stale capture, outdated capture
 **AI proposal**:
 Screenplay text the AI formatter suggests for a scene draft; it changes nothing until the admin accepts it.
 _Avoid_: AI format, AI suggestion, formatting result
+
+### Films
+
+**Still**:
+An image from a film, placed at one moment of the film.
+_Avoid_: Annotation, image annotation
