@@ -93,9 +93,12 @@ const MAIN_SCRIPT_SCENES = [
         geometry: anchorPair({ startPage: 11, startLine: 40, endPage: 12, endLine: 3 }),
     },
     { n: 22, start: 11100, end: 11110, geometry: lines(12, 0, 2) },
-    // A reversed pair, stored start after end, around another scene's lines.
+    // A reversed pair, start after end, across another scene's lines: not a valid pair, so not compared.
     { n: 23, start: 12000, end: 12010, geometry: lines(13, 10, 2) },
     { n: 24, start: 12100, end: 12110, geometry: lines(13, 5, 6) },
+    // A one-line scene, with start and end on the same line, has a valid pair.
+    { n: 37, start: 13000, end: 13010, geometry: lines(14, 0, 0) },
+    { n: 38, start: 13100, end: 13110, geometry: lines(14, 0, 3) },
     // Geometry without a valid pair, carrying scene text variants.
     { n: 25, start: 20000, end: 20010, geometry: [], anchor: { selected_text: "Mara pours the coffee." } },
     {
@@ -325,14 +328,14 @@ describe("the inventory report", () => {
         assert.deepEqual(report.script_annotations, { total: 2, matched: 1, unmatched: figure(legacy.unmatched) });
     });
 
-    test("sorts captured scenes by their anchor pair, under the server's strict version-2 check", () => {
+    test("sorts captured scenes by their anchor pair, under the server's strict version-2 check and order", () => {
         assert.deepEqual(report.captured_scenes, {
-            total: 36,
-            valid_anchor_pair: 27,
-            reversed_anchor_pair: scenes(23),
+            total: 38,
+            valid_anchor_pair: 28,
             without_valid_anchor_pair: {
-                count: 9,
+                count: 10,
                 empty_geometry: scenes(25),
+                reversed: scenes(23),
                 lenient_only: scenes(29, 30, 31, 32),
                 one_sided: scenes(27),
                 pixel_geometry: scenes(26),
@@ -369,9 +372,9 @@ describe("the inventory report", () => {
     });
 
     test("pairs scenes of one script whose valid pairs' line ranges share a line, but not adjacent lines", () => {
-        // Scene 23's pair is stored reversed; its range still runs from its earlier anchor to its later one.
+        // Scene 23's reversed pair isn't compared, though its lines cover scene 24's.
         assert.deepEqual(report.script_location, {
-            overlapping_pairs: scenePairs([13, 14], [15, 16], [21, 22], [23, 24]),
+            overlapping_pairs: scenePairs([13, 14], [15, 16], [21, 22], [37, 38]),
         });
     });
 
