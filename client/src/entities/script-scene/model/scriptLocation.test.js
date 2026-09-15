@@ -234,6 +234,59 @@ describe("findOverlappingScriptLocation", () => {
     expect(anchorsFromGeometry(reversed.anchor_geometry)).toEqual({ start: anchor(4, 0), end: anchor(3, 5) });
   });
 
+  describe("reads both pairs as strictly as the server", () => {
+    const draftAnchors = span([1, 3], [2, 0]);
+
+    it("compares a strictly valid stored pair", () => {
+      expect(overlaps(located("other", [1, 0], [1, 5]), draftAnchors)).toBe(true);
+    });
+
+    it.each([
+      ["no unit", { unit: undefined }],
+      ["a unit other than pt", { unit: "px" }],
+      ["page 0", { page: 0 }],
+      ["line -1", { line: -1 }],
+      ["null text", { text: null }],
+      ["a non-finite top", { top: Number.POSITIVE_INFINITY }],
+      ["a non-finite bottom", { bottom: Number.NaN }],
+      ["a string version", { version: "2" }],
+    ])("skips another scene whose start anchor has %s", (_, defect) => {
+      const other = { ...located("other", [1, 0], [1, 5]) };
+      other.anchor_geometry = [{ ...other.anchor_geometry[0], ...defect }, other.anchor_geometry[1]];
+      expect(findOverlappingScriptLocation([other], draftAnchors)).toBeNull();
+    });
+
+    it("skips another scene stored without units, although its anchors still read for display", () => {
+      const noUnit = {
+        id: "no-unit",
+        anchor_geometry: [
+          { kind: "start", version: 2, page: 1, line: 0, top: 100, bottom: 110, text: "x" },
+          { kind: "end", version: 2, page: 1, line: 5, top: 160, bottom: 170, text: "y" },
+        ],
+      };
+      expect(findOverlappingScriptLocation([noUnit], draftAnchors)).toBeNull();
+      expect(anchorsFromGeometry(noUnit.anchor_geometry)).not.toBeNull();
+    });
+
+    it("takes a repeated kind's last strictly valid entry, passing over later invalid ones", () => {
+      const other = located("other", [1, 0], [1, 5]);
+      // A later start without a unit reads leniently as line 9, after the end, but the server keeps line 0.
+      const laterInvalid = { ...other, anchor_geometry: [...other.anchor_geometry, entry("start", 1, 9, { unit: undefined })] };
+      expect(findOverlappingScriptLocation([laterInvalid], draftAnchors)).toBe(laterInvalid);
+      // A later valid end still replaces the earlier one, moving the scene off the draft's lines.
+      const laterValid = { ...other, anchor_geometry: [...other.anchor_geometry, entry("end", 1, 2)] };
+      expect(findOverlappingScriptLocation([laterValid], draftAnchors)).toBeNull();
+    });
+
+    it("compares a draft's anchors when they would store strictly, and nothing otherwise", () => {
+      const scenes = [located("other", [1, 0], [9, 0])];
+      expect(findOverlappingScriptLocation(scenes, draftAnchors)).toBe(scenes[0]);
+      for (const defect of [{ page: 0 }, { line: -1 }, { text: null }, { top: Number.NaN }, { bottom: undefined }]) {
+        expect(findOverlappingScriptLocation(scenes, { ...draftAnchors, start: { ...draftAnchors.start, ...defect } })).toBeNull();
+      }
+    });
+  });
+
   it("skips legacy scenes, even when their pages cover the anchors", () => {
     const legacy = [
       { id: "empty", page_start: 1, page_end: 9, anchor_geometry: [] },

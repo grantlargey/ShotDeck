@@ -19,9 +19,10 @@
  * Captured scenes of the same script can't overlap. Two script locations
  * overlap when their anchor ranges share a line: comparing `(page, line)`,
  * `a.first <= b.last && b.first <= a.last`. Scenes on adjacent lines are fine,
- * however close their lines sit on the page. A valid anchor pair has its start
- * at or before its end, so a scene without one isn't compared: a legacy scene,
- * until they're removed, or a stored pair whose end comes before its start.
+ * however close their lines sit on the page. Only valid anchor pairs are
+ * compared, read as strictly as the server reads them, so the client never
+ * refuses a save the server accepts. Reading anchors for display stays lenient
+ * until legacy scenes are removed.
  */
 
 const GEOMETRY_VERSION = 2;
@@ -39,7 +40,9 @@ export function anchorsToGeometry(anchors) {
 /**
  * A stored scene's anchors, `{ start, end }`, or null for a legacy scene. An
  * entry needs version 2, a start or end kind, a whole page and line, and a
- * finite top and bottom; when a kind repeats, its last valid entry wins.
+ * finite top and bottom; when a kind repeats, its last valid entry wins. This
+ * reading is lenient, for display; the overlap rule reads stored anchors
+ * strictly, as the server does.
  */
 export function anchorsFromGeometry(geometry) {
   const anchors = { start: null, end: null };
@@ -100,29 +103,59 @@ export function compareAnchors(left, right) {
   return left.page - right.page || left.line - right.line;
 }
 
-function isLine(anchor) {
-  return Number.isInteger(anchor?.page) && Number.isInteger(anchor?.line);
+/**
+ * Whether a geometry entry is a scene anchor as the server accepts one: a start
+ * or end kind, version 2, in PDF points, a whole page from 1 and a whole line
+ * from 0, a finite top and bottom, and text.
+ */
+function isStrictSceneAnchor(entry) {
+  return (
+    typeof entry === "object" &&
+    entry !== null &&
+    (entry.kind === "start" || entry.kind === "end") &&
+    entry.version === GEOMETRY_VERSION &&
+    entry.unit === "pt" &&
+    Number.isInteger(entry.page) &&
+    entry.page >= 1 &&
+    Number.isInteger(entry.line) &&
+    entry.line >= 0 &&
+    Number.isFinite(entry.top) &&
+    Number.isFinite(entry.bottom) &&
+    typeof entry.text === "string"
+  );
 }
 
-/** Whether anchors are a valid pair for comparing script locations: a start and an end, the start at or before the end. */
-function isLinePair(anchors) {
-  return isLine(anchors?.start) && isLine(anchors?.end) && compareAnchors(anchors.start, anchors.end) <= 0;
+/**
+ * The anchor pair the overlap rule compares, or null: each kind's last strictly
+ * valid entry, when both kinds have one and the start is at or before the end.
+ */
+function validAnchorPair(geometry) {
+  const anchors = { start: null, end: null };
+  for (const entry of Array.isArray(geometry) ? geometry : []) {
+    if (isStrictSceneAnchor(entry)) anchors[entry.kind] = entry;
+  }
+  return anchors.start && anchors.end && compareAnchors(anchors.start, anchors.end) <= 0 ? anchors : null;
 }
 
 /**
  * The first captured scene whose script location shares a line with the
  * anchors `{ start, end }`, or null. Skips the scene with `excludeSceneId`,
- * usually the draft's own saved scene, and scenes without a valid anchor pair:
- * legacy scenes, and stored pairs whose end comes before their start. Anchors
- * that aren't a valid pair themselves overlap nothing.
+ * usually the draft's own saved scene.
+ *
+ * Both sides need a valid anchor pair, by the server's rule: the anchors as
+ * `anchorsToGeometry` stores them, and each other scene's stored geometry.
+ * Every entry is checked strictly, so a scene is skipped when it's a legacy
+ * scene, when its pair only reads leniently (no `unit`, a page below 1, a line
+ * below 0, or text that isn't a string), or when its end comes before its start.
  */
 export function findOverlappingScriptLocation(scenes, anchors, excludeSceneId) {
-  if (!isLinePair(anchors)) return null;
+  const pair = validAnchorPair(anchorsToGeometry(anchors));
+  if (!pair) return null;
 
   for (const scene of Array.isArray(scenes) ? scenes : []) {
     if (excludeSceneId && scene?.id === excludeSceneId) continue;
-    const other = anchorsFromGeometry(scene?.anchor_geometry);
-    if (isLinePair(other) && compareAnchors(anchors.start, other.end) <= 0 && compareAnchors(other.start, anchors.end) <= 0) {
+    const other = validAnchorPair(scene?.anchor_geometry);
+    if (other && compareAnchors(pair.start, other.end) <= 0 && compareAnchors(other.start, pair.end) <= 0) {
       return scene;
     }
   }

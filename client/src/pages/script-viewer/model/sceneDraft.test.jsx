@@ -1602,6 +1602,37 @@ describe("overlapping scenes", () => {
     expect(saveWith(result, [copy, otherScene])).toEqual({ error: LINES_OVERLAP_OTHER });
   });
 
+  it("saves anchors sharing lines with another scene whose stored anchors the server wouldn't compare, such as anchors without a unit", () => {
+    const LINES_OVERLAP_TOP_OF_P1 =
+      "These anchors share lines with the scene at 00:15:00 – 00:16:00. Move the anchors so the scenes don't overlap.";
+    // Stored anchors on p1 lines 1–6 that read for display but have no unit, so the server skips them.
+    const withoutUnit = sceneRow({
+      id: "scene-p1-top",
+      start_time_seconds: 900,
+      end_time_seconds: 960,
+      page_start: 1,
+      page_end: 1,
+      anchor_geometry: [
+        { kind: "start", version: 2, page: 1, line: 0, top: 100, bottom: 110, text: "x" },
+        { kind: "end", version: 2, page: 1, line: 5, top: 160, bottom: 170, text: "y" },
+      ],
+    });
+    const withUnit = sceneRow({
+      ...withoutUnit,
+      anchor_geometry: withoutUnit.anchor_geometry.map((item) => ({ ...item, unit: "pt" })),
+    });
+
+    const { result } = renderDraft();
+    setTiming(result, "00:01:00", "00:02:00");
+    place(result, "start", page1, 3);
+    place(result, "end", page2, 0);
+    expect(saveWith(result, [withUnit])).toEqual({ error: LINES_OVERLAP_TOP_OF_P1 });
+    expect(saveWith(result, [withoutUnit])).toMatchObject({
+      confirmStaleText: false,
+      payload: { page_start: 1, page_end: 2, anchor_geometry: v2Geometry(page1, 3, page2, 0) },
+    });
+  });
+
   it("saves anchors that start on the line after another scene ends on the same page, even where the line boxes touch", () => {
     const LINES_OVERLAP_TOP_OF_P1 =
       "These anchors share lines with the scene at 00:15:00 – 00:16:00. Move the anchors so the scenes don't overlap.";
