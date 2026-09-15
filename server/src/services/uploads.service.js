@@ -7,7 +7,9 @@ import {
 } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
 
-export async function createUploadPresign({ movieId, type, contentType }) {
+/** Reads a presign request, `{ movieId, type, contentType }`, and signs a PUT for a new key in the type's folder. */
+export async function createUploadPresign(body) {
+    const { movieId, type, contentType } = body ?? {};
     const isImageUpload = type === "cover" || type === "annotation";
     const isScriptUpload = type === "script";
 

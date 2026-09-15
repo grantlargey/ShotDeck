@@ -85,10 +85,8 @@ describe("presigning an upload", () => {
         await expectError(presign({ movieId: randomUUID(), type: "cover", contentType: "image/png" }, {}), 401, "Sign in to make changes.");
     });
 
-    // changes in 05: expected to become a 400 (B9)
-    test("a signed-in request with no body at all is a 500", async (t) => {
-        t.mock.method(console, "error", () => {});
-        await expectError(api.post("/uploads/presign", { cookie }), 500, "Something went wrong on the server.");
+    test("a signed-in request with no body at all is a 400", async () => {
+        await expectError(api.post("/uploads/presign", { cookie }), 400, INVALID_PRESIGN);
     });
 });
 
