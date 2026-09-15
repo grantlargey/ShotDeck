@@ -6,14 +6,13 @@ import {
     assertSameRecords,
     createMovie,
     createMovieWithScript,
-    createScene,
     saveScript,
     signedUrlPattern,
 } from "./helpers/fixtures.js";
 
 /*
- * Characterization of the script routes: POST and GET /movies/:id/scripts,
- * GET /movies/:movieId/scripts/:scriptId and GET /movies/:movieId/scene-by-time.
+ * Characterization of the script routes: POST and GET /movies/:id/scripts
+ * and GET /movies/:movieId/scripts/:scriptId. The scene-by-time route is gone.
  *
  * "changes in NN" marks behavior that overhaul issue NN is expected to change.
  */
@@ -104,58 +103,10 @@ describe("reading scripts", () => {
     });
 });
 
-// changes in 04: the scene-by-time route and its chain are deleted (B2)
-describe("finding the captured scene at a film time", () => {
-    const INVALID_TIME = "Invalid time query parameter. Expected non-negative number.";
-
-    test("requires a non-negative time", async () => {
-        const { movie } = await createMovieWithScript(api, cookie);
-        for (const search of ["", "?time=abc", "?time=-1"]) {
-            await expectError(api.get(`/movies/${movie.id}/scene-by-time${search}`), 400, INVALID_TIME);
-        }
-    });
-
-    test("reports a missing script, or a time no scene covers", async () => {
-        const noScript = await createMovie(api, cookie);
-        assert.deepEqual((await api.get(`/movies/${noScript.id}/scene-by-time?time=10`)).body, {
-            found: false,
-            reason: "NO_SCRIPT",
-            script_id: null,
-            scene_id: null,
-        });
-
+describe("the scene-by-time route", () => {
+    test("is gone: GET /movies/:movieId/scene-by-time answers 404", async () => {
         const place = await createMovieWithScript(api, cookie);
-        assert.deepEqual((await api.get(`/movies/${place.movie.id}/scene-by-time?time=10&script_id=${randomUUID()}`)).body, {
-            found: false,
-            reason: "NO_SCRIPT",
-            script_id: null,
-            scene_id: null,
-        });
-        assert.deepEqual((await api.get(`/movies/${place.movie.id}/scene-by-time?time=10`)).body, {
-            found: false,
-            reason: "NO_SCENE_FOR_TIMESTAMP",
-            script_id: place.script.id,
-            scene_id: null,
-        });
-    });
-
-    test("finds the scene whose film timing covers the time, edges included", async () => {
-        const place = await createMovieWithScript(api, cookie);
-        const scene = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120, page_start: 2, page_end: 3 });
-        const expected = {
-            found: true,
-            reason: null,
-            script_id: place.script.id,
-            scene_id: scene.id,
-            page_start: 2,
-            page_end: 3,
-            start_time_seconds: 60,
-            end_time_seconds: 120,
-        };
-        for (const time of ["60", "90", "120"]) {
-            const response = await api.get(`/movies/${place.movie.id}/scene-by-time?time=${time}&script_id=${place.script.id}`);
-            assert.equal(response.status, 200);
-            assert.deepEqual(response.body, expected);
-        }
+        const response = await api.get(`/movies/${place.movie.id}/scene-by-time?time=10&script_id=${place.script.id}`);
+        assert.equal(response.status, 404);
     });
 });

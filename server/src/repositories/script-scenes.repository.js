@@ -366,31 +366,3 @@ export async function deleteScriptSceneRow(db, { movieId, scriptId, sceneId }) {
 
     return result.rows[0] || null;
 }
-
-export async function findSceneByTime(db, { movieId, scriptId, timeSeconds }) {
-    const result = await db.query(
-        `
-        SELECT
-          sc.id AS scene_id,
-          sc.script_id,
-          sc.start_time_seconds,
-          sc.end_time_seconds,
-          a.page_start,
-          a.page_end
-        FROM script_scene_annotations sc
-        JOIN script_scene_anchors a ON a.id = sc.anchor_id
-        WHERE sc.movie_id = $1
-          AND sc.script_id = $2
-          AND sc.start_time_seconds <= $3
-          AND sc.end_time_seconds >= $3
-        ORDER BY
-          (sc.end_time_seconds - sc.start_time_seconds) ASC,
-          sc.start_time_seconds ASC,
-          sc.id ASC
-        LIMIT 1
-      `,
-        [movieId, scriptId, timeSeconds]
-    );
-
-    return result.rows[0] || null;
-}
