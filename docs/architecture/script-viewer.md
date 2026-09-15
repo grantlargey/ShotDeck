@@ -47,11 +47,9 @@ Captured scenes of the same script can't overlap. `buildSave` compares the draft
 | Overlap | When two scenes overlap | Message |
 |---|---|---|
 | Film timing, checked right after the timing itself | `a.start < b.end && b.start < a.end`, in seconds (`findOverlappingFilmTiming`). Scenes that only touch are fine, so a zero-length timing overlaps only a scene that strictly contains it. Scenes without usable timing aren't compared. | "This scene's film timing overlaps the scene at 00:10:00 – 00:12:00. Scenes can touch but not overlap." |
-| Script location, checked last, once a location exists | The location being saved shares a line with the other scene's anchors (`findOverlappingSavedScene` in `model/anchors.js`). That location comes from the explicit anchors, else from the saved scene's stored anchors. Locations without a valid anchor pair, such as legacy scenes, aren't compared. | "These anchors share lines with the scene at 00:10:00 – 00:12:00. Move the anchors so the scenes don't overlap." |
+| Script location, checked last, once a location exists | The location being saved shares a line with the other scene's anchors, comparing `(page, line)` inclusively, so adjacent lines are fine (`findOverlappingScriptLocation` in `@/entities/script-scene/model/scriptLocation.js`). That location comes from the explicit anchors, else from the saved scene's stored anchors. Locations without a valid anchor pair (a start at or before an end), such as legacy scenes or stored pairs whose end comes before their start, aren't compared. | "These anchors share lines with the scene at 00:10:00 – 00:12:00. Move the anchors so the scenes don't overlap." |
 
-While the anchors in effect share a line with another scene, the panel shows the script location message as an error callout with an "Edit that scene" action (`scriptLocationOverlapError`). The callout follows the anchors in effect, so suggested anchors can show it for a legacy scene even though saving keeps, and doesn't compare, that scene's stored location. Film timing overlap has no live callout; saving reports it.
-
-Known limit: `findOverlappingSavedScene` compares the anchors' vertical positions rather than their line numbers, so two adjacent lines set closer together than their own height count as sharing a line.
+While the anchors in effect share a line with another scene, the panel shows the script location message as an error callout with an "Edit that scene" action (`scriptLocationOverlapError`). The page finds that scene with the same `findOverlappingScriptLocation`. The callout follows the anchors in effect, so suggested anchors can show it for a legacy scene even though saving keeps, and doesn't compare, that scene's stored location. Film timing overlap has no live callout; saving reports it.
 
 ### Responses arriving after the draft changes
 
@@ -187,7 +185,7 @@ Where a stored captured scene sits in its script is read outside the page slice,
 - **Scene anchors:** version-2 geometry read and write (`anchorsFromGeometry`, `anchorsToGeometry`). Reading returns null for a legacy scene.
 - **Pages:** `scenePageRange` and its label, `formatScenePages`. Pages are known only when `page_start` is, because the API orders scenes by `page_start` alone. Unknown pages get no label, not "Page 1".
 - **Scroll target:** `sceneScrollTarget` is the start anchor's line, else the first page, else null, in which case the page doesn't scroll.
-- **Script location overlap:** `findOverlappingScriptLocation` compares `(page, line)` ranges inclusively, so ranges that share a line overlap and adjacent lines don't. A valid anchor pair has its start at or before its end. The check skips the excluded scene and any scene without a valid pair: a legacy scene, or a stored pair whose end comes before its start. The page's overlap warning uses it.
+- **Script location overlap:** `findOverlappingScriptLocation` compares `(page, line)` ranges inclusively, so ranges that share a line overlap and adjacent lines don't. A valid anchor pair has its start at or before its end. The check skips the excluded scene and any scene without a valid pair: a legacy scene, or a stored pair whose end comes before its start. `buildSave`'s script location check and the page's overlap callout both use it.
 
 `client/src/entities/script-scene/model/capturedScene.js` reads pages through that module for `sortScriptScenes`, which matches the API's list order (first page with unknown pages last, then film timing start, then creation time), and for `getSceneScriptPath`, which leaves out `page` when it's unknown.
 
@@ -244,13 +242,12 @@ Timing rules:
 |---|---|
 | What gets saved | `buildSave` in `model/sceneDraft.js` |
 | Film timing validation, overlap, range labels and the single-moment check | `@/entities/script-scene/model/filmTiming.js` |
-| Script location overlap | `findOverlappingSavedScene` in `model/anchors.js`; the message in `scriptLocationOverlapError` (`model/sceneDraft.js`) |
+| Script location overlap | `findOverlappingScriptLocation` in `@/entities/script-scene/model/scriptLocation.js`; the message in `scriptLocationOverlapError` (`model/sceneDraft.js`) |
 | Typed-time parsing, formatting and normalizing | `@/shared/lib/time.js` |
 | Why a save is refused without a capture | `buildSavePayload` in `model/sceneDraft.js`; the reasons in `captureUnavailableReason` (`model/captureRange.js`) |
 | When saving asks to confirm stale text | `confirmStaleText` in `buildSavePayload` (`model/sceneDraft.js`); the prompt in `saveScene` (`ui/ScriptViewerPage.jsx`) |
 | Suggested anchors | `suggestAnchorsFromSavedText` in `model/anchors.js`, and the suggestions memo in `useSceneDraft` |
 | How stored anchors are read and written, a scene's pages, page label and scroll target | `@/entities/script-scene/model/scriptLocation.js` |
-| Script location overlap | `findOverlappingScriptLocation` in `@/entities/script-scene/model/scriptLocation.js` |
 | Scene order and links to a scene | `sortScriptScenes` and `getSceneScriptPath` in `@/entities/script-scene/model/capturedScene.js` |
 | Captured text layout | `model/captureRange.js`, `@/shared/lib/screenplay/layoutClassifier.js` and `@/shared/lib/screenplay/grammar.js` |
 | Line geometry and pointer snapping | `@/shared/lib/pdf-text/pageTextLines.js` |
@@ -326,9 +323,12 @@ Captured text that changes during indexing (C3) is covered in both suites. `marg
 
 Overlapping scenes are covered at three levels.
 
-- **Module tests** in `client/src/entities/script-scene/model/filmTiming.test.js` check the film timing rules through their exports: time formats, an unknown runtime, end before start, labels, moments at both endpoints, and overlap (overlapping, touching on either side, identical ranges, containment, zero-length inside another scene and at its edge, and the excluded row). `client/src/shared/lib/time.test.js` covers typed-time parsing, formatting and normalizing.
-- **Hook tests** check that overlapping film timing is refused with its message and the draft unchanged, that touching timing saves, that the draft's own scene and untimed scenes are ignored, and the order: timing format and runtime, then film timing overlap, then B5's capture. For script locations they check that shared lines are refused after the blank-text check and before the B6 prompt, that adjacent lines save, that legacy locations aren't compared, and that a stored location kept after clearing anchors is.
-- **Page tests (P20)** check that overlapping film timing and anchors that share a line send no request, that the panel's overlap callout is an error, and that touching timing and adjacent anchors save.
+- **Module tests** in `client/src/entities/script-scene/model/filmTiming.test.js` check the film timing rules through their exports: time formats, an unknown runtime, end before start, labels, moments at both endpoints, and overlap (overlapping, touching on either side, identical ranges, containment, zero-length inside another scene and at its edge, and the excluded row). `client/src/shared/lib/time.test.js` covers typed-time parsing, formatting and normalizing. The script location rule is tested in `scriptLocation.test.js`, described above.
+- **Hook tests** check that overlapping film timing is refused with its message and the draft unchanged, that touching timing saves, that the draft's own scene and untimed scenes are ignored, and the order: timing format and runtime, then film timing overlap, then B5's capture. For script locations they check:
+  - shared lines are refused after the blank-text check and before the B6 prompt;
+  - adjacent lines save, both across a page break and on one page where the line boxes touch;
+  - legacy locations aren't compared, but a stored location kept after clearing anchors is.
+- **Page tests (P20)** check that overlapping film timing and anchors that share a line send no request, and that the panel's overlap callout is an error. They also check that touching timing saves, and that adjacent anchors save both across a page break and on one page where the line boxes touch.
 
 Shared fixtures live in `test/`. `textIndexFixtures.js` builds synthetic screenplay pages through the real line builder. Its `textIndexFrom` repeats the indexer's publish step (page offsets and the action margin), so keep it in step with `useScriptTextIndex.js`. `pageHarness.js` holds the page suite's doubles and helpers.
 
