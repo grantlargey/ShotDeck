@@ -27,7 +27,7 @@ const failedAt = new Map();
 let draining = false;
 
 /** A thumbnail lives in a `thumbs/` folder beside its image, under the same key prefix. */
-export function getThumbnailKey(imageKey) {
+function getThumbnailKey(imageKey) {
     const { dir, base } = path.posix.parse(imageKey);
     return path.posix.join(dir, "thumbs", `${base}.webp`);
 }
@@ -67,7 +67,7 @@ async function drain(db) {
 }
 
 /** Queues thumbnails for these images and returns right away. */
-export function queueThumbnails(db, imageKeys) {
+function queueThumbnails(db, imageKeys) {
     const now = Date.now();
     for (const imageKey of imageKeys) {
         if (!imageKey || pendingImageKeys.has(imageKey)) continue;

@@ -12,7 +12,7 @@ if (!region || !bucket) {
   console.warn("Missing AWS_REGION or S3_BUCKET in server/.env");
 }
 
-export const s3 = new S3Client({ region });
+const s3 = new S3Client({ region });
 
 // View URLs are signed from the start of a fixed window, so a key keeps the same
 // URL for the whole window: browsers reuse cached images and the API skips
