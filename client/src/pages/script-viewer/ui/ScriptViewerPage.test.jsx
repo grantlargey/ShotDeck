@@ -29,6 +29,7 @@ import {
   settle,
   timeInput,
   typeTime,
+  windowingDouble,
 } from "../test/pageHarness.js";
 import {
   LEGACY_RAW,
@@ -1723,5 +1724,66 @@ describe("P20 overlapping scenes", () => {
         { kind: "end", page: 2, line: 0 },
       ],
     });
+  });
+});
+
+// ---------- P21: scrolling to a scene ----------
+
+describe("P21 scrolling to a scene", () => {
+  // A legacy scene whose pages are unknown, so it has no scroll target.
+  const unplacedScene = sceneRow({
+    id: "scene-unplaced",
+    start_time_seconds: 1200,
+    end_time_seconds: 1260,
+    selected_text: "Words saved before pages were recorded.",
+    raw_selected_text: "Words saved before pages were recorded.",
+  });
+  const UNPLACED_TIMING = "00:20:00 – 00:21:00";
+  // savedV2Scene's start anchor is p3's first line, 86.2pt down the page.
+  const TO_SAVED_V2_START = [3, expect.objectContaining({ offsetPx: 86.2 })];
+
+  function showInScript() {
+    click(within(screen.getByRole("dialog")).getByRole("button", { name: "Show in script" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }
+
+  it.each([
+    ["an admin", true],
+    ["a visitor", false],
+  ])("scrolls %s to a deep-linked scene's start anchor with only a sceneId", async (_, admin) => {
+    await renderViewer(ScriptViewerRoute, { admin, scenes: [savedV2Scene], sceneId: savedV2Scene.id });
+
+    await waitFor(() => expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1));
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledWith(3, expect.objectContaining({ behavior: "auto", offsetPx: 86.2 }));
+  });
+
+  it("doesn't scroll an admin to a scene without a known page, from a deep link or its card", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene, unplacedScene], sceneId: unplacedScene.id });
+    await waitFor(() => expect(sceneTitle()).toBe(UNPLACED_TIMING));
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+
+    click(sceneCard(V2_TIMING));
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(...TO_SAVED_V2_START);
+
+    click(sceneCard(UNPLACED_TIMING));
+    expect(sceneTitle()).toBe(UNPLACED_TIMING);
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't scroll a visitor to a scene without a known page, from a deep link or Show in script", async () => {
+    await renderViewer(ScriptViewerRoute, { admin: false, scenes: [savedV2Scene, unplacedScene], sceneId: unplacedScene.id });
+    await waitFor(() => expect(frameProps(3).activeSceneId).toBe(unplacedScene.id));
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+
+    click(sceneCard(V2_TIMING));
+    showInScript();
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(...TO_SAVED_V2_START);
+
+    click(sceneCard(UNPLACED_TIMING));
+    showInScript();
+    expect(frameProps(3).activeSceneId).toBe(unplacedScene.id);
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
   });
 });
