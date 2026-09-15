@@ -894,13 +894,13 @@ describe("concurrent saves to one script", () => {
      * waiting on a lock. Without the script's advisory lock, both saves pass the
      * overlap check before either has written, and both are stored.
      */
-    async function createAtOnce(place, bodies) {
+    async function createAtOnce(requests) {
         const blocker = await pool.connect();
         try {
             await blocker.query("BEGIN");
             await blocker.query("LOCK TABLE script_scene_anchors IN EXCLUSIVE MODE");
-            const responses = bodies.map((body) => postScene(place, body));
-            await waitForLockWaiters(bodies.length);
+            const responses = requests.map(({ place, body }) => postScene(place, body));
+            await waitForLockWaiters(requests.length);
             await blocker.query("COMMIT");
             return await Promise.all(responses);
         } catch (err) {
@@ -931,20 +931,28 @@ describe("concurrent saves to one script", () => {
         assert.deepEqual((await api.get(scenesPath(place))).body.map((scene) => scene.id), [stored.id]);
     }
 
-    test("of two scenes whose film timings overlap, exactly one is stored", async () => {
+    test("of two scenes whose film timings overlap, exactly one is stored, however the script id is spelled", async () => {
         const place = await newPlace();
-        const responses = await createAtOnce(place, [
-            sceneBody({ start_time_seconds: 60, end_time_seconds: 120 }),
-            sceneBody({ start_time_seconds: 100, end_time_seconds: 160 }),
+        // Postgres reads the uppercase id as the same script, so both saves must take the same lock.
+        const uppercase = { movie: place.movie, script: { id: place.script.id.toUpperCase() } };
+        const responses = await createAtOnce([
+            { place, body: sceneBody({ start_time_seconds: 60, end_time_seconds: 120 }) },
+            { place: uppercase, body: sceneBody({ start_time_seconds: 100, end_time_seconds: 160 }) },
         ]);
         await expectOneStored(place, responses, "film_timing");
     });
 
     test("of two scenes whose script locations share a line, exactly one is stored", async () => {
         const place = await newPlace();
-        const responses = await createAtOnce(place, [
-            sceneBody({ start_time_seconds: 0, end_time_seconds: 50, anchor_geometry: anchorPair({ startPage: 2, startLine: 10, endLine: 20 }) }),
-            sceneBody({ start_time_seconds: 100, end_time_seconds: 150, anchor_geometry: anchorPair({ startPage: 2, startLine: 20, endLine: 30 }) }),
+        const responses = await createAtOnce([
+            {
+                place,
+                body: sceneBody({ start_time_seconds: 0, end_time_seconds: 50, anchor_geometry: anchorPair({ startPage: 2, startLine: 10, endLine: 20 }) }),
+            },
+            {
+                place,
+                body: sceneBody({ start_time_seconds: 100, end_time_seconds: 150, anchor_geometry: anchorPair({ startPage: 2, startLine: 20, endLine: 30 }) }),
+            },
         ]);
         await expectOneStored(place, responses, "script_location");
     });

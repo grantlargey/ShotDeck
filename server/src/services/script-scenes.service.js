@@ -222,9 +222,15 @@ function isValidSceneAnchor(entry) {
 // scenes"). Every save takes the script's lock before it checks, so two
 // conflicting saves can't both pass the check before either has written.
 
-/** Waits for the lock on one script's captured-scene saves, and holds it until the transaction ends. */
+/**
+ * Waits for the lock on one script's captured-scene saves, and holds it until
+ * the transaction ends. The key uses the id as Postgres reads it, so every
+ * spelling of one UUID (uppercase, for example) takes the same lock.
+ */
 async function lockScriptScenes(db, scriptId) {
-    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`captured-scenes:${scriptId}`]);
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended('captured-scenes:' || $1::uuid::text, 0))", [
+        scriptId,
+    ]);
 }
 
 const CONFLICT_MESSAGES = {
