@@ -17,7 +17,8 @@
  *   strict version-2 check (overhaul issue 04): kind start or end, version 2,
  *   unit "pt", an integer page >= 1, an integer line >= 0, finite top and
  *   bottom, and string text; and the start is at or before the end, comparing
- *   (page, line). Where a kind repeats, its last valid entry counts.
+ *   (page, line). Where a kind repeats, its last strictly valid entry counts, and
+ *   invalid entries of that kind are skipped, as in issue 04's `sceneAnchorsOf`.
  * - A scene without a valid pair has, checked in this order:
  *   - empty geometry: `[]`;
  *   - a reversed pair: strictly valid entries, but the start comes after the end;
@@ -26,6 +27,14 @@
  *   - one-sided geometry: the viewer reads only a start or only an end;
  *   - pixel geometry: only the old `{ x, y, width, height }` rectangles;
  *   - malformed geometry: anything else, including a scene with no anchor row.
+ * - A scene with an invalid anchor entry (`with_invalid_anchor_entry`) has a
+ *   geometry entry that names `kind` or `version`, so it isn't an old pixel
+ *   rectangle, and fails the strict check. Issue 04's write rule rejects the
+ *   whole geometry with a 400, even beside a valid pair, so the scene can't be
+ *   saved again as stored. This figure crosses the categories above: such a
+ *   scene may have a valid pair, or fall into any category without one. The
+ *   categories and the location check are unchanged, and use only strictly
+ *   valid entries.
  * - Scene text: null formatted text (as the legacy import stores it) is counted
  *   apart from formatted text that is empty or only whitespace. Raw and selected
  *   text are NOT NULL columns, so only their empty or whitespace-only values are
@@ -86,6 +95,15 @@ function isValidAnchor(entry) {
         entry.line >= 0 &&
         typeof entry.text === "string"
     );
+}
+
+/** An entry that issue 04's write rule checks as a scene anchor: it names a kind or a version. */
+function isAnchorEntry(entry) {
+    return typeof entry === "object" && entry !== null && ("kind" in entry || "version" in entry);
+}
+
+function hasInvalidAnchorEntry(geometry) {
+    return Array.isArray(geometry) && geometry.some((entry) => isAnchorEntry(entry) && !isValidAnchor(entry));
 }
 
 /** The last start entry and the last end entry that pass `accepts`. */
@@ -223,10 +241,10 @@ export async function collectInventory(client) {
         const { rows: movies } = await client.query(MOVIES_SQL);
         const { rows: scriptsPerMovie } = await client.query(SCRIPTS_PER_MOVIE_SQL);
 
-        const read = scenes.map((scene) => ({
-            ...scene,
-            anchors: readAnchorPair(scene.has_anchor_row ? scene.anchor_geometry : undefined),
-        }));
+        const read = scenes.map((scene) => {
+            const geometry = scene.has_anchor_row ? scene.anchor_geometry : undefined;
+            return { ...scene, anchors: readAnchorPair(geometry), invalidAnchorEntry: hasInvalidAnchorEntry(geometry) };
+        });
         const anchored = read.filter((scene) => scene.anchors.kind === "valid");
         const withoutPair = (kind) => idsWhere(read, (scene) => scene.anchors.kind === kind);
         const withAnchorRow = scenes.filter((scene) => scene.has_anchor_row);
@@ -250,6 +268,7 @@ export async function collectInventory(client) {
                     pixel_geometry: withoutPair("pixel_geometry"),
                     malformed: withoutPair("malformed"),
                 },
+                with_invalid_anchor_entry: idsWhere(read, (scene) => scene.invalidAnchorEntry),
             },
             scene_text: {
                 selected_differs_from_formatted: idsWhere(withAnchorRow, (scene) => scene.selected_differs_from_formatted),

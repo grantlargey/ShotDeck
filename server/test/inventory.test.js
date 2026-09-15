@@ -131,6 +131,25 @@ const MAIN_SCRIPT_SCENES = [
     // No unit, on lines scene 13 also covers: only valid pairs are compared.
     { n: 31, start: 26000, end: 26010, geometry: lines(7, 2, 3).map(({ unit: _unit, ...entry }) => entry) },
     { n: 32, start: 27000, end: 27010, geometry: lines(31, 0, 4).map((entry) => ({ ...entry, text: null })) },
+    // Entries that name a kind or a version but fail the strict check, which issue 04's write rule rejects.
+    // Beside a valid pair: a readable start without unit or text, then a pixel rectangle with a version.
+    {
+        n: 39,
+        start: 14000,
+        end: 14010,
+        geometry: [...lines(15, 0, 4), { kind: "start", version: 2, page: 15, line: 9, top: 1, bottom: 2 }],
+    },
+    { n: 40, start: 15000, end: 15010, geometry: [...lines(16, 0, 4), { version: 1, x: 1, y: 2, width: 3, height: 4 }] },
+    // Pixel geometry, without a valid pair, where one rectangle has a version.
+    {
+        n: 41,
+        start: 16000,
+        end: 16010,
+        geometry: [
+            { x: 72, y: 140, width: 420, height: 14 },
+            { version: 1, x: 72, y: 154, width: 310, height: 14 },
+        ],
+    },
 ];
 
 const OTHER_SCENES = [
@@ -328,19 +347,21 @@ describe("the inventory report", () => {
         assert.deepEqual(report.script_annotations, { total: 2, matched: 1, unmatched: figure(legacy.unmatched) });
     });
 
-    test("sorts captured scenes by their anchor pair, under the server's strict version-2 check and order", () => {
+    test("sorts captured scenes by their anchor pair under the server's strict check, and finds invalid anchor entries", () => {
         assert.deepEqual(report.captured_scenes, {
-            total: 38,
-            valid_anchor_pair: 28,
+            total: 41,
+            valid_anchor_pair: 30,
             without_valid_anchor_pair: {
-                count: 10,
+                count: 11,
                 empty_geometry: scenes(25),
                 reversed: scenes(23),
                 lenient_only: scenes(29, 30, 31, 32),
                 one_sided: scenes(27),
-                pixel_geometry: scenes(26),
+                pixel_geometry: scenes(26, 41),
                 malformed: scenes(28, 36),
             },
+            // Across the categories: scenes 39 and 40 have a valid pair, 41 is pixel geometry, 28 to 32 have none.
+            with_invalid_anchor_entry: scenes(28, 29, 30, 31, 32, 39, 40, 41),
         });
     });
 
