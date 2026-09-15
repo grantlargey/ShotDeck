@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { parseFilmMoment } from "@/entities/script-scene/model/filmTiming.js";
 import { createAnnotation, deleteAnnotation, updateAnnotation } from "@/shared/api/annotations.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
@@ -35,6 +35,8 @@ function readStillSeconds(text, runtimeSeconds) {
  *   same names: Delete and Edit in the footer, and above the still, the edit
  *   form and the last edit or delete error.
  * - `reset()` drops the edit and that error. Call it when the viewer closes.
+ *   A save or delete that settles after it still awaits `onChange()`, but
+ *   leaves the edit and error of a later viewer session alone.
  */
 export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
   const [adding, setAdding] = useState(false);
@@ -49,6 +51,14 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
   const [edit, setEdit] = useState(null);
   // The last edit or delete failure, shown above whichever still the viewer shows.
   const [error, setError] = useState("");
+  // Counts viewer sessions; reset() starts the next one.
+  const viewerSessionRef = useRef(0);
+
+  /** Returns a check that stays true until reset() starts another viewer session. */
+  function trackViewerSession() {
+    const session = viewerSessionRef.current;
+    return () => viewerSessionRef.current === session;
+  }
 
   function openAddDialog() {
     setAddTime("");
@@ -88,6 +98,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
 
   async function saveEdit(still) {
     if (edit?.stillId !== still.id) return;
+    const isSameSession = trackViewerSession();
     setError("");
 
     try {
@@ -105,25 +116,29 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
       });
 
       await onChange();
-      setEdit(null);
+      if (isSameSession()) setEdit(null);
     } catch (e) {
-      setError(getErrorMessage(e, "Failed to save the still."));
+      if (isSameSession()) setError(getErrorMessage(e, "Failed to save the still."));
     }
   }
 
   async function deleteStill(still) {
     if (!window.confirm("Delete this still?")) return;
+    const isSameSession = trackViewerSession();
     try {
       await deleteAnnotation(movieId, still.id);
-      setEdit(null);
-      setError("");
+      if (isSameSession()) {
+        setEdit(null);
+        setError("");
+      }
       await onChange();
     } catch (e) {
-      setError(getErrorMessage(e, "Failed to delete the still."));
+      if (isSameSession()) setError(getErrorMessage(e, "Failed to delete the still."));
     }
   }
 
   function reset() {
+    viewerSessionRef.current += 1;
     setEdit(null);
     setError("");
   }

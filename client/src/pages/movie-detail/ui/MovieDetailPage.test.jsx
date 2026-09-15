@@ -69,6 +69,14 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+/** Settles a held request, then lets everything awaiting it run. */
+async function settle(settleRequest) {
+  await act(async () => {
+    settleRequest();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 function imageFile(name = "frame.png") {
   return new File(["frame"], name, { type: "image/png" });
 }
@@ -139,6 +147,29 @@ function expectErrorAboveStill(message) {
 
 function editForm() {
   return within(viewer()).queryByRole("textbox", { name: "Timestamp" })?.closest("div") ?? null;
+}
+
+/**
+ * Opens the still at 00:05:00, then saves its edit or deletes it (`kind` is
+ * "save" or "delete"). The request waits until the test settles the returned
+ * deferred; a delete that succeeds removes the still.
+ */
+function startHeldRequest(kind) {
+  const request = deferred();
+  openStill("00:05:00");
+  if (kind === "save") {
+    api.updateAnnotation.mockReturnValueOnce(request.promise);
+    fireEvent.click(viewerButton("Edit"));
+    fireEvent.click(viewerButton("Save"));
+  } else {
+    window.confirm.mockReturnValue(true);
+    api.deleteAnnotation.mockImplementationOnce(async (movieId, annotationId) => {
+      await request.promise;
+      stills = stills.filter((row) => row.id !== annotationId);
+    });
+    fireEvent.click(viewerButton("Delete"));
+  }
+  return request;
 }
 
 async function openAddDialog() {
@@ -437,6 +468,50 @@ describe("closing the viewer", () => {
     expect(within(viewer()).queryByRole("alert")).toBeNull();
     expect(editForm()).toBeNull();
     expect(viewerButton("Edit")).toBeTruthy();
+  });
+
+  it.each(["save", "delete"])("keeps a %s that fails afterwards from showing an error in the next viewer", async (kind) => {
+    await renderPage();
+    const request = startHeldRequest(kind);
+    fireEvent.click(viewerButton("Close"));
+
+    await settle(() => request.reject(s3Failure()));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    openStill("00:05:00");
+    expect(within(viewer()).queryByRole("alert")).toBeNull();
+    expect(editForm()).toBeNull();
+    expect(api.listAnnotations).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["save", "00:05:00"],
+    ["delete", "00:15:00"],
+  ])("still refreshes the stills when a %s succeeds afterwards", async (kind, reopenAt) => {
+    await renderPage();
+    const request = startHeldRequest(kind);
+    fireEvent.click(viewerButton("Close"));
+
+    await settle(() => request.resolve());
+
+    expect(api.listAnnotations).toHaveBeenCalledTimes(2);
+    openStill(reopenAt);
+    expect(editForm()).toBeNull();
+    expect(within(viewer()).queryByRole("alert")).toBeNull();
+  });
+
+  it.each(["save", "delete"])("keeps a %s that succeeds afterwards from closing the next viewer's edit", async (kind) => {
+    await renderPage();
+    const request = startHeldRequest(kind);
+    fireEvent.click(viewerButton("Close"));
+    openStill("00:15:00");
+    fireEvent.click(viewerButton("Edit"));
+
+    await settle(() => request.resolve());
+
+    expect(api.listAnnotations).toHaveBeenCalledTimes(2);
+    expect(editForm()).not.toBeNull();
+    expect(within(viewer()).queryByRole("alert")).toBeNull();
   });
 });
 
