@@ -1,7 +1,6 @@
 import "./helpers/guard.js";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -18,6 +17,10 @@ import { collectInventory } from "../src/tools/inventory.js";
  * The fixture schema is sql/schema.sql without two rules that the production
  * schema has: one script per movie, and a scene's reference to its anchor row.
  * That lets the tests show the inventory still finds records those rules forbid.
+ *
+ * IDs are fixed, so the inventory orients every pair the same way on every run.
+ * Each boundary case appears in both ID orders, so a rule that checks only one
+ * side fails every time.
  */
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -32,28 +35,128 @@ const databaseUrl = (() => {
 const SCENE_TEXT = "## INT. NIGHT DINER - NIGHT\n\nMara pours the coffee.";
 const RAW_TEXT = "INT. NIGHT DINER - NIGHT\nMara pours the coffee.";
 
-const newIds = (...names) => Object.fromEntries(names.map((name) => [name, randomUUID()]));
-const movie = newIds("plain", "withLinks", "twoScripts");
-const script = newIds("main", "other", "twoA", "twoB");
-const legacy = newIds("matched", "unmatched");
-const still = newIds("plain", "titled", "withBody");
-const orphanAnchor = randomUUID();
-const scene = newIds(
-    "first",
-    "sharesLine",
-    "overlapsTiming",
-    "reversed",
-    "emptyGeometry",
-    "pixelGeometry",
-    "oneSided",
-    "malformed",
-    "zeroInside",
-    "zeroAtEdge",
-    "otherScript",
-    "scriptDiffers",
-    "bothDiffer",
-    "noAnchor"
-);
+/** A fixed UUID. IDs of one `group` sort by `n`. */
+const fixedId = (group, n) => `${group}0000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+const movie = { plain: fixedId(1, 1), withLinks: fixedId(1, 2), twoScripts: fixedId(1, 3) };
+const script = { main: fixedId(2, 1), other: fixedId(2, 2), twoA: fixedId(2, 3), twoB: fixedId(2, 4) };
+const legacy = { matched: fixedId(3, 1), unmatched: fixedId(3, 2) };
+const still = { plain: fixedId(4, 1), titled: fixedId(4, 2), withBody: fixedId(4, 3) };
+const scene = (n) => fixedId(5, n);
+const orphanAnchor = fixedId(6, 1);
+
+const lines = (page, startLine, endLine) => anchorPair({ startPage: page, startLine, endLine });
+
+/*
+ * Scenes of the main script. Each case has its own page and its own stretch of
+ * film timing, so scenes of different cases never overlap.
+ */
+const MAIN_SCRIPT_SCENES = [
+    // Film timing that touches, with the earlier scene first, then second.
+    {
+        n: 1,
+        start: 1000,
+        end: 1060,
+        geometry: lines(1, 0, 4),
+        tags: ["Tension", "Tension", TAGS.protagonist],
+        legacyId: legacy.matched,
+        anchor: { start_offset: 10, end_offset: 58, context_prefix: "FADE IN:", context_suffix: "She sits." },
+    },
+    { n: 2, start: 1060, end: 1120, geometry: lines(1, 10, 14), tags: ["Tension"], anchor: { start_offset: 0 } },
+    { n: 3, start: 2060, end: 2120, geometry: lines(2, 0, 4), tags: ["Night scene"] },
+    { n: 4, start: 2000, end: 2060, geometry: lines(2, 10, 14) },
+    // A zero-length timing strictly inside another scene overlaps it.
+    { n: 5, start: 3030, end: 3030, geometry: lines(3, 0, 4) },
+    { n: 6, start: 3000, end: 3060, geometry: lines(3, 10, 14) },
+    { n: 7, start: 4000, end: 4060, geometry: lines(4, 0, 4) },
+    { n: 8, start: 4030, end: 4030, geometry: lines(4, 10, 14) },
+    // A zero-length timing at another scene's end, then at its start, only touches it.
+    { n: 9, start: 5060, end: 5060, geometry: lines(5, 0, 4) },
+    { n: 10, start: 5000, end: 5060, geometry: lines(5, 10, 14) },
+    { n: 11, start: 6000, end: 6060, geometry: lines(6, 0, 4) },
+    { n: 12, start: 6000, end: 6000, geometry: lines(6, 10, 14) },
+    // Script locations that share a boundary line.
+    { n: 13, start: 7000, end: 7010, geometry: lines(7, 0, 4) },
+    { n: 14, start: 7100, end: 7110, geometry: lines(7, 4, 8) },
+    { n: 15, start: 8000, end: 8010, geometry: lines(8, 4, 8) },
+    { n: 16, start: 8100, end: 8110, geometry: lines(8, 0, 4) },
+    // Script locations on adjacent lines.
+    { n: 17, start: 9000, end: 9010, geometry: lines(9, 0, 4) },
+    { n: 18, start: 9100, end: 9110, geometry: lines(9, 5, 8) },
+    { n: 19, start: 10000, end: 10010, geometry: lines(10, 5, 8) },
+    { n: 20, start: 10100, end: 10110, geometry: lines(10, 0, 4) },
+    // A range across two pages that contains another.
+    {
+        n: 21,
+        start: 11000,
+        end: 11010,
+        geometry: anchorPair({ startPage: 11, startLine: 40, endPage: 12, endLine: 3 }),
+    },
+    { n: 22, start: 11100, end: 11110, geometry: lines(12, 0, 2) },
+    // A reversed pair, stored start after end, around another scene's lines.
+    { n: 23, start: 12000, end: 12010, geometry: lines(13, 10, 2) },
+    { n: 24, start: 12100, end: 12110, geometry: lines(13, 5, 6) },
+    // Geometry without a valid pair, carrying scene text variants.
+    { n: 25, start: 20000, end: 20010, geometry: [], anchor: { selected_text: "Mara pours the coffee." } },
+    {
+        n: 26,
+        start: 21000,
+        end: 21010,
+        geometry: [
+            { x: 72, y: 140, width: 420, height: 14 },
+            { x: 72, y: 154, width: 310, height: 14 },
+        ],
+        anchor: { formatted_selected_text: null },
+    },
+    {
+        n: 27,
+        start: 22000,
+        end: 22010,
+        geometry: [lines(22, 0, 4)[0]],
+        anchor: { formatted_selected_text: "", selected_text: "", raw_selected_text: " \t\n " },
+    },
+    {
+        n: 28,
+        start: 23000,
+        end: 23010,
+        geometry: lines(23, 0, 4).map((entry) => ({ ...entry, page: String(entry.page) })),
+        anchor: { formatted_selected_text: " \n", selected_text: " \n", raw_selected_text: "" },
+    },
+];
+
+const OTHER_SCENES = [
+    // Another script: the same timing and lines as scene 1, which isn't an overlap.
+    {
+        n: 33,
+        movieId: movie.withLinks,
+        scriptId: script.other,
+        start: 1000,
+        end: 1060,
+        geometry: lines(1, 0, 4),
+        tags: [TAGS.revelation],
+    },
+    // Scene rows that don't agree with their anchor rows, and one without an anchor row.
+    {
+        n: 34,
+        movieId: movie.twoScripts,
+        scriptId: script.twoA,
+        anchorScriptId: script.twoB,
+        start: 0,
+        end: 10,
+        geometry: lines(1, 0, 4),
+    },
+    {
+        n: 35,
+        movieId: movie.twoScripts,
+        scriptId: script.twoB,
+        anchorMovieId: movie.withLinks,
+        anchorScriptId: script.other,
+        start: 0,
+        end: 10,
+        geometry: lines(1, 0, 4),
+    },
+    { n: 36, movieId: movie.twoScripts, scriptId: script.twoA, start: 20, end: 30, withoutAnchorRow: true },
+];
 
 const db = new pg.Client({ connectionString: databaseUrl });
 
@@ -66,7 +169,7 @@ async function insert(table, row) {
     await db.query(`INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders.join(", ")})`, values);
 }
 
-function anchorRow(id, { movieId = movie.plain, scriptId = script.main, geometry, ...columns }) {
+function insertAnchorRow(id, { movieId, scriptId, geometry, columns = {} }) {
     return insert("script_scene_anchors", {
         id,
         movie_id: movieId,
@@ -81,15 +184,27 @@ function anchorRow(id, { movieId = movie.plain, scriptId = script.main, geometry
     });
 }
 
-/** A captured scene: its anchor row (unless `anchor` is null) and its scene row. */
-async function insertScene(
-    id,
-    { movieId = movie.plain, scriptId = script.main, start, end, tags = [TAGS.protagonist], legacyId = null, anchor = {} }
-) {
-    const anchorId = randomUUID();
-    if (anchor) await anchorRow(anchorId, { movieId, scriptId, ...anchor });
+/** A captured scene: its anchor row, unless `withoutAnchorRow`, and its scene row. */
+async function insertScene({
+    n,
+    movieId = movie.plain,
+    scriptId = script.main,
+    anchorMovieId = movieId,
+    anchorScriptId = scriptId,
+    start,
+    end,
+    geometry,
+    anchor = {},
+    tags = [TAGS.protagonist],
+    legacyId = null,
+    withoutAnchorRow = false,
+}) {
+    const anchorId = fixedId(7, n);
+    if (!withoutAnchorRow) {
+        await insertAnchorRow(anchorId, { movieId: anchorMovieId, scriptId: anchorScriptId, geometry, columns: anchor });
+    }
     await insert("script_scene_annotations", {
-        id,
+        id: scene(n),
         anchor_id: anchorId,
         legacy_annotation_id: legacyId,
         movie_id: movieId,
@@ -130,100 +245,8 @@ async function seed() {
     await stillRow(still.titled, { title: "Old title" });
     await stillRow(still.withBody, { title: "", body: "Old body" });
 
-    // The main script. Scenes that share a line or overlap in film timing do so on purpose.
-    await insertScene(scene.first, {
-        start: 0,
-        end: 60,
-        legacyId: legacy.matched,
-        anchor: {
-            geometry: anchorPair({ startPage: 1, startLine: 0, endLine: 4 }),
-            start_offset: 10,
-            end_offset: 58,
-            context_prefix: "FADE IN:",
-            context_suffix: "She sits.",
-        },
-    });
-    await insertScene(scene.sharesLine, {
-        start: 60,
-        end: 120,
-        tags: ["Tension", "Tension", TAGS.protagonist],
-        anchor: {
-            geometry: anchorPair({ startPage: 1, startLine: 4, endLine: 8 }),
-            selected_text: "Mara pours the coffee.",
-            start_offset: 0,
-        },
-    });
-    await insertScene(scene.overlapsTiming, {
-        start: 100,
-        end: 150,
-        tags: ["Tension"],
-        anchor: { geometry: anchorPair({ startPage: 2, startLine: 0, endLine: 3 }), formatted_selected_text: null },
-    });
-    await insertScene(scene.reversed, {
-        start: 200,
-        end: 260,
-        tags: ["Night scene"],
-        anchor: { geometry: anchorPair({ startPage: 3, startLine: 10, endLine: 2 }), raw_selected_text: " \n " },
-    });
-    await insertScene(scene.zeroInside, {
-        start: 230,
-        end: 230,
-        anchor: { geometry: anchorPair({ startPage: 4, startLine: 0, endLine: 2 }) },
-    });
-    await insertScene(scene.zeroAtEdge, {
-        start: 260,
-        end: 260,
-        anchor: { geometry: anchorPair({ startPage: 4, startLine: 3, endLine: 12 }) },
-    });
-    await insertScene(scene.emptyGeometry, { start: 300, end: 310, anchor: { geometry: [] } });
-    await insertScene(scene.pixelGeometry, {
-        start: 400,
-        end: 410,
-        anchor: {
-            geometry: [
-                { x: 72, y: 140, width: 420, height: 14 },
-                { x: 72, y: 154, width: 310, height: 14 },
-            ],
-        },
-    });
-    await insertScene(scene.oneSided, {
-        start: 500,
-        end: 510,
-        anchor: { geometry: [anchorPair({ startPage: 5 })[0]], selected_text: "", formatted_selected_text: null },
-    });
-    await insertScene(scene.malformed, {
-        start: 600,
-        end: 610,
-        anchor: { geometry: anchorPair({ startPage: 6 }).map((entry) => ({ ...entry, page: String(entry.page) })) },
-    });
-
-    // Another script: the same timing and lines as the first scene, which isn't an overlap.
-    await insertScene(scene.otherScript, {
-        movieId: movie.withLinks,
-        scriptId: script.other,
-        start: 0,
-        end: 60,
-        tags: [TAGS.revelation],
-        anchor: { geometry: anchorPair({ startPage: 1, startLine: 0, endLine: 4 }) },
-    });
-
-    // Scene rows that don't agree with their anchor rows.
-    await insertScene(scene.scriptDiffers, {
-        movieId: movie.twoScripts,
-        scriptId: script.twoA,
-        start: 0,
-        end: 10,
-        anchor: { scriptId: script.twoB, geometry: anchorPair({ startPage: 7 }) },
-    });
-    await insertScene(scene.bothDiffer, {
-        movieId: movie.twoScripts,
-        scriptId: script.twoB,
-        start: 0,
-        end: 10,
-        anchor: { movieId: movie.withLinks, scriptId: script.other, geometry: anchorPair({ startPage: 8 }) },
-    });
-    await insertScene(scene.noAnchor, { movieId: movie.twoScripts, scriptId: script.twoA, start: 20, end: 30, anchor: null });
-    await anchorRow(orphanAnchor, { geometry: anchorPair({ startPage: 9 }) });
+    for (const fixture of [...MAIN_SCRIPT_SCENES, ...OTHER_SCENES]) await insertScene(fixture);
+    await insertAnchorRow(orphanAnchor, { movieId: movie.plain, scriptId: script.main, geometry: lines(40, 0, 4) });
 }
 
 function runInventory(env) {
@@ -235,11 +258,10 @@ function runInventory(env) {
     });
 }
 
-const figure = (...ids) => ({ count: ids.length, ids: ids.sort() });
-const pairs = (...list) => ({
-    count: list.length,
-    pairs: list.map((pair) => pair.toSorted()).sort((a, b) => (a.join() < b.join() ? -1 : 1)),
-});
+const figure = (...ids) => ({ count: ids.length, ids: ids.toSorted() });
+const scenes = (...ns) => figure(...ns.map(scene));
+/** Scene pairs given as [lower n, higher n], in order. */
+const scenePairs = (...list) => ({ count: list.length, pairs: list.map((pair) => pair.map(scene)) });
 
 /** Every string in `value`, with the key it sits under. */
 function stringsIn(value, key = "") {
@@ -298,25 +320,25 @@ describe("the inventory report", () => {
 
     test("sorts captured scenes by their anchor pair", () => {
         assert.deepEqual(report.captured_scenes, {
-            total: 14,
-            valid_anchor_pair: 9,
-            reversed_anchor_pair: figure(scene.reversed),
+            total: 32,
+            valid_anchor_pair: 27,
+            reversed_anchor_pair: scenes(23),
             without_valid_anchor_pair: {
                 count: 5,
-                empty_geometry: figure(scene.emptyGeometry),
-                pixel_geometry: figure(scene.pixelGeometry),
-                one_sided: figure(scene.oneSided),
-                malformed: figure(scene.malformed, scene.noAnchor),
+                empty_geometry: scenes(25),
+                pixel_geometry: scenes(26),
+                one_sided: scenes(27),
+                malformed: scenes(28, 36),
             },
         });
     });
 
     test("finds scene text that differs or is blank, among scenes with an anchor row", () => {
         assert.deepEqual(report.scene_text, {
-            selected_differs_from_formatted: figure(scene.sharesLine),
-            blank_formatted: figure(scene.overlapsTiming, scene.oneSided),
-            blank_raw: figure(scene.reversed),
-            blank_selected: figure(scene.oneSided),
+            selected_differs_from_formatted: scenes(25),
+            blank_formatted: scenes(26, 27, 28),
+            blank_raw: scenes(27, 28),
+            blank_selected: scenes(27, 28),
         });
     });
 
@@ -331,14 +353,13 @@ describe("the inventory report", () => {
 
     test("pairs scenes of one script whose film timings overlap, and counts those that only touch", () => {
         assert.deepEqual(report.film_timing, {
-            // A zero-length timing overlaps a scene that strictly contains it, and only touches one it starts or ends.
-            overlapping_pairs: pairs([scene.sharesLine, scene.overlapsTiming], [scene.reversed, scene.zeroInside]),
-            touching_pairs: 2,
+            overlapping_pairs: scenePairs([5, 6], [7, 8]),
+            touching_pairs: 4,
         });
     });
 
     test("pairs scenes of one script whose script locations share a line, but not adjacent lines", () => {
-        assert.deepEqual(report.script_location, { overlapping_pairs: pairs([scene.first, scene.sharesLine]) });
+        assert.deepEqual(report.script_location, { overlapping_pairs: scenePairs([13, 14], [15, 16], [21, 22]) });
     });
 
     test("counts the scenes using each tag outside the taxonomy", () => {
@@ -359,9 +380,9 @@ describe("the inventory report", () => {
     test("finds orphans, and scene and anchor rows whose movie or script differ", () => {
         assert.deepEqual(report.scene_table_pairs, {
             anchors_without_scene: figure(orphanAnchor),
-            scenes_without_anchor: figure(scene.noAnchor),
-            movie_id_differs: figure(scene.bothDiffer),
-            script_id_differs: figure(scene.bothDiffer, scene.scriptDiffers),
+            scenes_without_anchor: scenes(36),
+            movie_id_differs: scenes(35),
+            script_id_differs: scenes(34, 35),
         });
     });
 
