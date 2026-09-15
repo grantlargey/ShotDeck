@@ -10,6 +10,7 @@ import {
   getScriptScenePageRange,
   sortScriptScenes,
 } from "@/entities/script-scene/model/capturedScene.js";
+import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { getMovie } from "@/shared/api/movies.js";
 import { formatScreenplaySelection } from "@/shared/api/screenplayFormat.js";
@@ -18,7 +19,6 @@ import { getScript } from "@/shared/api/scripts.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
-import { formatSecondsToHms } from "@/shared/lib/time.js";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { CloseIcon } from "@/shared/ui/icons.jsx";
 import { LoadingState } from "@/shared/ui/LoadingState.jsx";
@@ -64,10 +64,6 @@ function sceneScrollTarget(scene) {
   const anchors = anchorsFromGeometry(scene?.anchor_geometry);
   if (anchors) return { page: anchors.start.page, offsetPt: anchors.start.top };
   return { page: getScriptScenePageRange(scene).pageStart, offsetPt: null };
-}
-
-function formatTiming(scene) {
-  return `${formatSecondsToHms(scene.start_time_seconds)} – ${formatSecondsToHms(scene.end_time_seconds)}`;
 }
 
 /**
@@ -375,7 +371,7 @@ function ScriptViewerPage() {
   }
 
   async function deleteScene(scene) {
-    if (!scene || !window.confirm(`Delete the scene at ${formatTiming(scene)}? This can't be undone.`)) return;
+    if (!scene || !window.confirm(`Delete the scene at ${formatFilmTiming(scene)}? This can't be undone.`)) return;
 
     const completeDelete = draftActions.prepareDelete(scene.id);
     setDeletingSceneId(scene.id);
@@ -483,7 +479,7 @@ function ScriptViewerPage() {
         {canEdit && (
           <AnnotatorPanel
             editing={Boolean(draftSceneId)}
-            sceneLabel={draft.savedScene ? formatTiming(draft.savedScene) : "Untitled scene"}
+            sceneLabel={draft.savedScene ? formatFilmTiming(draft.savedScene) : "Untitled scene"}
             onNewScene={startNewScene}
             activeTab={visibleTab}
             onTabChange={setActiveTab}

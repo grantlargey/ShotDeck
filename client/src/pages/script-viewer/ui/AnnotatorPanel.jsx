@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { filmTimingErrorWhileTyping } from "@/entities/script-scene/model/filmTiming.js";
 import {
   getScriptTagLabel,
   SCRIPT_TAG_CATEGORIES,
@@ -18,7 +19,6 @@ import { CloseIcon, PlusIcon } from "@/shared/ui/icons.jsx";
 import { Input } from "@/shared/ui/Input.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { undoShortcutLabel } from "../lib/platform.js";
-import { getTimingError } from "../model/sceneDraft.js";
 import styles from "./AnnotatorPanel.module.css";
 
 const ORIGIN_BADGES = {
@@ -134,7 +134,7 @@ function CaptureTab({
   const hasAnchors = Boolean(anchors.start || anchors.end);
   const hasText = Boolean(markdown.trim());
   const originBadge = ORIGIN_BADGES[textOrigin];
-  const timingError = getTimingError(startTime, endTime, runtimeSeconds, { checkFormat: false });
+  const timingError = filmTimingErrorWhileTyping(startTime, endTime, runtimeSeconds);
 
   return (
     <>

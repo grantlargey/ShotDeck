@@ -3,6 +3,7 @@ import {
   displayScriptSceneText,
   formatScriptScenePages,
 } from "@/entities/script-scene/model/capturedScene.js";
+import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { groupScriptTagsByCategory } from "@/entities/script-scene/model/scriptTagCategories.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
@@ -41,10 +42,6 @@ const STILL_SCENE_NOTES = {
   failed: "Couldn't load this script's scenes.",
   none: "No captured scene covers this still yet.",
 };
-
-function formatSceneTiming(scene) {
-  return `${formatSecondsToHms(scene.start_time_seconds)} – ${formatSecondsToHms(scene.end_time_seconds)}`;
-}
 
 /**
  * The site's one expanded scene viewer, shared by Script Search, the project
@@ -124,7 +121,7 @@ export function SceneViewerModal({
           .join(" · ")
       : "Film still";
   } else if (scene) {
-    meta = `${formatScriptScenePages(scene)} · ${formatSceneTiming(scene)}`;
+    meta = `${formatScriptScenePages(scene)} · ${formatFilmTiming(scene)}`;
   }
 
   let counter = null;

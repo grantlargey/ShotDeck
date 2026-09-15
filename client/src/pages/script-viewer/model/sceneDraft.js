@@ -3,6 +3,7 @@ import {
   displayScriptSceneText,
   safeScriptSceneTags,
 } from "@/entities/script-scene/model/capturedScene.js";
+import { parseFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
 import { formatSecondsToHms, normalizeTypedTime, parseTimeInputToSeconds } from "@/shared/lib/time.js";
 import {
@@ -259,33 +260,6 @@ function isDraftDirty(draft, text) {
   );
 }
 
-/**
- * Explains what's wrong with a scene's film timing, or returns "" when it's
- * fine. While typing, pass `{ checkFormat: false }` so half-typed times aren't
- * flagged; saving uses `{ requireBoth: true }`. A runtime of 0 means unknown.
- */
-export function getTimingError(startTime, endTime, runtimeSeconds, { checkFormat = true, requireBoth = false } = {}) {
-  const startText = String(startTime ?? "").trim();
-  const endText = String(endTime ?? "").trim();
-  const start = parseTimeInputToSeconds(startText);
-  const end = parseTimeInputToSeconds(endText);
-
-  if (checkFormat && ((startText && start === null) || (endText && end === null))) {
-    return "Use HH:MM:SS (or MM:SS) for the start and end times.";
-  }
-  if (requireBoth && (start === null || end === null)) {
-    return "Enter a start and an end time for this scene.";
-  }
-  if (start !== null && end !== null && end < start) {
-    return "The end time must be at or after the start time.";
-  }
-  const runtime = Number(runtimeSeconds);
-  if (Number.isFinite(runtime) && runtime > 0 && ((start ?? 0) > runtime || (end ?? 0) > runtime)) {
-    return `Times can't be later than the film's runtime (${formatSecondsToHms(runtime)}).`;
-  }
-  return "";
-}
-
 const CAPTURE_UNAVAILABLE_ERRORS = {
   start: "Place a start anchor in the script before saving.",
   end: "Place an end anchor in the script before saving.",
@@ -308,17 +282,15 @@ const CAPTURE_UNAVAILABLE_ERRORS = {
  * another selection's location and raw text, so the admin must confirm first.
  */
 function buildSavePayload(draft, textIndex, capture, text, runtimeSeconds = 0) {
-  const timingError = getTimingError(draft.startTime, draft.endTime, runtimeSeconds, { requireBoth: true });
-  if (timingError) {
-    return { error: timingError };
+  const timing = parseFilmTiming(draft.startTime, draft.endTime, runtimeSeconds);
+  if (timing.error) {
+    return { error: timing.error };
   }
   // Explicit anchors are never combined with suggestions, so the capture is theirs.
   const useCapture = hasAnyAnchor(draft.anchors);
   if (useCapture && !capture) {
     return { error: CAPTURE_UNAVAILABLE_ERRORS[captureUnavailableReason(textIndex, draft.anchors)] };
   }
-  const start = parseTimeInputToSeconds(draft.startTime);
-  const end = parseTimeInputToSeconds(draft.endTime);
   if (!text.trim()) {
     return { error: "Place start and end anchors in the script to capture the scene text." };
   }
@@ -354,8 +326,8 @@ function buildSavePayload(draft, textIndex, capture, text, runtimeSeconds = 0) {
 
   return {
     payload: {
-      start_time_seconds: start,
-      end_time_seconds: end,
+      start_time_seconds: timing.start,
+      end_time_seconds: timing.end,
       selected_text: text,
       raw_selected_text: useCapture
         ? capture.plainText

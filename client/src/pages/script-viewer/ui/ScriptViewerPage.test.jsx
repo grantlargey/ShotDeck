@@ -779,7 +779,7 @@ describe("discard prompts and keyboard", () => {
       () => clickSceneBar(2, otherScene.id),
       () => {
         openLineMenu(2, 1);
-        click(menuItem("Edit scene 00:05:00–00:06:00"));
+        click(menuItem("Edit scene 00:05:00 – 00:06:00"));
       },
     ];
     for (const [index, prompt] of prompts.entries()) {
