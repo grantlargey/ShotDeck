@@ -55,6 +55,7 @@ describe("creating a movie", () => {
         assert.match(movie.id, /^[0-9a-f-]{36}$/);
         assert.deepEqual(
             { ...movie, id: undefined, created_at: undefined },
+            // changes in 11: no links (A8)
             { ...body, id: undefined, created_at: undefined, cover_image_key: null, cover_image_url: null, links: [] }
         );
         assert.ok(!Number.isNaN(Date.parse(movie.created_at)));
@@ -186,6 +187,7 @@ describe("updating a movie", () => {
             year: 1999,
             runtime_minutes: 90,
             cover_image_key: `covers/${movie.id}/new.jpg`,
+            // changes in 11: movie links are removed (A8)
             links: ["https://b.example"],
         });
         const response = await api.put(`/movies/${movie.id}`, { cookie, body });
@@ -197,6 +199,7 @@ describe("updating a movie", () => {
         assert.match(response.body.cover_image_url, signedUrlPattern(body.cover_image_key));
     });
 
+    // changes in 11: movie links are removed (A8)
     test("keeps the saved cover, writer, cinematographer and links when they are left out", async () => {
         const movie = await savedMovie();
         const body = without(movieBody({ title: "Renamed" }), "writer", "cinematographer");
@@ -214,6 +217,7 @@ describe("updating a movie", () => {
         assert.equal(response.body.cover_image_url, null);
         assert.equal(response.body.writer, null);
         assert.equal(response.body.cinematographer, null);
+        // changes in 11: movie links are removed (A8)
         assert.deepEqual(response.body.links, []);
     });
 
@@ -250,6 +254,7 @@ describe("deleting a movie", () => {
         assert.equal(response.text, "");
 
         await expectError(api.get(`/movies/${movie.id}`), 404, "Movie not found");
+        // changes in 11: the movie's script read returns null (C7)
         assert.deepEqual((await api.get(`/movies/${movie.id}/scripts`)).body, []);
         assert.deepEqual((await api.get(`/movies/${movie.id}/annotations`)).body, []);
         assert.deepEqual((await api.get(`/movies/${movie.id}/scripts/${script.id}/scene-annotations`)).body, []);

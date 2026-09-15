@@ -29,6 +29,7 @@ const MESSAGES = {
     createContext: "Invalid body. context_prefix/context_suffix must be strings when provided.",
     createOffsets: "Invalid body. start_offset/end_offset must be integers where end_offset >= start_offset >= 0.",
     createRaw: "Invalid body. raw_selected_text must be a non-empty string.",
+    // changes in 04: string tags are rejected, so this message changes (B9)
     tags: "Invalid body. tags must be an array of strings or comma-separated string.",
     geometry: "Invalid body. anchor_geometry must be a JSON array when provided.",
     updateTimingType: "start_time_seconds/end_time_seconds must be integers when provided.",
@@ -91,6 +92,7 @@ function without(body, ...fields) {
     return copy;
 }
 
+// changes in 04: there is no nested anchor to strip (B4)
 function withoutUpdatedAt(scene) {
     const { updated_at: _updatedAt, anchor, ...rest } = scene;
     const { updated_at: _anchorUpdatedAt, ...anchorRest } = anchor;
@@ -366,9 +368,10 @@ describe("creating a captured scene", () => {
         });
 
         // changes in 04: string tags are rejected (B9)
-        test("accept a comma- or newline-separated string", async () => {
+        test("accept a comma- or newline-separated string, and an empty string as no tags", async () => {
             const scene = await saveInNewPlace(sceneBody({ tags: `${TAGS.protagonist}, ${TAGS.revelation}\n${TAGS.selfConflict}` }));
             assert.deepEqual(scene.tags, [TAGS.protagonist, TAGS.revelation, TAGS.selfConflict]);
+            assert.deepEqual((await saveInNewPlace(sceneBody({ tags: "" }))).tags, []);
         });
 
         test("that are neither a list nor a string are a 400", async () => {
@@ -581,6 +584,7 @@ describe("updating a captured scene", () => {
         const updated = response.body;
         assert.deepEqual(Object.keys(updated).sort(), SCENE_FIELDS);
         assert.equal(updated.id, scene.id);
+        // changes in 11: anchor_id is removed (B4)
         assert.equal(updated.anchor_id, scene.anchor_id);
         assert.equal(updated.created_at, scene.created_at);
         assert.ok(Date.parse(updated.updated_at) >= Date.parse(scene.updated_at));
@@ -589,8 +593,10 @@ describe("updating a captured scene", () => {
         assert.deepEqual(updated.tags, body.tags);
         for (const field of LOCATION_FIELDS) {
             assert.deepEqual(updated[field], body[field], field);
+            // changes in 04: no nested anchor (B4)
             assert.deepEqual(updated.anchor[field], body[field], `anchor.${field}`);
         }
+        // changes in 04: no nested anchor (B4)
         assert.equal(updated.anchor.created_at, scene.anchor.created_at);
     });
 
@@ -641,6 +647,8 @@ describe("updating a captured scene", () => {
             const kept = await putScene(place, scene.id, { page_start: "", page_end: "", start_offset: "", end_offset: "" });
             assert.equal(kept.status, 200, kept.text);
             assert.equal(kept.body.page_start, scene.page_start);
+            assert.equal(kept.body.page_end, scene.page_end);
+            assert.equal(kept.body.start_offset, scene.start_offset);
             assert.equal(kept.body.end_offset, scene.end_offset);
 
             const cleared = await putScene(place, scene.id, { page_start: null, page_end: null, start_offset: null, end_offset: null });
@@ -723,6 +731,7 @@ describe("updating a captured scene", () => {
             }
         });
 
+        // changes in 11: the text fields are replaced and context is removed (A4, A6)
         test("text and context fields must be strings or null", async () => {
             const { place, scene } = await savedScene();
             const invalid = [
@@ -788,6 +797,7 @@ describe("updating a captured scene", () => {
             assert.equal(toFormatted.body.selected_text, "Formatted");
         });
 
+        // changes in 11: context is removed (A6)
         test("null context clears it", async () => {
             const { place, scene } = await savedScene();
             const response = await putScene(place, scene.id, { context_prefix: null, context_suffix: null });
@@ -800,6 +810,24 @@ describe("updating a captured scene", () => {
             const response = await putScene(place, scene.id, { tags: null, anchor_geometry: null });
             assert.deepEqual(response.body.tags, []);
             assert.deepEqual(response.body.anchor_geometry, []);
+        });
+
+        test("empty strings clear tags and geometry, and are stored as formatted text and context", async () => {
+            const { place, scene } = await savedScene();
+            const response = await putScene(place, scene.id, {
+                tags: "",
+                anchor_geometry: "",
+                formatted_selected_text: "",
+                context_prefix: "",
+            });
+            assert.equal(response.status, 200, response.text);
+            // changes in 04: string tags and stringified geometry are rejected (B9)
+            assert.deepEqual(response.body.tags, []);
+            assert.deepEqual(response.body.anchor_geometry, []);
+            // changes in 11: the text fields are replaced and context is removed (A4, A6)
+            assert.equal(response.body.formatted_selected_text, "");
+            assert.equal(response.body.selected_text, scene.selected_text);
+            assert.equal(response.body.context_prefix, "");
         });
 
         // changes in 04: string tags and stringified geometry are rejected (B9)
