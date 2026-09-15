@@ -4,16 +4,18 @@ The script viewer is the page where admins capture scenes from a film's script, 
 
 ## What will a scene draft save, and why?
 
-Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave(runtimeSeconds)`, which returns either `{ error }` or `{ payload, applySaved, confirmStaleText }`. When `confirmStaleText` is true, the page asks the admin first and sends nothing if they cancel. The page sends `payload` to create or update the captured scene, then passes the returned scene to `applySaved`.
+Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave({ runtimeSeconds, scenes })`, which takes the film's runtime and the script's captured scenes and returns either `{ error }` or `{ payload, applySaved, confirmStaleText }`. When `confirmStaleText` is true, the page asks the admin first and sends nothing if they cancel. The page sends `payload` to create or update the captured scene, then passes the returned scene to `applySaved`.
 
 **Validation**, in order:
 
-1. Film timing: both times present, `HH:MM:SS` or `MM:SS`, end not before start, and not past the film's runtime when it is known (`getTimingError`).
-2. Explicit anchors have a capture. See [Explicit anchors need a capture to save](#explicit-anchors-need-a-capture-to-save).
-3. Scene text isn't blank.
-4. A script location exists.
+1. Film timing: both times present, `HH:MM:SS` or `MM:SS`, end not before start, and not past the film's runtime when it is known (`parseFilmTiming`).
+2. The film timing doesn't overlap another captured scene of the script. See [Overlapping scenes are refused](#overlapping-scenes-are-refused).
+3. Explicit anchors have a capture. See [Explicit anchors need a capture to save](#explicit-anchors-need-a-capture-to-save).
+4. Scene text isn't blank.
+5. A script location exists.
+6. The script location doesn't share a line with another captured scene of the script.
 
-The third and fourth checks share the message "Place start and end anchors in the script to capture the scene text."
+The fourth and fifth checks share the message "Place start and end anchors in the script to capture the scene text."
 
 **Scene text** (`selected_text` and `formatted_selected_text`, both set to `draft.text`) depends on the text origin:
 
@@ -37,6 +39,19 @@ A capture needs only the pages in its range, but offsets stay `null` until the w
 **Raw text** (`raw_selected_text`) follows the location: the capture's plain text, else the saved scene's raw text, else plain text derived from the scene text.
 
 **Film timing and tags**: times are parsed to seconds, and tags are sent in the order they were selected.
+
+### Overlapping scenes are refused
+
+Captured scenes of the same script can't overlap. `buildSave` compares the draft with `scenes`, leaving out the draft's own saved scene. An overlap returns `{ error }` naming the other scene's film timing: the page shows it as an error notice, sends no request, and leaves the draft unchanged. The server stays the authority and answers 409 for an overlap it refuses.
+
+| Overlap | When two scenes overlap | Message |
+|---|---|---|
+| Film timing, checked right after the timing itself | `a.start < b.end && b.start < a.end`, in seconds (`findOverlappingFilmTiming`). Scenes that only touch are fine, so a zero-length timing overlaps only a scene that strictly contains it. Scenes without usable timing aren't compared. | "This scene's film timing overlaps the scene at 00:10:00 – 00:12:00. Scenes can touch but not overlap." |
+| Script location, checked last, once a location exists | The location being saved shares a line with the other scene's anchors (`findOverlappingSavedScene` in `model/anchors.js`). That location comes from the explicit anchors, else from the saved scene's stored anchors. Locations without a valid anchor pair, such as legacy scenes, aren't compared. | "These anchors share lines with the scene at 00:10:00 – 00:12:00. Move the anchors so the scenes don't overlap." |
+
+While the anchors in effect share a line with another scene, the panel shows the script location message as an error callout with an "Edit that scene" action (`scriptLocationOverlapError`). The callout follows the anchors in effect, so suggested anchors can show it for a legacy scene even though saving keeps, and doesn't compare, that scene's stored location. Film timing overlap has no live callout; saving reports it.
+
+Known limit: `findOverlappingSavedScene` compares the anchors' vertical positions rather than their line numbers, so two adjacent lines set closer together than their own height count as sharing a line.
 
 ### Responses arriving after the draft changes
 
@@ -71,7 +86,7 @@ These rules fix H2, where an accepted proposal was keyed to the anchors at accep
 
 ### Explicit anchors need a capture to save
 
-With explicit anchors, the script location and raw text come from the capture, so saving needs one. Without a capture, `buildSave` returns an error after the timing check and before the blank-text check. The page shows it as an error notice and sends no request. `captureUnavailableReason` in `model/captureRange.js` says why there is no capture:
+With explicit anchors, the script location and raw text come from the capture, so saving needs one. Without a capture, `buildSave` returns an error after the film timing checks and before the blank-text check. The page shows it as an error notice and sends no request. `captureUnavailableReason` in `model/captureRange.js` says why there is no capture:
 
 | Why | Message |
 |---|---|
@@ -100,7 +115,7 @@ With explicit anchors, saving stores the draft's text with the current capture's
 - **Confirm:** the page sends exactly the payload it asked about, mapped as usual. `window.confirm` blocks, so the draft can't change between building the payload and the answer. Nothing is remembered: each save builds its own payload and decides again, so an answer never covers later edits or another draft.
 - **Afterwards:** confirming changes nothing in the draft. The response is reconciled as in [Responses arriving after the draft changes](#responses-arriving-after-the-draft-changes). An unchanged draft reloads the returned scene, whose text is now keyed to its stored anchors, so it is no longer stale. A draft that changed during the request keeps its stale text, and its next save asks again.
 
-The prompt comes after validation, so timing, a missing capture, blank text and a missing location are reported first. There's no prompt for:
+The prompt comes after validation, so timing, overlapping scenes, a missing capture, blank text and a missing location are reported first. There's no prompt for:
 
 - captured text, or Saved, Edited or AI formatted text keyed to the capture's anchor pair;
 - drafts without explicit anchors: legacy scenes, suggested anchors (even though their legacy text is stale), and saved scenes whose anchors were all cleared. These keep their stored location. Once suggested anchors become explicit, legacy text is stale and the prompt applies.
@@ -145,8 +160,8 @@ The route `/movies/:movieId/scripts/:scriptId` is declared in `client/src/app/Ap
 | Text origin, stale text, legacy text, the editor source key | `window.confirm` prompts and all UI wording, including re-capture button labels |
 | The dirty check | Keyboard and pointer wiring |
 | Re-capture rules, the AI proposal lifecycle and request tokens | Network calls: AI formatting, scene create, update and delete |
-| Save validation, payload, and whether saving needs confirmation (`buildSave`) | AI page snapshots and error-message mapping |
-| | The overlap warning, scene bars in the margin, admin vs visitor behavior |
+| Save validation, including overlapping scenes, the payload, and whether saving needs confirmation (`buildSave`) | AI page snapshots and error-message mapping |
+| | The overlap callout, scene bars in the margin, admin vs visitor behavior |
 
 ## Module map
 
@@ -155,7 +170,7 @@ All paths are under `client/src/pages/script-viewer/`.
 | File | Role |
 |---|---|
 | `ui/ScriptViewerPage.jsx` | The route module and page: data loading, PDF, dialogs, navigation, and wiring the draft to the UI. |
-| `model/sceneDraft.js` | `useSceneDraft` and `getTimingError` (also used by `AnnotatorPanel`). |
+| `model/sceneDraft.js` | `useSceneDraft`, and `scriptLocationOverlapError`, the script location overlap message that `AnnotatorPanel`'s callout also shows. |
 | `model/anchors.js` | Pure anchor helpers: geometry v2 read and write, placement and swapping, suggestions from saved text, scene segments, overlap. |
 | `model/captureRange.js` | `captureAnchoredRange(textIndex, anchors)`: captured text, key, pages, offsets and context. Expensive. `captureUnavailableReason(textIndex, anchors)` says why there is no capture. |
 | `model/useScriptTextIndex.js` | Indexes every page's text lines in the background on a separate pdf.js worker. Publishes a new index object every 8 pages and on completion. |
@@ -164,6 +179,8 @@ All paths are under `client/src/pages/script-viewer/`.
 | `ui/AnnotatorPanel.jsx`, `ui/DraftEditorModal.jsx`, `ui/ScreenplayEditor.jsx`, `ui/AnchorContextMenu.jsx`, `ui/SavedScenesGrid.jsx`, `ui/ViewerTopBar.jsx` | Presentational components. `ScreenplayEditor` owns its blocks until its `sourceKey` (`draft.editorKey`) changes, then rebuilds them and keeps focus in the same block. |
 | `lib/pageSnapshots.js` | Renders cropped page images for the AI formatter. |
 | `lib/pdfViewport.js`, `lib/platform.js` | Scroll helpers, typing-target detection, shortcut labels. |
+
+Film timing rules live outside the page slice, in `client/src/entities/script-scene/model/filmTiming.js`: checking typed timing for saving (`parseFilmTiming`) and while typing (`filmTimingErrorWhileTyping`), film timing overlap (`findOverlappingFilmTiming`), whether a moment falls inside a scene (`filmTimingCovers`), the range label (`formatFilmTiming`), and the check for a single moment such as a still's timestamp (`parseFilmMoment`). Generic typed-time parsing, formatting and normalizing are in `client/src/shared/lib/time.js`.
 
 ## The `useSceneDraft` interface
 
@@ -188,7 +205,7 @@ const [draft, draftActions] = useSceneDraft(textIndex);
 | `previewScene` | A scene-shaped preview for the panel's card and the dialog's page label. |
 | `dirty` | Whether there are unsaved changes, used for the discard prompt. |
 
-`draftActions` has one identity for the life of the hook, so its functions can be passed straight to memoized components: `loadScene`, `reset`, `setAnchorAtLine`, `removeAnchor`, `clearAnchors`, `undoAnchors`, `setTime`, `normalizeTime`, `toggleTag`, `clearTags`, `editText`, `recapture`, `startProposal`, `proposalReady`, `proposalFailed`, `acceptProposal`, `discardProposal`, `buildSave`, `prepareDelete`. The callbacks returned by `buildSave` and `prepareDelete` belong to individual requests.
+`draftActions` has one identity for the life of the hook, so its functions can be passed straight to memoized components: `loadScene`, `reset`, `setAnchorAtLine`, `removeAnchor`, `clearAnchors`, `undoAnchors`, `setTime`, `normalizeTime`, `toggleTag`, `clearTags`, `editText`, `recapture`, `startProposal`, `proposalReady`, `proposalFailed`, `acceptProposal`, `discardProposal`, `buildSave`, `prepareDelete`. The callbacks returned by `buildSave` and `prepareDelete` belong to individual requests. `buildSave({ runtimeSeconds, scenes })` takes the film's runtime in seconds, 0 when it's unknown, and the script's captured scenes, which may include the draft's own saved scene.
 
 Timing rules:
 
@@ -210,13 +227,16 @@ Timing rules:
 | Stale text | `draft.textStale` (panel prop `captureStale`) | — | — |
 | Legacy scene | `draft.legacyText`; geometry without a valid version-2 start and end pair | `anchor_geometry` that isn't version-2 anchors | — |
 | AI proposal | `draft.proposal` | `POST /api/script-scenes/format` | — |
-| Film timing | `draft.startTime` / `endTime` | `start_time_seconds` / `end_time_seconds` | `script_scene_annotations.start_time_seconds` / `end_time_seconds` |
+| Film timing | `draft.startTime` / `endTime` as typed; `formatFilmTiming` labels a scene's range | `start_time_seconds` / `end_time_seconds` | `script_scene_annotations.start_time_seconds` / `end_time_seconds` |
 
 ## Where to change draft behavior
 
 | To change | Look in |
 |---|---|
 | What gets saved | `buildSave` in `model/sceneDraft.js` |
+| Film timing validation, overlap, range labels and the single-moment check | `@/entities/script-scene/model/filmTiming.js` |
+| Script location overlap | `findOverlappingSavedScene` in `model/anchors.js`; the message in `scriptLocationOverlapError` (`model/sceneDraft.js`) |
+| Typed-time parsing, formatting and normalizing | `@/shared/lib/time.js` |
 | Why a save is refused without a capture | `buildSavePayload` in `model/sceneDraft.js`; the reasons in `captureUnavailableReason` (`model/captureRange.js`) |
 | When saving asks to confirm stale text | `confirmStaleText` in `buildSavePayload` (`model/sceneDraft.js`); the prompt in `saveScene` (`ui/ScriptViewerPage.jsx`) |
 | Suggested anchors | `suggestAnchorsFromSavedText` in `model/anchors.js`, and the suggestions memo in `useSceneDraft` |
@@ -282,6 +302,12 @@ Captured text that changes during indexing (C3) is covered in both suites. `marg
   - edits made after, or in the same batch as, the first keystroke survive mode switches, reopening and saving;
   - a confirmed re-capture and a later anchor change;
   - accepted AI text with a pending request.
+
+Overlapping scenes are covered at three levels.
+
+- **Module tests** in `client/src/entities/script-scene/model/filmTiming.test.js` check the film timing rules through their exports: time formats, an unknown runtime, end before start, labels, moments at both endpoints, and overlap (overlapping, touching on either side, identical ranges, containment, zero-length inside another scene and at its edge, and the excluded row). `client/src/shared/lib/time.test.js` covers typed-time parsing, formatting and normalizing.
+- **Hook tests** check that overlapping film timing is refused with its message and the draft unchanged, that touching timing saves, that the draft's own scene and untimed scenes are ignored, and the order: timing format and runtime, then film timing overlap, then B5's capture. For script locations they check that shared lines are refused after the blank-text check and before the B6 prompt, that adjacent lines save, that legacy locations aren't compared, and that a stored location kept after clearing anchors is.
+- **Page tests (P20)** check that overlapping film timing and anchors that share a line send no request, that the panel's overlap callout is an error, and that touching timing and adjacent anchors save.
 
 Shared fixtures live in `test/`. `textIndexFixtures.js` builds synthetic screenplay pages through the real line builder. Its `textIndexFrom` repeats the indexer's publish step (page offsets and the action margin), so keep it in step with `useScriptTextIndex.js`. `pageHarness.js` holds the page suite's doubles and helpers.
 

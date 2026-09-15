@@ -60,6 +60,12 @@ export function parseTimeInputToSeconds(value) {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
+/** Reformats typed time as HH:MM:SS, returning input it can't parse as typed. */
+export function normalizeTypedTime(value) {
+  const seconds = parseTimeInputToSeconds(value);
+  return seconds === null ? value : formatSecondsToHms(seconds);
+}
+
 /** Typed time as whole minutes, rounded to the nearest minute, or null when it can't be parsed. */
 export function parseTimeInputToMinutes(value) {
   const seconds = parseTimeInputToSeconds(value);

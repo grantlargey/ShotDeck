@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { Page } from "react-pdf";
+import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./PdfPageFrame.module.css";
@@ -157,9 +158,7 @@ export const PdfPageFrame = memo(function PdfPageFrame({
             const top = segment.top === null ? 0 : px(segment.top);
             const bottom = segment.bottom === null ? px(pageIndex.height) : px(segment.bottom);
             const { scene } = segment;
-            const timing = `${formatSecondsToHms(scene.start_time_seconds)}–${formatSecondsToHms(
-              scene.end_time_seconds
-            )}`;
+            const timing = formatFilmTiming(scene);
             return (
               <button
                 key={scene.id}

@@ -3,13 +3,15 @@ import {
   displayScriptSceneText,
   safeScriptSceneTags,
 } from "@/entities/script-scene/model/capturedScene.js";
+import { findOverlappingFilmTiming, formatFilmTiming, parseFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
-import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time.js";
+import { formatSecondsToHms, normalizeTypedTime, parseTimeInputToSeconds } from "@/shared/lib/time.js";
 import {
   anchorPairKey,
   anchorsFromGeometry,
   anchorsToGeometry,
   createLineAnchor,
+  findOverlappingSavedScene,
   hasAnyAnchor,
   NO_ANCHORS,
   placeAnchor,
@@ -260,30 +262,11 @@ function isDraftDirty(draft, text) {
 }
 
 /**
- * Explains what's wrong with a scene's film timing, or returns "" when it's
- * fine. While typing, pass `{ checkFormat: false }` so half-typed times aren't
- * flagged; saving uses `{ requireBoth: true }`. A runtime of 0 means unknown.
+ * Why a draft can't be saved when its script location shares lines with another
+ * captured scene. The panel shows the same message while the anchors overlap.
  */
-export function getTimingError(startTime, endTime, runtimeSeconds, { checkFormat = true, requireBoth = false } = {}) {
-  const startText = String(startTime ?? "").trim();
-  const endText = String(endTime ?? "").trim();
-  const start = parseTimeInputToSeconds(startText);
-  const end = parseTimeInputToSeconds(endText);
-
-  if (checkFormat && ((startText && start === null) || (endText && end === null))) {
-    return "Use HH:MM:SS (or MM:SS) for the start and end times.";
-  }
-  if (requireBoth && (start === null || end === null)) {
-    return "Enter a start and an end time for this scene.";
-  }
-  if (start !== null && end !== null && end < start) {
-    return "The end time must be at or after the start time.";
-  }
-  const runtime = Number(runtimeSeconds);
-  if (Number.isFinite(runtime) && runtime > 0 && ((start ?? 0) > runtime || (end ?? 0) > runtime)) {
-    return `Times can't be later than the film's runtime (${formatSecondsToHms(runtime)}).`;
-  }
-  return "";
+export function scriptLocationOverlapError(scene) {
+  return `These anchors share lines with the scene at ${formatFilmTiming(scene)}. Move the anchors so the scenes don't overlap.`;
 }
 
 const CAPTURE_UNAVAILABLE_ERRORS = {
@@ -294,9 +277,11 @@ const CAPTURE_UNAVAILABLE_ERRORS = {
 };
 
 /**
- * What saving the draft would store, or why it can't be saved: film timing is
- * checked first, then that explicit anchors have a capture, then text, then
- * script location.
+ * What saving the draft would store, or why it can't be saved. The checks run
+ * in order: film timing, film timing overlap with the script's other captured
+ * scenes, that explicit anchors have a capture, text, that a script location
+ * exists, and script location overlap. The draft's own saved scene is never
+ * an overlap.
  *
  * With explicit anchors the script location comes from the capture, and saving
  * is refused without one, so the saved location always matches the anchors
@@ -307,23 +292,27 @@ const CAPTURE_UNAVAILABLE_ERRORS = {
  * text under explicit anchors sets `confirmStaleText`: it would be stored with
  * another selection's location and raw text, so the admin must confirm first.
  */
-function buildSavePayload(draft, textIndex, capture, text, runtimeSeconds = 0) {
-  const timingError = getTimingError(draft.startTime, draft.endTime, runtimeSeconds, { requireBoth: true });
-  if (timingError) {
-    return { error: timingError };
+function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, scenes }) {
+  const savedScene = draft.savedScene;
+  const timing = parseFilmTiming(draft.startTime, draft.endTime, runtimeSeconds);
+  if (timing.error) {
+    return { error: timing.error };
+  }
+  const timingOverlap = findOverlappingFilmTiming(scenes, timing, savedScene?.id);
+  if (timingOverlap) {
+    return {
+      error: `This scene's film timing overlaps the scene at ${formatFilmTiming(timingOverlap)}. Scenes can touch but not overlap.`,
+    };
   }
   // Explicit anchors are never combined with suggestions, so the capture is theirs.
   const useCapture = hasAnyAnchor(draft.anchors);
   if (useCapture && !capture) {
     return { error: CAPTURE_UNAVAILABLE_ERRORS[captureUnavailableReason(textIndex, draft.anchors)] };
   }
-  const start = parseTimeInputToSeconds(draft.startTime);
-  const end = parseTimeInputToSeconds(draft.endTime);
   if (!text.trim()) {
     return { error: "Place start and end anchors in the script to capture the scene text." };
   }
 
-  const savedScene = draft.savedScene;
   let location = null;
 
   if (useCapture) {
@@ -351,11 +340,16 @@ function buildSavePayload(draft, textIndex, capture, text, runtimeSeconds = 0) {
   if (!location) {
     return { error: "Place start and end anchors in the script to capture the scene text." };
   }
+  // Locations without a valid anchor pair, this draft's or another scene's, aren't compared.
+  const locationOverlap = findOverlappingSavedScene(scenes, anchorsFromGeometry(location.anchor_geometry), savedScene?.id);
+  if (locationOverlap) {
+    return { error: scriptLocationOverlapError(locationOverlap) };
+  }
 
   return {
     payload: {
-      start_time_seconds: start,
-      end_time_seconds: end,
+      start_time_seconds: timing.start,
+      end_time_seconds: timing.end,
       selected_text: text,
       raw_selected_text: useCapture
         ? capture.plainText
@@ -493,10 +487,9 @@ export function useSceneDraft(textIndex) {
 
     /** Reformats a parseable time as HH:MM:SS and leaves anything else as typed. */
     normalizeTime(field) {
-      const seconds = parseTimeInputToSeconds(latestRef.current.state[field]);
-      if (seconds !== null) {
-        dispatch({ type: "setTime", field, value: formatSecondsToHms(seconds, { fallback: "00:00:00" }) });
-      }
+      const typed = latestRef.current.state[field];
+      const normalized = normalizeTypedTime(typed);
+      if (normalized !== typed) dispatch({ type: "setTime", field, value: normalized });
     },
 
     toggleTag(tag) {
@@ -579,15 +572,17 @@ export function useSceneDraft(textIndex) {
 
     /**
      * Returns `{ error }` or `{ payload, applySaved, confirmStaleText }` for the
-     * committed draft. When `confirmStaleText` is true, send the payload only
-     * after the admin confirms; the answer covers this payload alone, and the
-     * next call decides again. Call applySaved with the server response. It
-     * reconciles the saved baseline only if this draft is still open,
-     * preserving changes made during the request.
+     * committed draft. `scenes` are the script's captured scenes, which the
+     * draft can't overlap, and a `runtimeSeconds` of 0 means the runtime is
+     * unknown. When `confirmStaleText` is true, send the payload only after the
+     * admin confirms; the answer covers this payload alone, and the next call
+     * decides again. Call applySaved with the server response. It reconciles
+     * the saved baseline only if this draft is still open, preserving changes
+     * made during the request.
      */
-    buildSave(runtimeSeconds) {
+    buildSave({ runtimeSeconds, scenes }) {
       const { state: current, textIndex: index, capture: currentCapture, text: currentText } = latestRef.current;
-      const result = buildSavePayload(current, index, currentCapture, currentText, runtimeSeconds);
+      const result = buildSavePayload(current, index, currentCapture, currentText, { runtimeSeconds, scenes });
       if (result.error) return result;
       return {
         ...result,

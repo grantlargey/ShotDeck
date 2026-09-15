@@ -165,6 +165,8 @@ const STALE_SAVE_PROMPT =
   "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location and raw text will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
 const ANCHORS_MOVED = "The anchors moved after this text was captured.";
 const LEGACY_WORDING = "This scene was saved before screenplay formatting.";
+const OVERLAP_OTHER_LINES =
+  "These anchors share lines with the scene at 00:05:00 – 00:06:00. Move the anchors so the scenes don't overlap.";
 const PROPOSAL_READY = "An AI formatting proposal is ready. Nothing changes until you accept it.";
 const SNAPSHOTS = { pageImages: [{ page: 1, dataUrl: "data:image/jpeg;base64,AA==" }], omittedPageCount: 0 };
 
@@ -628,8 +630,8 @@ describe("saved and legacy scenes", () => {
     expect(frameProps(2).rangeBottom).toBe(182.9);
     // A2: suggestions aren't undo history.
     expect(inPanel().getByRole("button", { name: "Undo" }).disabled).toBe(true);
-    // A5: suggestions drive the overlap warning, have no remove buttons, but the menu can remove them.
-    expect(inPanel().getByText("This range overlaps the saved scene at 00:05:00.")).toBeTruthy();
+    // A5: suggestions drive the overlap callout, have no remove buttons, but the menu can remove them.
+    expect(inPanel().getByText(OVERLAP_OTHER_LINES)).toBeTruthy();
     expect(inPanel().queryByRole("button", { name: "Remove the start anchor" })).toBeNull();
     expect(inPanel().queryByRole("button", { name: "Remove the end anchor" })).toBeNull();
     openLineMenu(1, 2);
@@ -779,7 +781,7 @@ describe("discard prompts and keyboard", () => {
       () => clickSceneBar(2, otherScene.id),
       () => {
         openLineMenu(2, 1);
-        click(menuItem("Edit scene 00:05:00–00:06:00"));
+        click(menuItem("Edit scene 00:05:00 – 00:06:00"));
       },
     ];
     for (const [index, prompt] of prompts.entries()) {
@@ -793,7 +795,7 @@ describe("discard prompts and keyboard", () => {
     // The overlap callout's "Edit that scene".
     hoverLine(2, 2);
     pressKey("[");
-    expect(inPanel().getByText("This range overlaps the saved scene at 00:05:00.")).toBeTruthy();
+    expect(inPanel().getByText(OVERLAP_OTHER_LINES)).toBeTruthy();
     answerConfirm(false);
     click(inPanel().getByRole("button", { name: "Edit that scene" }));
     expect(window.confirm).toHaveBeenCalledTimes(5);
@@ -1570,7 +1572,8 @@ describe("P18 [R1–R3] page frame props and capture work", () => {
   });
 
   it("keeps handlers when a new text index is published, and the capture stays correct", async () => {
-    await renderViewer(ScriptViewerRoute, { scenes: [otherScene] });
+    // A scene that neither film timing nor script location overlaps, so the save goes through.
+    await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene] });
     publishWholeScript();
     placeAnchorsWithKeys([1, 0], [2, 3]);
     const before = framesNow();
@@ -1616,5 +1619,68 @@ describe("P19 [I4] visitors", () => {
     expect(viewer.getByRole("button", { name: "Show in script" })).toBeTruthy();
     expect(frameProps(2).activeSceneId).toBe(otherScene.id);
     expect(queryAnnotator()).toBeNull();
+  });
+});
+
+// ---------- P20: overlapping scenes ----------
+
+describe("P20 overlapping scenes", () => {
+  const TIMING_OVERLAP = "This scene's film timing overlaps the scene at 00:05:00 – 00:06:00. Scenes can touch but not overlap.";
+
+  function saveButton() {
+    return inPanel().getByRole("button", { name: "Save scene" });
+  }
+
+  it("refuses film timing that overlaps another scene without a request, then saves timing that only touches it", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [otherScene] });
+    publishWholeScript();
+    placeAnchorsWithKeys([3, 0], [3, 4]);
+    typeTime("Start", "00:05:30");
+    typeTime("End", "00:07:00");
+
+    click(saveButton());
+    expect(toast(TIMING_OVERLAP)).toBeTruthy();
+    expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
+    expect(timeInput("Start").value).toBe("00:05:30");
+    expect(inPanel().getByText("Captured from PDF")).toBeTruthy();
+
+    typeTime("Start", "00:06:00");
+    click(saveButton());
+    expect(screen.queryByText(TIMING_OVERLAP)).toBeNull();
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(lastSavePayload()).toMatchObject({ start_time_seconds: 360, end_time_seconds: 420, page_start: 3, page_end: 3 });
+    await settle(pending.saves[0]);
+    expect(toast("Scene saved.")).toBeTruthy();
+  });
+
+  it("refuses anchors that share a line with another scene without a request, shows the overlap as an error, then saves adjacent anchors", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [otherScene] });
+    publishWholeScript();
+    typeTime("Start", "00:01:00");
+    typeTime("End", "00:02:00");
+    // otherScene starts on p2's first line.
+    placeAnchorsWithKeys([1, 0], [2, 0]);
+
+    expect(inPanel().getByText(OVERLAP_OTHER_LINES).closest('[role="alert"]')).toBeTruthy();
+    expect(inPanel().getByRole("button", { name: "Edit that scene" })).toBeTruthy();
+
+    click(saveButton());
+    // The notice repeats the panel's error.
+    expect(screen.getAllByText(OVERLAP_OTHER_LINES, { selector: "span" })).toHaveLength(2);
+    expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
+    expect(inPanel().getByText("End · p. 2 · line 1")).toBeTruthy();
+
+    // p1's last line is adjacent to otherScene's first line.
+    hoverLine(1, 7);
+    pressKey("]");
+    expect(inPanel().queryByText(OVERLAP_OTHER_LINES)).toBeNull();
+    click(saveButton());
+    expect(screen.queryByText(OVERLAP_OTHER_LINES)).toBeNull();
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(lastSavePayload()).toMatchObject({
+      page_start: 1,
+      page_end: 1,
+      anchor_geometry: [GEOMETRY.p1Line1, { kind: "end", page: 1, line: 7 }],
+    });
   });
 });

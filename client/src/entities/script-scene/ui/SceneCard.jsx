@@ -1,7 +1,6 @@
 import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { getScreenplaySceneHeading } from "@/shared/lib/screenplay/grammar.js";
-import { formatSecondsToHms } from "@/shared/lib/time.js";
 import { Badge } from "@/shared/ui/Badge.jsx";
 import { ImageIcon } from "@/shared/ui/icons.jsx";
 import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
@@ -11,18 +10,12 @@ import {
   formatScriptScenePages,
   safeScriptSceneTags,
 } from "../model/capturedScene.js";
+import { formatFilmTiming } from "../model/filmTiming.js";
 import { getScriptTagLabel } from "../model/scriptTagCategories.js";
 import styles from "./SceneCard.module.css";
 
 const MAX_CARD_TAGS = 3;
 const MAX_PREVIEW_ELEMENTS = 14;
-
-function formatTiming(scene) {
-  const start = scene?.start_time_seconds;
-  const end = scene?.end_time_seconds;
-  if (!Number.isFinite(start) && !Number.isFinite(end)) return "No timing yet";
-  return `${formatSecondsToHms(start)} – ${formatSecondsToHms(end)}`;
-}
 
 /**
  * Scene preview card: a slice of script paper in screenplay layout above
@@ -102,7 +95,7 @@ export function SceneCard({
           <span className={styles.pages}>{pages}</span>
         </div>
         <div className={styles.subRow}>
-          <span>{formatTiming(scene)}</span>
+          <span>{formatFilmTiming(scene)}</span>
           {status && <Badge tone="success">{status}</Badge>}
         </div>
         {tags.length > 0 && (

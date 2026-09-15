@@ -34,6 +34,8 @@ vi.mock("./captureRange.js", async (importOriginal) => {
 });
 
 const FULL_INDEX = textIndexFrom(SCRIPT_PAGES, { total: 3, complete: true });
+/** buildSave arguments for a script with no other captured scenes and an unknown runtime. */
+const NO_OTHER_SCENES = { runtimeSeconds: 0, scenes: [] };
 
 const DINER = "INT. DINER - NIGHT";
 const RAIN =
@@ -148,7 +150,7 @@ describe("committed-view contract", () => {
       const { actions } = current(result);
       actions.setTime("startTime", "1:05");
       actions.normalizeTime("startTime");
-      save = actions.buildSave(0);
+      save = actions.buildSave(NO_OTHER_SCENES);
     });
 
     expect(save).toEqual({ error: "Enter a start and an end time for this scene." });
@@ -270,7 +272,7 @@ describe("capture work", () => {
     place(result, "end", page1, 4);
     expect(captureAnchoredRange.mock.calls.length).toBeGreaterThan(calls);
     expect(current(result).draft.text).toBe([`## ${DINER}`, RAIN, BELL].join("\n\n"));
-    expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({
+    expect(run(result, (a) => a.buildSave(NO_OTHER_SCENES)).payload).toMatchObject({
       page_start: 1,
       page_end: 1,
       start_offset: 0,
@@ -283,7 +285,7 @@ describe("capture work", () => {
     rerender({ index: textIndexFrom([page1], { total: 3 }) });
     expect(captureAnchoredRange.mock.calls.length).toBeGreaterThan(calls);
     expect(current(result).draft.text).toBe([`## ${DINER}`, RAIN, BELL].join("\n\n"));
-    expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({ start_offset: null, end_offset: null });
+    expect(run(result, (a) => a.buildSave(NO_OTHER_SCENES)).payload).toMatchObject({ start_offset: null, end_offset: null });
   });
 });
 
@@ -307,7 +309,7 @@ describe("[C3] captured text that changes during indexing", () => {
   }
 
   function save(result) {
-    return run(result, (a) => a.buildSave(0));
+    return run(result, (a) => a.buildSave(NO_OTHER_SCENES));
   }
 
   it("replaces the editor's source for untouched captured text only when indexing changes that text", () => {
@@ -592,13 +594,13 @@ describe("[H2] AI proposal provenance", () => {
       recaptureOption: "none",
       editorKey: "1:1:0-1:7",
     });
-    expect(run(result, (a) => a.buildSave(0))).toEqual({ error: PLACE_ANCHORS });
+    expect(run(result, (a) => a.buildSave(NO_OTHER_SCENES))).toEqual({ error: PLACE_ANCHORS });
 
     anchorP1(result, 4);
     expect(current(result).draft.textStale).toBe(true);
     place(result, "end", page1, 7);
     expect(current(result).draft).toMatchObject({ textStale: false, capturedPlainText: P1_PLAIN });
-    expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({
+    expect(run(result, (a) => a.buildSave(NO_OTHER_SCENES)).payload).toMatchObject({
       formatted_selected_text: AI_TEXT,
       raw_selected_text: P1_PLAIN,
       page_start: 1,
@@ -628,7 +630,7 @@ describe("[H2] AI proposal provenance", () => {
         legacyText: false,
         recaptureOption,
       });
-      expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({
+      expect(run(result, (a) => a.buildSave(NO_OTHER_SCENES)).payload).toMatchObject({
         formatted_selected_text: AI_TEXT,
         page_start: scene.page_start,
       });
@@ -860,7 +862,7 @@ describe("persistence completions", () => {
   it("acknowledges a save without replacing newer text or remounting its editor", () => {
     const { result } = renderDraft();
     run(result, a => a.loadScene(savedV2Scene));
-    const save = run(result, a => a.buildSave(0));
+    const save = run(result, a => a.buildSave(NO_OTHER_SCENES));
     run(result, a => a.editText("## NEWER TEXT\n\nStill editing."));
     const editorKey = current(result).draft.editorKey;
     const saved = { ...savedV2Scene, ...save.payload };
@@ -871,10 +873,40 @@ describe("persistence completions", () => {
     expect(current(result).draft.dirty).toBe(true);
   });
 
+  it("treats blurring an already formatted time as no change, so the save response reloads the scene", () => {
+    const { result } = renderDraft();
+    run(result, a => a.loadScene(savedV2Scene));
+    const save = run(result, a => a.buildSave(NO_OTHER_SCENES));
+    run(result, a => a.normalizeTime("startTime"));
+    expect(current(result).draft.startTime).toBe("00:10:00");
+    const editorKey = current(result).draft.editorKey;
+    const saved = { ...savedV2Scene, ...save.payload };
+    act(() => save.applySaved(saved));
+    expect(current(result).draft.savedScene).toBe(saved);
+    // Loading the returned scene replaces the editor source; acknowledging newer edits wouldn't.
+    expect(current(result).draft.editorKey).not.toBe(editorKey);
+    expect(current(result).draft.dirty).toBe(false);
+  });
+
+  it("counts blurring that reformats a time as a newer change, so the save response keeps the draft", () => {
+    const { result } = renderDraft();
+    run(result, a => a.loadScene(savedV2Scene));
+    run(result, a => a.setTime("startTime", "10:00"));
+    const save = run(result, a => a.buildSave(NO_OTHER_SCENES));
+    run(result, a => a.normalizeTime("startTime"));
+    expect(current(result).draft.startTime).toBe("00:10:00");
+    const editorKey = current(result).draft.editorKey;
+    const saved = { ...savedV2Scene, ...save.payload };
+    act(() => save.applySaved(saved));
+    expect(current(result).draft.savedScene).toBe(saved);
+    expect(current(result).draft.editorKey).toBe(editorKey);
+    expect(current(result).draft.startTime).toBe("00:10:00");
+  });
+
   it("preserves edits queued before a save response in the same React batch", () => {
     const { result } = renderDraft();
     run(result, a => a.loadScene(savedV2Scene));
-    const save = run(result, a => a.buildSave(0));
+    const save = run(result, a => a.buildSave(NO_OTHER_SCENES));
     act(() => {
       current(result).actions.setTime("endTime", "00:11:30");
       save.applySaved({ ...savedV2Scene, ...save.payload });
@@ -886,7 +918,7 @@ describe("persistence completions", () => {
   it("ignores a save response after a reset queued in the same React batch", () => {
     const { result } = renderDraft();
     run(result, a => a.loadScene(savedV2Scene));
-    const save = run(result, a => a.buildSave(0));
+    const save = run(result, a => a.buildSave(NO_OTHER_SCENES));
     act(() => {
       current(result).actions.reset();
       save.applySaved({ ...savedV2Scene, ...save.payload });
@@ -898,7 +930,7 @@ describe("persistence completions", () => {
   it("detaches newer edits from a deleted row and invalidates its pending save", () => {
     const { result } = renderDraft();
     run(result, a => a.loadScene(savedV2Scene));
-    const save = run(result, a => a.buildSave(0));
+    const save = run(result, a => a.buildSave(NO_OTHER_SCENES));
     const deleted = run(result, a => a.prepareDelete(savedV2Scene.id));
     act(() => {
       current(result).actions.editText("## UNSAVED\n\nKeep this text.");
@@ -916,7 +948,7 @@ describe("buildSave", () => {
 
   it("[B1] checks film timing, then text, then script location", () => {
     const { result } = renderDraft(textIndexFrom([], { total: 3 }));
-    const save = (runtime = 0) => run(result, (a) => a.buildSave(runtime));
+    const save = (runtime = 0) => run(result, (a) => a.buildSave({ runtimeSeconds: runtime, scenes: [] }));
 
     expect(save()).toEqual({ error: "Enter a start and an end time for this scene." });
     run(result, (a) => a.setTime("startTime", "abc"));
@@ -944,7 +976,7 @@ describe("buildSave", () => {
     run(result, (a) => a.toggleTag("character-focus:protagonist"));
 
     const markdown = [RAIN, BELL, "### MAYA", `> ${MAYA_SPEECH}`].join("\n\n");
-    expect(run(result, (a) => a.buildSave(7200))).toEqual({
+    expect(run(result, (a) => a.buildSave({ runtimeSeconds: 7200, scenes: [] }))).toEqual({
       applySaved: expect.any(Function),
       confirmStaleText: false,
       payload: {
@@ -994,7 +1026,7 @@ describe("buildSave", () => {
     const { result } = renderDraft(textIndexFrom([], { total: 3 }));
     run(result, (a) => a.loadScene(scene));
 
-    expect(run(result, (a) => a.buildSave(0))).toEqual({
+    expect(run(result, (a) => a.buildSave(NO_OTHER_SCENES))).toEqual({
       applySaved: expect.any(Function),
       confirmStaleText: false,
       payload: {
@@ -1024,7 +1056,7 @@ describe("buildSave", () => {
     run(result, (a) => a.loadScene(scene));
     expect(current(result).draft.anchorsSuggested).toBe(true);
 
-    const { payload } = run(result, (a) => a.buildSave(0));
+    const { payload } = run(result, (a) => a.buildSave(NO_OTHER_SCENES));
 
     expect(payload.anchor_geometry).toBe(scene.anchor_geometry);
     expect(payload.raw_selected_text).toBe(legacyScene.raw_selected_text);
@@ -1037,7 +1069,7 @@ describe("[B5] explicit anchors need a capture to save", () => {
   const PLACE_END = "Place an end anchor in the script before saving.";
   const WAIT_FOR_INDEX = "Wait for the pages between the anchors to finish indexing, then save again.";
   const UNREADABLE = "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.";
-  const save = (result) => run(result, (a) => a.buildSave(0));
+  const save = (result) => run(result, (a) => a.buildSave(NO_OTHER_SCENES));
 
   function setTiming(result) {
     run(result, (a) => a.setTime("startTime", "00:01:00"));
@@ -1160,7 +1192,7 @@ describe("[B6] stale text under explicit anchors needs confirmation to save", ()
     context_suffix: `MAYA\nKitchen closed an hour ago.\nCoffee is all I can do.`,
     anchor_geometry: v2Geometry(page1, 0, page1, 4),
   };
-  const save = (result) => run(result, (a) => a.buildSave(0));
+  const save = (result) => run(result, (a) => a.buildSave(NO_OTHER_SCENES));
 
   function setTiming(result) {
     run(result, (a) => a.setTime("startTime", "00:01:00"));
@@ -1449,5 +1481,124 @@ describe("suggested anchors and saved scene keys", () => {
 
     run(result, (a) => a.reset());
     expect(current(result).draft.previewScene).toMatchObject({ page_start: null, page_end: null, formatted_selected_text: "" });
+  });
+});
+
+describe("overlapping scenes", () => {
+  const TIMING_OVERLAPS_V2 =
+    "This scene's film timing overlaps the scene at 00:10:00 – 00:11:00. Scenes can touch but not overlap.";
+  const LINES_OVERLAP_OTHER =
+    "These anchors share lines with the scene at 00:05:00 – 00:06:00. Move the anchors so the scenes don't overlap.";
+  const PLACE_ANCHORS = "Place start and end anchors in the script to capture the scene text.";
+
+  function saveWith(result, scenes, runtimeSeconds = 0) {
+    return run(result, (a) => a.buildSave({ runtimeSeconds, scenes }));
+  }
+
+  function setTiming(result, start, end) {
+    run(result, (a) => a.setTime("startTime", start));
+    run(result, (a) => a.setTime("endTime", end));
+  }
+
+  function anchorP1(result) {
+    place(result, "start", page1, 0);
+    place(result, "end", page1, 7);
+  }
+
+  it("refuses film timing that overlaps another captured scene, naming its range, and leaves the draft unchanged", () => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    setTiming(result, "00:10:30", "00:11:30");
+    const before = current(result).draft;
+
+    expect(saveWith(result, [savedV2Scene])).toEqual({ error: TIMING_OVERLAPS_V2 });
+    expect(current(result).draft).toEqual(before);
+
+    // A zero-length timing overlaps a scene that strictly contains it.
+    setTiming(result, "00:10:30", "00:10:30");
+    expect(saveWith(result, [savedV2Scene])).toEqual({ error: TIMING_OVERLAPS_V2 });
+  });
+
+  it.each([
+    ["ends where the other scene starts", "00:09:00", "00:10:00"],
+    ["starts where the other scene ends", "00:11:00", "00:12:00"],
+    ["is zero-length at the other scene's end", "00:11:00", "00:11:00"],
+  ])("saves film timing that only touches another scene: it %s", (_, start, end) => {
+    const { result } = renderDraft();
+    anchorP1(result);
+    setTiming(result, start, end);
+
+    expect(saveWith(result, [savedV2Scene])).toMatchObject({
+      confirmStaleText: false,
+      payload: { page_start: 1, page_end: 1, anchor_geometry: v2Geometry(page1, 0, page1, 7) },
+    });
+  });
+
+  it("ignores the draft's own saved scene and scenes without usable timing", () => {
+    const { result } = renderDraft();
+    run(result, (a) => a.loadScene(savedV2Scene));
+    const untimed = sceneRow({ id: "scene-untimed", page_start: 3, page_end: 3 });
+
+    expect(saveWith(result, [savedV2Scene, untimed])).toMatchObject({
+      confirmStaleText: false,
+      payload: { start_time_seconds: 600, end_time_seconds: 660, page_start: 3 },
+    });
+  });
+
+  it("checks timing format and the runtime cap first, then film timing overlap, then B5's capture", () => {
+    const { result } = renderDraft();
+    place(result, "start", page1, 0);
+    setTiming(result, "00:10:30", "abc");
+    expect(saveWith(result, [savedV2Scene])).toEqual({ error: "Use HH:MM:SS (or MM:SS) for the start and end times." });
+
+    run(result, (a) => a.setTime("endTime", "00:11:30"));
+    expect(saveWith(result, [savedV2Scene], 600)).toEqual({ error: "Times can't be later than the film's runtime (00:10:00)." });
+    expect(saveWith(result, [savedV2Scene])).toEqual({ error: TIMING_OVERLAPS_V2 });
+
+    run(result, (a) => a.setTime("startTime", "00:11:00"));
+    expect(saveWith(result, [savedV2Scene])).toEqual({ error: "Place an end anchor in the script before saving." });
+  });
+
+  it("refuses anchors that share a line with another captured scene, after blank text and before asking about stale text", () => {
+    const { result } = renderDraft();
+    setTiming(result, "00:01:00", "00:02:00");
+    // otherScene starts on p2's first line.
+    place(result, "start", page1, 0);
+    place(result, "end", page2, 0);
+    expect(saveWith(result, [otherScene])).toEqual({ error: LINES_OVERLAP_OTHER });
+
+    run(result, (a) => a.editText("   "));
+    expect(saveWith(result, [otherScene])).toEqual({ error: PLACE_ANCHORS });
+
+    run(result, (a) => a.editText("## EDITED HEADING\n\nWords typed by hand."));
+    place(result, "end", page2, 1);
+    expect(current(result).draft.textStale).toBe(true);
+    const before = current(result).draft;
+    expect(saveWith(result, [otherScene])).toEqual({ error: LINES_OVERLAP_OTHER });
+    expect(current(result).draft).toEqual(before);
+
+    // p1's last line is adjacent to otherScene's first line, so saving goes on to ask about the stale text.
+    place(result, "end", page1, 7);
+    expect(saveWith(result, [otherScene])).toMatchObject({
+      confirmStaleText: true,
+      payload: { page_start: 1, page_end: 1, anchor_geometry: v2Geometry(page1, 0, page1, 7) },
+    });
+  });
+
+  it("compares the location being saved: never the draft's own row, not a legacy location, but a stored location kept after clearing anchors", () => {
+    const { result } = renderDraft();
+    run(result, (a) => a.loadScene(otherScene));
+    expect(saveWith(result, [otherScene])).toMatchObject({ confirmStaleText: false, payload: { page_start: 2 } });
+
+    // Suggested anchors share lines with otherScene, but the legacy scene saves its stored location, which has no anchor pair.
+    run(result, (a) => a.loadScene(legacyScene));
+    expect(current(result).draft.anchorsSuggested).toBe(true);
+    expect(saveWith(result, [legacyScene, otherScene])).toMatchObject({ payload: { page_start: 1, anchor_geometry: [] } });
+
+    // Clearing every anchor keeps the stored location, which is still compared.
+    const copy = sceneRow({ ...otherScene, id: "scene-copy", start_time_seconds: 900, end_time_seconds: 960 });
+    run(result, (a) => a.loadScene(copy));
+    run(result, (a) => a.clearAnchors());
+    expect(saveWith(result, [copy, otherScene])).toEqual({ error: LINES_OVERLAP_OTHER });
   });
 });
