@@ -171,7 +171,7 @@ All paths are under `client/src/pages/script-viewer/`.
 |---|---|
 | `ui/ScriptViewerPage.jsx` | The route module and page: data loading, PDF, dialogs, navigation, and wiring the draft to the UI. |
 | `model/sceneDraft.js` | `useSceneDraft`, and `scriptLocationOverlapError`, the script location overlap message that `AnnotatorPanel`'s callout also shows. |
-| `model/anchors.js` | Pure anchor helpers: geometry v2 read and write, placement and swapping, suggestions from saved text, scene segments, overlap. |
+| `model/anchors.js` | Pure helpers for scene anchors while capturing: placement and swapping, anchor keys, a stored anchor's current line (`resolveAnchorLine`), suggestions from saved text, and the saved scenes' bars in the margin (`buildSceneSegmentsByPage`). |
 | `model/captureRange.js` | `captureAnchoredRange(textIndex, anchors)`: captured text, key, pages, offsets and context. Expensive. `captureUnavailableReason(textIndex, anchors)` says why there is no capture. |
 | `model/useScriptTextIndex.js` | Indexes every page's text lines in the background on a separate pdf.js worker. Publishes a new index object every 8 pages and on completion. |
 | `model/usePdfPageWindowing.js` | Page sizing, mobile windowing and scrolling. |
@@ -181,6 +181,15 @@ All paths are under `client/src/pages/script-viewer/`.
 | `lib/pdfViewport.js`, `lib/platform.js` | Scroll helpers, typing-target detection, shortcut labels. |
 
 Film timing rules live outside the page slice, in `client/src/entities/script-scene/model/filmTiming.js`: checking typed timing for saving (`parseFilmTiming`) and while typing (`filmTimingErrorWhileTyping`), film timing overlap (`findOverlappingFilmTiming`), whether a moment falls inside a scene (`filmTimingCovers`), the range label (`formatFilmTiming`), and the check for a single moment such as a still's timestamp (`parseFilmMoment`). Generic typed-time parsing, formatting and normalizing are in `client/src/shared/lib/time.js`.
+
+Where a stored captured scene sits in its script is read outside the page slice, in `client/src/entities/script-scene/model/scriptLocation.js`, so every page reads it the same way:
+
+- **Scene anchors:** version-2 geometry read and write (`anchorsFromGeometry`, `anchorsToGeometry`). Reading returns null for a legacy scene.
+- **Pages:** `scenePageRange` and its label, `formatScenePages`. Pages are known only when `page_start` is, because the API orders scenes by `page_start` alone. Unknown pages get no label, not "Page 1".
+- **Scroll target:** `sceneScrollTarget` is the start anchor's line, else the first page, else null, in which case the page doesn't scroll.
+- **Script location overlap:** `findOverlappingScriptLocation` compares `(page, line)` ranges inclusively, so ranges that share a line overlap and adjacent lines don't. It skips legacy scenes and the excluded scene. The page's overlap warning uses it.
+
+`client/src/entities/script-scene/model/capturedScene.js` reads pages through that module for `sortScriptScenes`, which matches the API's list order (first page with unknown pages last, then film timing start, then creation time), and for `getSceneScriptPath`, which leaves out `page` when it's unknown.
 
 ## The `useSceneDraft` interface
 
@@ -219,13 +228,13 @@ Timing rules:
 |---|---|---|---|
 | Captured scene | script scene: `scenes`, `draft.savedScene` | `/movies/:movieId/scripts/:scriptId/scene-annotations` (list, create, update, delete); `GET /script-scenes` (search) | `script_scene_annotations` joined to `script_scene_anchors` |
 | Script location | `page_start`/`page_end`, `start_offset`/`end_offset`, `context_prefix`/`context_suffix`, `anchor_geometry` | the same payload fields | `script_scene_anchors` columns |
-| Scene anchor | `draft.anchors.start` / `.end`; version-2 geometry entries `{ kind, version: 2, unit: "pt", page, line, top, bottom, text }` | `anchor_geometry` | `script_scene_anchors.anchor_geometry` (JSONB) |
+| Scene anchor | `draft.anchors.start` / `.end`; version-2 geometry entries `{ kind, version: 2, unit: "pt", page, line, top, bottom, text }`, read and written by `anchorsFromGeometry` / `anchorsToGeometry` (`@/entities/script-scene/model/scriptLocation.js`) | `anchor_geometry` | `script_scene_anchors.anchor_geometry` (JSONB) |
 | Suggested anchors | `draft.anchorsSuggested`; anchors carrying `suggested: true` | never sent | never stored |
 | Scene text | `draft.text` (panel and dialog prop `markdown`) | `formatted_selected_text`; `selected_text` mirrors it on save | `script_scene_anchors.formatted_selected_text`, `selected_text` |
 | Raw text | — | `raw_selected_text` | `script_scene_anchors.raw_selected_text` |
 | Text origin | `draft.textOrigin`: `"capture"`, `"edited"`, `"saved"`, `"ai"` (also the panel's badge keys) | — | — |
 | Stale text | `draft.textStale` (panel prop `captureStale`) | — | — |
-| Legacy scene | `draft.legacyText`; geometry without a valid version-2 start and end pair | `anchor_geometry` that isn't version-2 anchors | — |
+| Legacy scene | a scene for which `anchorsFromGeometry(scene.anchor_geometry)` is null: geometry without a valid version-2 start and end pair; `draft.legacyText` for its saved text | `anchor_geometry` that isn't version-2 anchors | — |
 | AI proposal | `draft.proposal` | `POST /api/script-scenes/format` | — |
 | Film timing | `draft.startTime` / `endTime` as typed; `formatFilmTiming` labels a scene's range | `start_time_seconds` / `end_time_seconds` | `script_scene_annotations.start_time_seconds` / `end_time_seconds` |
 
@@ -240,6 +249,9 @@ Timing rules:
 | Why a save is refused without a capture | `buildSavePayload` in `model/sceneDraft.js`; the reasons in `captureUnavailableReason` (`model/captureRange.js`) |
 | When saving asks to confirm stale text | `confirmStaleText` in `buildSavePayload` (`model/sceneDraft.js`); the prompt in `saveScene` (`ui/ScriptViewerPage.jsx`) |
 | Suggested anchors | `suggestAnchorsFromSavedText` in `model/anchors.js`, and the suggestions memo in `useSceneDraft` |
+| How stored anchors are read and written, a scene's pages, page label and scroll target | `@/entities/script-scene/model/scriptLocation.js` |
+| Script location overlap | `findOverlappingScriptLocation` in `@/entities/script-scene/model/scriptLocation.js` |
+| Scene order and links to a scene | `sortScriptScenes` and `getSceneScriptPath` in `@/entities/script-scene/model/capturedScene.js` |
 | Captured text layout | `model/captureRange.js`, `@/shared/lib/screenplay/layoutClassifier.js` and `@/shared/lib/screenplay/grammar.js` |
 | Line geometry and pointer snapping | `@/shared/lib/pdf-text/pageTextLines.js` |
 | Text origin, stale text, the editor key, the dirty check | `useSceneDraft` |
@@ -261,6 +273,15 @@ Vitest runs with jsdom (`client/vitest.config.js`, setup in `client/src/test/set
 
 - **`ui/ScriptViewerPage.test.jsx`** characterizes the page end to end: capture, indexing, editing, re-capture, suggestions, saving, prompts, keys, AI proposals, visitors, and page-frame prop identity. It doubles only the edges: the API modules the page calls (`@/shared/api/*.js`), the session hook, `react-pdf`, the text indexer (a store the test publishes indexes to), page windowing, `PdfPageFrame` (which records the props of each render), AI page snapshots and `window.confirm`. Capture runs through a passthrough spy. The panel, dialogs, editor, anchors, capture and screenplay code are real.
 - **`model/sceneDraft.test.jsx`** tests the hook's interface directly: the committed-view rule, identities, capture work, request tokens under `StrictMode`, AI proposal provenance, re-capture options, editor keys, undo limits, and the exact save mapping.
+
+Where a stored scene sits is tested through the entity modules' exports, using stored-row shapes:
+
+- **`scriptLocation.test.js`** covers:
+  - version-2 pairs, and missing, empty, one-sided, wrong-version and malformed geometry;
+  - page ranges with a start only, an end only, neither, or string values, and their labels;
+  - scroll targets for anchored and legacy scenes;
+  - script location overlap: a shared boundary line, adjacent lines on one page and across a page break, cross-page ranges, containment, identical ranges, one-line scenes, reversed stored pairs, skipped legacy scenes, and the excluded row.
+- **`capturedScene.test.js`** covers the API's list order, including ties on page and on film timing start, and links with and without a known page.
 
 Both suites cover persistence response races: switching drafts, preserving newer edits, attaching the id from a first save, and keeping newer changes after deletion. Hook tests also cover an edit/reset and a response queued in the same React batch.
 
