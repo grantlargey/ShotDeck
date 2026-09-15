@@ -3,7 +3,7 @@ import { HttpError } from "../utils/http-error.js";
 
 /*
  * Captured scenes: the module behind routes/script-scenes.routes.js. It owns
- * the one write shape, the overlap check, the SQL for the scene and anchor
+ * the one write shape, the overlap rules, the SQL for the scene and anchor
  * tables, and the response shape.
  *
  * Create and update share saveScriptScene. An update replaces the whole scene
@@ -229,26 +229,68 @@ async function lockScriptScenes(db, scriptId) {
 
 const CONFLICT_MESSAGES = {
     film_timing: "This scene's film timing overlaps another scene in this script.",
+    script_location: "This scene's script location shares lines with another scene in this script.",
 };
 
 /**
  * The 409 for the input's first overlap with another scene of the script, or
- * null. Film timings overlap when each starts before the other ends, so scenes
- * that only touch are fine, and a zero-length timing overlaps only a scene that
- * strictly contains it. Other scenes are checked in film timing order.
+ * null. Film timing is checked first, then script location, and other scenes
+ * are checked in film timing order.
+ *
+ * - Film timings overlap when each starts before the other ends, so scenes that
+ *   only touch are fine, and a zero-length timing overlaps only a scene that
+ *   strictly contains it.
+ * - Script locations overlap when their anchor ranges share a line, so scenes on
+ *   adjacent lines are fine. A scene without a valid version-2 anchor pair (a
+ *   legacy scene) is skipped.
  */
 async function findConflict(db, { movieId, scriptId, sceneId, input }) {
     const result = await db.query(
-        `SELECT id, start_time_seconds, end_time_seconds
-        FROM script_scene_annotations
-        WHERE movie_id = $1 AND script_id = $2 AND id IS DISTINCT FROM $3
-        ORDER BY start_time_seconds, end_time_seconds, id`,
+        `SELECT sc.id, sc.start_time_seconds, sc.end_time_seconds, a.anchor_geometry
+        FROM script_scene_annotations sc
+        JOIN script_scene_anchors a ON a.id = sc.anchor_id
+        WHERE sc.movie_id = $1 AND sc.script_id = $2 AND sc.id IS DISTINCT FROM $3
+        ORDER BY sc.start_time_seconds, sc.end_time_seconds, sc.id`,
         [movieId, scriptId, sceneId]
     );
-    const timing = result.rows.find(
+    const others = result.rows;
+
+    const timing = others.find(
         (other) => other.start_time_seconds < input.endTime && input.startTime < other.end_time_seconds
     );
-    return timing ? conflictError("film_timing", timing) : null;
+    if (timing) return conflictError("film_timing", timing);
+
+    const inputLocation = scriptLocationOf(input.anchorGeometry);
+    if (!inputLocation) return null;
+    const lines = others.find((other) => {
+        const otherLocation = scriptLocationOf(other.anchor_geometry);
+        return (
+            otherLocation !== null &&
+            compareLines(inputLocation.first, otherLocation.last) <= 0 &&
+            compareLines(otherLocation.first, inputLocation.last) <= 0
+        );
+    });
+    return lines ? conflictError("script_location", lines) : null;
+}
+
+/**
+ * The first and last line of a scene's anchor range, or null without a valid
+ * version-2 start and end anchor. Where a kind repeats, its last entry wins, as
+ * in the script viewer.
+ */
+function scriptLocationOf(geometry) {
+    const anchors = {};
+    for (const entry of Array.isArray(geometry) ? geometry : []) {
+        if (isSceneAnchorEntry(entry) && isValidSceneAnchor(entry)) anchors[entry.kind] = entry;
+    }
+    if (!anchors.start || !anchors.end) return null;
+    const [first, last] = [anchors.start, anchors.end].sort(compareLines);
+    return { first, last };
+}
+
+/** Orders scene anchors by page, then by line. */
+function compareLines(a, b) {
+    return a.page - b.page || a.line - b.line;
 }
 
 function conflictError(kind, scene) {

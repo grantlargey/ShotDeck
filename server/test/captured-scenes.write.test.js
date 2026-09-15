@@ -37,6 +37,7 @@ const MESSAGES = {
     sceneNotFound: "Script scene annotation not found",
     scriptNotFound: "Script not found",
     filmTimingOverlap: "This scene's film timing overlaps another scene in this script.",
+    scriptLocationOverlap: "This scene's script location shares lines with another scene in this script.",
 };
 
 // changes in 11: anchor_id, the text fields, offsets and context
@@ -489,17 +490,6 @@ describe("overlapping film timing", () => {
         assert.equal(other.status, 201, other.text);
     });
 
-    // changes in 04: scenes whose script locations share a line are a 409
-    test("script locations aren't compared: scenes on the same lines save when their timing doesn't overlap", async () => {
-        const place = await newPlace();
-        await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120, anchor_geometry: anchorPair() });
-        const sameLines = await postScene(
-            place,
-            sceneBody({ start_time_seconds: 200, end_time_seconds: 260, anchor_geometry: anchorPair() })
-        );
-        assert.equal(sameLines.status, 201, sameLines.text);
-    });
-
     test("an update that overlaps another scene is a 409 naming it, and nothing is stored", async () => {
         const place = await newPlace();
         const first = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
@@ -536,6 +526,147 @@ describe("overlapping film timing", () => {
         assert.equal(same.status, 200, same.text);
         const wider = await putScene(place, scene.id, sceneBody({ start_time_seconds: 50, end_time_seconds: 130 }));
         assert.equal(wider.status, 200, wider.text);
+    });
+});
+
+describe("overlapping script locations", () => {
+    async function expectConflict(responsePromise, scene) {
+        const response = await responsePromise;
+        assert.equal(response.status, 409, response.text);
+        assert.deepEqual(response.body, {
+            error: MESSAGES.scriptLocationOverlap,
+            conflict_kind: "script_location",
+            conflict_scene_id: scene.id,
+            conflict_start_time_seconds: scene.start_time_seconds,
+            conflict_end_time_seconds: scene.end_time_seconds,
+        });
+    }
+
+    // Each body gets its own film timing, so only script locations can conflict.
+    let nextMinute = 0;
+    function withGeometry(anchorGeometry) {
+        const start = nextMinute * 60;
+        nextMinute += 1;
+        return sceneBody({ start_time_seconds: start, end_time_seconds: start + 30, anchor_geometry: anchorGeometry });
+    }
+
+    function atLines(range) {
+        return withGeometry(anchorPair(range));
+    }
+
+    const PAGE_TWO = { startPage: 2, startLine: 10, endPage: 2, endLine: 20 };
+
+    test("a scene sharing a line with another is a 409 naming it, and nothing is stored", async () => {
+        const place = await newPlace();
+        const existing = await createScene(api, cookie, place, atLines(PAGE_TWO));
+        const sharing = [
+            { startPage: 2, startLine: 20, endPage: 2, endLine: 30 }, // its last line
+            { startPage: 2, startLine: 0, endPage: 2, endLine: 10 }, // its first line
+            { startPage: 2, startLine: 10, endPage: 2, endLine: 10 }, // only its first line
+            { startPage: 2, startLine: 12, endPage: 2, endLine: 15 }, // inside it
+            { startPage: 1, startLine: 40, endPage: 3, endLine: 2 }, // containing it, across pages
+            { startPage: 1, startLine: 30, endPage: 2, endLine: 10 }, // from an earlier page onto its first line
+            { startPage: 2, startLine: 15, endPage: 4, endLine: 0 }, // from inside it onto a later page
+        ];
+        for (const range of sharing) {
+            await expectConflict(postScene(place, atLines(range)), existing);
+        }
+
+        const list = await api.get(scenesPath(place));
+        assert.deepEqual(list.body.map((scene) => scene.id), [existing.id]);
+    });
+
+    test("scenes on adjacent lines save, including across a page break", async () => {
+        const place = await newPlace();
+        await createScene(api, cookie, place, atLines(PAGE_TWO));
+        const adjacent = [
+            { startPage: 2, startLine: 21, endPage: 2, endLine: 30 },
+            { startPage: 1, startLine: 50, endPage: 2, endLine: 9 },
+            { startPage: 3, startLine: 0, endPage: 3, endLine: 5 },
+        ];
+        for (const range of adjacent) {
+            const response = await postScene(place, atLines(range));
+            assert.equal(response.status, 201, response.text);
+        }
+    });
+
+    test("film timing is checked first", async () => {
+        const place = await newPlace();
+        const sameTiming = await createScene(api, cookie, place, atLines({ startPage: 1, startLine: 0, endLine: 4 }));
+        await createScene(api, cookie, place, atLines({ startPage: 5, startLine: 0, endLine: 4 }));
+
+        const response = await postScene(
+            place,
+            sceneBody({
+                start_time_seconds: sameTiming.start_time_seconds,
+                end_time_seconds: sameTiming.end_time_seconds,
+                anchor_geometry: anchorPair({ startPage: 5, startLine: 2, endLine: 8 }),
+            })
+        );
+        assert.equal(response.status, 409, response.text);
+        assert.equal(response.body.conflict_kind, "film_timing");
+        assert.equal(response.body.conflict_scene_id, sameTiming.id);
+    });
+
+    // changes in 11: every scene needs a valid version-2 anchor pair (A2)
+    test("scenes without a valid version-2 anchor pair are skipped, on either side", async () => {
+        const [start, end] = anchorPair(PAGE_TWO);
+        const legacy = [{ page: 2, x: 72, y: 140, width: 400, height: 14 }];
+
+        const place = await newPlace();
+        await createScene(api, cookie, place, atLines(PAGE_TWO));
+        for (const geometry of [legacy, [start], [end], []]) {
+            const response = await postScene(place, withGeometry(geometry));
+            assert.equal(response.status, 201, response.text);
+        }
+
+        const legacyPlace = await newPlace();
+        for (const geometry of [legacy, [start], [end]]) {
+            await createScene(api, cookie, legacyPlace, withGeometry(geometry));
+        }
+        const anchored = await postScene(legacyPlace, atLines(PAGE_TWO));
+        assert.equal(anchored.status, 201, anchored.text);
+    });
+
+    test("an anchor pair stored end before start still covers the lines between", async () => {
+        const place = await newPlace();
+        const reversed = await createScene(api, cookie, place, atLines({ startPage: 3, startLine: 0, endPage: 2, endLine: 10 }));
+        await expectConflict(postScene(place, atLines({ startPage: 2, startLine: 30, endPage: 2, endLine: 31 })), reversed);
+    });
+
+    test("an update never conflicts with the scene's own saved lines", async () => {
+        const place = await newPlace();
+        const scene = await createScene(api, cookie, place, atLines(PAGE_TWO));
+
+        const same = await putScene(
+            place,
+            scene.id,
+            sceneBody({
+                start_time_seconds: scene.start_time_seconds,
+                end_time_seconds: scene.end_time_seconds,
+                anchor_geometry: scene.anchor_geometry,
+            })
+        );
+        assert.equal(same.status, 200, same.text);
+        const moved = await putScene(place, scene.id, atLines({ startPage: 2, startLine: 15, endPage: 2, endLine: 25 }));
+        assert.equal(moved.status, 200, moved.text);
+    });
+
+    test("an update onto another scene's lines is a 409, and nothing is stored", async () => {
+        const place = await newPlace();
+        const first = await createScene(api, cookie, place, atLines(PAGE_TWO));
+        const second = await createScene(api, cookie, place, atLines({ startPage: 3, startLine: 0, endPage: 3, endLine: 10 }));
+
+        await expectConflict(putScene(place, second.id, atLines({ startPage: 2, startLine: 20, endPage: 3, endLine: 10 })), first);
+
+        const list = await api.get(scenesPath(place));
+        assert.deepEqual(list.body.find((scene) => scene.id === second.id), second);
+    });
+
+    test("a scene on the same lines in another script never conflicts", async () => {
+        await createScene(api, cookie, await newPlace(), atLines(PAGE_TWO));
+        const other = await postScene(await newPlace(), atLines(PAGE_TWO));
+        assert.equal(other.status, 201, other.text);
     });
 });
 
@@ -807,5 +938,14 @@ describe("concurrent saves to one script", () => {
             sceneBody({ start_time_seconds: 100, end_time_seconds: 160 }),
         ]);
         await expectOneStored(place, responses, "film_timing");
+    });
+
+    test("of two scenes whose script locations share a line, exactly one is stored", async () => {
+        const place = await newPlace();
+        const responses = await createAtOnce(place, [
+            sceneBody({ start_time_seconds: 0, end_time_seconds: 50, anchor_geometry: anchorPair({ startPage: 2, startLine: 10, endLine: 20 }) }),
+            sceneBody({ start_time_seconds: 100, end_time_seconds: 150, anchor_geometry: anchorPair({ startPage: 2, startLine: 20, endLine: 30 }) }),
+        ]);
+        await expectOneStored(place, responses, "script_location");
     });
 });
