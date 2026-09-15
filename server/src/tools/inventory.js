@@ -276,10 +276,12 @@ export async function collectInventory(client) {
                 overlapping_pairs: pairFigure(scenePairs(anchored, locationsOverlap)),
             },
             tags: unknownTags(scenes),
+            // Counts only: the local importer gives nearly every still a title and body, so ID lists would name them all.
             stills: {
                 total: stills.length,
-                with_title: idsWhere(stills, (still) => still.has_title),
-                with_body: idsWhere(stills, (still) => still.has_body),
+                with_title: stills.filter((still) => still.has_title).length,
+                with_body: stills.filter((still) => still.has_body).length,
+                with_title_or_body: stills.filter((still) => still.has_title || still.has_body).length,
             },
             movies: {
                 total: movies.length,

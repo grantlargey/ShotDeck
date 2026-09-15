@@ -41,7 +41,7 @@ const fixedId = (group, n) => `${group}0000000-0000-4000-8000-${String(n).padSta
 const movie = { plain: fixedId(1, 1), withLinks: fixedId(1, 2), twoScripts: fixedId(1, 3) };
 const script = { main: fixedId(2, 1), other: fixedId(2, 2), twoA: fixedId(2, 3), twoB: fixedId(2, 4) };
 const legacy = { matched: fixedId(3, 1), unmatched: fixedId(3, 2) };
-const still = { plain: fixedId(4, 1), titled: fixedId(4, 2), withBody: fixedId(4, 3) };
+const still = { plain: fixedId(4, 1), titled: fixedId(4, 2), withBody: fixedId(4, 3), both: fixedId(4, 4) };
 const scene = (n) => fixedId(5, n);
 const orphanAnchor = fixedId(6, 1);
 
@@ -250,6 +250,7 @@ async function seed() {
     await stillRow(still.plain, { title: "" });
     await stillRow(still.titled, { title: "Old title" });
     await stillRow(still.withBody, { title: "", body: "Old body" });
+    await stillRow(still.both, { title: "frame.jpg", body: "frame.jpg" });
 
     for (const fixture of [...MAIN_SCRIPT_SCENES, ...OTHER_SCENES]) await insertScene(fixture);
     await insertAnchorRow(orphanAnchor, { movieId: movie.plain, scriptId: script.main, geometry: lines(40, 0, 4) });
@@ -384,8 +385,8 @@ describe("the inventory report", () => {
         });
     });
 
-    test("finds stills with a title or body, and movies with links", () => {
-        assert.deepEqual(report.stills, { total: 3, with_title: figure(still.titled), with_body: figure(still.withBody) });
+    test("counts stills with a title or body, without their IDs, and finds movies with links", () => {
+        assert.deepEqual(report.stills, { total: 4, with_title: 2, with_body: 2, with_title_or_body: 3 });
         assert.deepEqual(report.movies, { total: 3, with_links: figure(movie.withLinks) });
     });
 
