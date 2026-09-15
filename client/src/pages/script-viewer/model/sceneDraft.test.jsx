@@ -873,6 +873,36 @@ describe("persistence completions", () => {
     expect(current(result).draft.dirty).toBe(true);
   });
 
+  it("treats blurring an already formatted time as no change, so the save response reloads the scene", () => {
+    const { result } = renderDraft();
+    run(result, a => a.loadScene(savedV2Scene));
+    const save = run(result, a => a.buildSave(NO_OTHER_SCENES));
+    run(result, a => a.normalizeTime("startTime"));
+    expect(current(result).draft.startTime).toBe("00:10:00");
+    const editorKey = current(result).draft.editorKey;
+    const saved = { ...savedV2Scene, ...save.payload };
+    act(() => save.applySaved(saved));
+    expect(current(result).draft.savedScene).toBe(saved);
+    // Loading the returned scene replaces the editor source; acknowledging newer edits wouldn't.
+    expect(current(result).draft.editorKey).not.toBe(editorKey);
+    expect(current(result).draft.dirty).toBe(false);
+  });
+
+  it("counts blurring that reformats a time as a newer change, so the save response keeps the draft", () => {
+    const { result } = renderDraft();
+    run(result, a => a.loadScene(savedV2Scene));
+    run(result, a => a.setTime("startTime", "10:00"));
+    const save = run(result, a => a.buildSave(NO_OTHER_SCENES));
+    run(result, a => a.normalizeTime("startTime"));
+    expect(current(result).draft.startTime).toBe("00:10:00");
+    const editorKey = current(result).draft.editorKey;
+    const saved = { ...savedV2Scene, ...save.payload };
+    act(() => save.applySaved(saved));
+    expect(current(result).draft.savedScene).toBe(saved);
+    expect(current(result).draft.editorKey).toBe(editorKey);
+    expect(current(result).draft.startTime).toBe("00:10:00");
+  });
+
   it("preserves edits queued before a save response in the same React batch", () => {
     const { result } = renderDraft();
     run(result, a => a.loadScene(savedV2Scene));
