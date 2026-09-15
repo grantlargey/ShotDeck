@@ -52,6 +52,5 @@ export function mapScriptSceneRow(row) {
             updated_at: row.anchor_updated_at,
         },
         ...(row.movie_title ? { movie_title: row.movie_title } : {}),
-        ...(row.script_url !== undefined ? { script_url: row.script_url } : {}),
     };
 }

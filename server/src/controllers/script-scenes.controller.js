@@ -23,8 +23,6 @@ export async function listScriptScenes(req, res) {
         await scriptScenesService.listScriptScenes(pool, {
             movieId: req.params.movieId,
             scriptId: req.params.scriptId,
-            rawTags: rawTagsFromQuery(req.query),
-            match: matchMode(req.query),
         })
     );
 }
@@ -50,17 +48,10 @@ export async function deleteScriptScene(req, res) {
 }
 
 export async function searchScriptScenes(req, res) {
-    const rawLimit = Number(req.query.limit);
-    const limit = Number.isInteger(rawLimit) ? Math.max(1, Math.min(1000, rawLimit)) : 500;
-
     return res.json(
         await scriptScenesService.searchScriptScenes(pool, {
             rawTags: rawTagsFromQuery(req.query),
             match: matchMode(req.query),
-            movieId: typeof req.query.movie_id === "string" ? req.query.movie_id : null,
-            scriptId: typeof req.query.script_id === "string" ? req.query.script_id : null,
-            queryText: typeof req.query.q === "string" ? req.query.q.trim() : "",
-            limit,
         })
     );
 }

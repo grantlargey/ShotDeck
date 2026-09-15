@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from "uuid";
-import { createPresignedGetUrl } from "../s3.js";
 import { findScriptForMovie } from "../repositories/scripts.repository.js";
 import * as repository from "../repositories/script-scenes.repository.js";
 import { mapScriptSceneRow } from "../serializers/script-scenes.serializer.js";
@@ -383,16 +382,8 @@ export async function createScriptScene(pool, { movieId, scriptId, body }) {
     }
 }
 
-export async function listScriptScenes(db, { movieId, scriptId, rawTags, match }) {
-    const tagsNorm = normalizeTags(rawTags);
-    if (tagsNorm === "__INVALID__") throw new HttpError(400, "Invalid tags query parameter.");
-
-    const rows = await repository.listScriptSceneRows(db, {
-        movieId,
-        scriptId,
-        tags: tagsNorm,
-        match,
-    });
+export async function listScriptScenes(db, { movieId, scriptId }) {
+    const rows = await repository.listScriptSceneRows(db, { movieId, scriptId });
     return rows.map(mapScriptSceneRow);
 }
 
@@ -463,33 +454,10 @@ export async function deleteScriptScene(db, { movieId, scriptId, sceneId }) {
     if (!deleted) throw new HttpError(404, "Script scene annotation not found");
 }
 
-export async function searchScriptScenes(db, { rawTags, match, movieId, scriptId, queryText, limit }) {
+export async function searchScriptScenes(db, { rawTags, match }) {
     const tagsNorm = normalizeTags(rawTags);
     if (tagsNorm === "__INVALID__") throw new HttpError(400, "Invalid tags query parameter.");
 
-    const rows = await repository.searchScriptSceneRows(db, {
-        movieId,
-        scriptId,
-        tags: tagsNorm,
-        match,
-        queryText,
-        limit,
-    });
-
-    const urlCache = new Map();
-    const rowsWithUrls = await Promise.all(
-        rows.map(async (row) => {
-            if (!row.s3_key) return { ...row, script_url: null };
-            if (urlCache.has(row.s3_key)) return { ...row, script_url: urlCache.get(row.s3_key) };
-            try {
-                const { url } = await createPresignedGetUrl({ key: row.s3_key });
-                urlCache.set(row.s3_key, url);
-                return { ...row, script_url: url };
-            } catch {
-                return { ...row, script_url: null };
-            }
-        })
-    );
-
-    return rowsWithUrls.map(mapScriptSceneRow);
+    const rows = await repository.searchScriptSceneRows(db, { tags: tagsNorm, match });
+    return rows.map(mapScriptSceneRow);
 }

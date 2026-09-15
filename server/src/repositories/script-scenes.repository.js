@@ -110,47 +110,25 @@ export async function findOverlappingScriptScene(
     return result.rows[0] || null;
 }
 
-export async function listScriptSceneRows(db, { movieId, scriptId, tags, match }) {
-    const values = [movieId, scriptId];
-    const where = [`sc.movie_id = $1`, `sc.script_id = $2`];
-
-    if (tags && tags.length > 0) {
-        if (match === "any") {
-            values.push(tags);
-            where.push(`sc.tags ?| $${values.length}::text[]`);
-        } else {
-            values.push(JSON.stringify(tags));
-            where.push(`sc.tags @> $${values.length}::jsonb`);
-        }
-    }
-
+export async function listScriptSceneRows(db, { movieId, scriptId }) {
     const result = await db.query(
         `
         ${SCRIPT_SCENE_SELECT_SQL}
-        WHERE ${where.join(" AND ")}
+        WHERE sc.movie_id = $1 AND sc.script_id = $2
         ORDER BY COALESCE(a.page_start, 2147483647) ASC, sc.start_time_seconds ASC, sc.created_at ASC
       `,
-        values
+        [movieId, scriptId]
     );
 
     return result.rows;
 }
 
-export async function searchScriptSceneRows(
-    db,
-    { movieId, scriptId, tags, match, queryText, limit }
-) {
+/** Search answers at most this many scenes, the most recently updated. */
+const SEARCH_RESULT_LIMIT = 500;
+
+export async function searchScriptSceneRows(db, { tags, match }) {
     const values = [];
     const where = [];
-
-    if (movieId) {
-        values.push(movieId);
-        where.push(`sc.movie_id = $${values.length}`);
-    }
-    if (scriptId) {
-        values.push(scriptId);
-        where.push(`sc.script_id = $${values.length}`);
-    }
 
     if (tags && tags.length > 0) {
         if (match === "any") {
@@ -162,33 +140,16 @@ export async function searchScriptSceneRows(
         }
     }
 
-    if (queryText) {
-        values.push(`%${queryText}%`);
-        const textParam = `$${values.length}`;
-        where.push(
-            `(
-              a.selected_text ILIKE ${textParam}
-              OR COALESCE(a.formatted_selected_text, '') ILIKE ${textParam}
-              OR COALESCE(a.raw_selected_text, '') ILIKE ${textParam}
-            )`
-        );
-    }
-
-    values.push(limit);
-    const limitParam = `$${values.length}`;
-
     const result = await db.query(
         `
         SELECT
 ${SCRIPT_SCENE_SELECT_FIELDS_SQL},
-          m.title AS movie_title,
-          s.s3_key
+          m.title AS movie_title
         ${SCRIPT_SCENE_FROM_SQL}
         JOIN movies m ON m.id = sc.movie_id
-        JOIN scripts s ON s.id = sc.script_id
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
         ORDER BY sc.updated_at DESC
-        LIMIT ${limitParam}
+        LIMIT ${SEARCH_RESULT_LIMIT}
       `,
         values
     );
