@@ -33,24 +33,6 @@ export async function findAnnotationForMovie(db, { movieId, annotationId }) {
     return result.rows[0] || null;
 }
 
-export async function findAnnotationByNaturalKey(db, { movieId, timeSeconds, title, body }) {
-    const result = await db.query(
-        `
-        SELECT *
-        FROM annotations
-        WHERE movie_id = $1
-          AND time_seconds = $2
-          AND title = $3
-          AND COALESCE(body, '') = $4
-        ORDER BY created_at ASC
-        LIMIT 1
-      `,
-        [movieId, timeSeconds, title, body ?? ""]
-    );
-
-    return result.rows[0] || null;
-}
-
 export async function createAnnotationRecord(db, { movieId, timeSeconds, title, body, imageKey }) {
     const id = uuidv4();
     const result = await db.query(
@@ -63,22 +45,6 @@ export async function createAnnotationRecord(db, { movieId, timeSeconds, title, 
     );
 
     return result.rows[0];
-}
-
-export async function updateAnnotationImageKey(db, { movieId, annotationId, imageKey }) {
-    const result = await db.query(
-        `
-        UPDATE annotations
-        SET image_key = $1,
-            thumb_key = CASE WHEN image_key IS NOT DISTINCT FROM $1 THEN thumb_key END
-        WHERE id = $2
-          AND movie_id = $3
-        RETURNING *
-      `,
-        [imageKey ?? null, annotationId, movieId]
-    );
-
-    return result.rows[0] || null;
 }
 
 export async function updateAnnotationRecord(

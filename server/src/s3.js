@@ -75,7 +75,7 @@ function sanitizeFileName(fileName) {
   return `${safeName}${safeExt}`;
 }
 
-export function buildObjectKey({ movieId, type, filename, namespace = "" }) {
+export function buildObjectKey({ movieId, type, filename }) {
   if (!movieId) throw new Error("movieId is required");
   if (!filename) throw new Error("filename is required");
 
@@ -95,12 +95,7 @@ export function buildObjectKey({ movieId, type, filename, namespace = "" }) {
   const movieSegment = sanitizePathSegment(movieId);
   if (!movieSegment) throw new Error("movieId is invalid");
 
-  const namespaceSegments = String(namespace || "")
-    .split("/")
-    .map(sanitizePathSegment)
-    .filter(Boolean);
-
-  return [root, movieSegment, ...namespaceSegments, sanitizeFileName(filename)].join("/");
+  return [root, movieSegment, sanitizeFileName(filename)].join("/");
 }
 
 export async function createPresignedPutUrl({ key, contentType }) {
