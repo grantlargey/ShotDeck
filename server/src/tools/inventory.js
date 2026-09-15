@@ -13,21 +13,27 @@
  * - It doesn't read server/.env, so DATABASE_URL must be set.
  *
  * Definitions:
- * - Valid anchor pair: what the script viewer reads from `anchor_geometry`
- *   (`anchorsFromGeometry`): version-2 start and end entries with integer page
- *   and line and numeric top and bottom. A reversed pair is a valid pair whose
- *   start comes after its end. A scene without a valid pair has empty geometry
- *   (`[]`), pixel geometry (only the old `{ x, y, width, height }` rectangles),
- *   one-sided geometry (only a start or only an end), or malformed geometry
- *   (anything else, including a scene with no anchor row).
+ * - Valid anchor pair: a start and an end entry that each pass the server's
+ *   strict version-2 check (overhaul issue 04): kind start or end, version 2,
+ *   unit "pt", an integer page >= 1, an integer line >= 0, finite top and
+ *   bottom, and string text. Where a kind repeats, its last valid entry counts.
+ *   A reversed pair is a valid pair stored with its start after its end.
+ * - A scene without a valid pair has, checked in this order:
+ *   - empty geometry: `[]`;
+ *   - a lenient-only pair: the script viewer's `anchorsFromGeometry` still reads
+ *     a pair, because it skips the unit, range and text checks;
+ *   - one-sided geometry: the viewer reads only a start or only an end;
+ *   - pixel geometry: only the old `{ x, y, width, height }` rectangles;
+ *   - malformed geometry: anything else, including a scene with no anchor row.
  * - Blank text is null or only whitespace. Selected text differs from formatted
  *   text only where the formatted text isn't null.
  * - Overlap rules (overhaul spec, Decisions 1) compare scenes of the same
  *   script (`script_scene_annotations.script_id`). Film timings overlap when
  *   a.start < b.end && b.start < a.end, and touch when they don't overlap but
- *   one ends where the other starts. Script locations overlap when their
- *   (page, line) anchor ranges share a line, compared as stored; only scenes
- *   with a valid pair are compared. A pair is [lower scene id, higher scene id].
+ *   one ends where the other starts. Script locations overlap when their line
+ *   ranges share a line; as in issue 04, a range runs from its pair's earlier
+ *   anchor to its later one, and only scenes with a valid pair are compared.
+ *   A pair of scenes is [lower scene id, higher scene id].
  */
 import pg from "pg";
 import { SCRIPT_TAG_CATEGORIES } from "../../../client/src/entities/script-scene/model/scriptTagCategories.js";
@@ -55,24 +61,59 @@ function isPixelRectangle(entry) {
     );
 }
 
-/** `{ kind: "valid", start, end }` with `{ page, line }` anchors, or the kind of geometry without a valid pair. */
-function readAnchorPair(geometry) {
-    if (!Array.isArray(geometry)) return { kind: "malformed" };
-    if (geometry.length === 0) return { kind: "empty_geometry" };
+/** A version-2 scene anchor as the script viewer reads it (`anchorsFromGeometry`). */
+function isReadableAnchor(entry) {
+    return (
+        entry?.version === 2 &&
+        (entry.kind === "start" || entry.kind === "end") &&
+        Number.isInteger(entry.page) &&
+        Number.isInteger(entry.line) &&
+        Number.isFinite(entry.top) &&
+        Number.isFinite(entry.bottom)
+    );
+}
+
+/** A version-2 scene anchor as the server validates it (overhaul issue 04). */
+function isValidAnchor(entry) {
+    return (
+        isReadableAnchor(entry) &&
+        entry.unit === "pt" &&
+        entry.page >= 1 &&
+        entry.line >= 0 &&
+        typeof entry.text === "string"
+    );
+}
+
+/** The last start entry and the last end entry that pass `accepts`. */
+function lastAnchors(geometry, accepts) {
     const anchors = { start: null, end: null };
     for (const entry of geometry) {
-        if (entry?.version !== 2 || (entry.kind !== "start" && entry.kind !== "end")) continue;
-        if (!Number.isInteger(entry.page) || !Number.isInteger(entry.line)) continue;
-        if (!Number.isFinite(entry.top) || !Number.isFinite(entry.bottom)) continue;
-        anchors[entry.kind] = { page: entry.page, line: entry.line };
+        if (accepts(entry)) anchors[entry.kind] = entry;
     }
-    if (anchors.start && anchors.end) return { kind: "valid", ...anchors };
-    if (anchors.start || anchors.end) return { kind: "one_sided" };
-    return { kind: geometry.every(isPixelRectangle) ? "pixel_geometry" : "malformed" };
+    return anchors;
 }
 
 function compareAnchors(left, right) {
     return left.page - right.page || left.line - right.line;
+}
+
+/**
+ * `{ kind: "valid", reversed, first, last }`, where `first` and `last` are the
+ * pair's earlier and later anchors, or the kind of geometry without a valid pair.
+ */
+function readAnchorPair(geometry) {
+    if (!Array.isArray(geometry)) return { kind: "malformed" };
+    if (geometry.length === 0) return { kind: "empty_geometry" };
+    const valid = lastAnchors(geometry, isValidAnchor);
+    if (valid.start && valid.end) {
+        const reversed = compareAnchors(valid.start, valid.end) > 0;
+        const [first, last] = reversed ? [valid.end, valid.start] : [valid.start, valid.end];
+        return { kind: "valid", reversed, first, last };
+    }
+    const readable = lastAnchors(geometry, isReadableAnchor);
+    if (readable.start && readable.end) return { kind: "lenient_only" };
+    if (readable.start || readable.end) return { kind: "one_sided" };
+    return { kind: geometry.every(isPixelRectangle) ? "pixel_geometry" : "malformed" };
 }
 
 function timingsOverlap(a, b) {
@@ -87,7 +128,7 @@ function timingsTouch(a, b) {
 }
 
 function locationsOverlap(a, b) {
-    return compareAnchors(a.anchors.start, b.anchors.end) <= 0 && compareAnchors(b.anchors.start, a.anchors.end) <= 0;
+    return compareAnchors(a.anchors.first, b.anchors.last) <= 0 && compareAnchors(b.anchors.first, a.anchors.last) <= 0;
 }
 
 /** Pairs of scenes in the same script that `matches`, from scenes sorted by id. */
@@ -200,15 +241,13 @@ export async function collectInventory(client) {
             captured_scenes: {
                 total: scenes.length,
                 valid_anchor_pair: anchored.length,
-                reversed_anchor_pair: idsWhere(
-                    anchored,
-                    (scene) => compareAnchors(scene.anchors.start, scene.anchors.end) > 0
-                ),
+                reversed_anchor_pair: idsWhere(anchored, (scene) => scene.anchors.reversed),
                 without_valid_anchor_pair: {
                     count: scenes.length - anchored.length,
                     empty_geometry: withoutPair("empty_geometry"),
-                    pixel_geometry: withoutPair("pixel_geometry"),
+                    lenient_only: withoutPair("lenient_only"),
                     one_sided: withoutPair("one_sided"),
+                    pixel_geometry: withoutPair("pixel_geometry"),
                     malformed: withoutPair("malformed"),
                 },
             },
