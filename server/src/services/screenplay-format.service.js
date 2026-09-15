@@ -57,7 +57,6 @@ const SYSTEM_PROMPT = [
 
 function extractResponseOutputText(payload) {
     if (!payload || typeof payload !== "object") return "";
-    if (typeof payload.output_text === "string") return payload.output_text;
 
     const parts = [];
     for (const block of Array.isArray(payload.output) ? payload.output : []) {
@@ -114,7 +113,7 @@ export async function formatScreenplaySelection(input) {
         throw new HttpError(503, "AI formatting isn't available right now.");
     }
 
-    const model = process.env.OPENAI_SCREENPLAY_MODEL || process.env.OPENAI_FORMAT_MODEL || "gpt-5-nano";
+    const model = process.env.OPENAI_SCREENPLAY_MODEL || "gpt-5-nano";
     const timeoutMs = Number(process.env.OPENAI_SCREENPLAY_TIMEOUT_MS || 90000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
