@@ -78,8 +78,14 @@ export function anchorPair({ startPage = 1, startLine = 0, endPage = startPage, 
 
 const SCENE_TEXT = "## INT. NIGHT DINER - NIGHT\n\nMara pours the coffee.";
 
+// Each body gets its own lines, so scenes in one script share a line only when a
+// test passes the same anchor_geometry on purpose.
+let nextStartLine = 0;
+
 /** A captured-scene body shaped like the script viewer's save payload. */
 export function sceneBody(overrides = {}) {
+    const startLine = nextStartLine;
+    nextStartLine += 10;
     return {
         start_time_seconds: 60,
         end_time_seconds: 120,
@@ -92,7 +98,7 @@ export function sceneBody(overrides = {}) {
         end_offset: 58,
         context_prefix: "FADE IN:",
         context_suffix: "She sits.",
-        anchor_geometry: anchorPair(),
+        anchor_geometry: anchorPair({ startLine }),
         tags: [TAGS.protagonist],
         ...overrides,
     };
