@@ -606,6 +606,7 @@ describe("updating a captured scene", () => {
 
         await expectError(putScene(place, randomUUID(), sceneBody()), 404, MESSAGES.sceneNotFound);
         await expectError(putScene(other, scene.id, sceneBody()), 404, MESSAGES.sceneNotFound);
+        // changes in 04: create and update share one write path, which validates the body before its 404
         await expectError(putScene(place, randomUUID(), { start_time_seconds: "abc" }), 404, MESSAGES.sceneNotFound);
     });
 
@@ -781,6 +782,7 @@ describe("updating a captured scene", () => {
         });
     });
 
+    // changes in 04: an update replaces the whole scene and requires the same fields as create
     describe("null and empty values", () => {
         // changes in 11: the text fields are replaced (A4)
         test("null formatted text clears it, and null or blank selected text falls back to formatted, then raw", async () => {
@@ -805,6 +807,7 @@ describe("updating a captured scene", () => {
             assert.equal(response.body.context_suffix, null);
         });
 
+        // changes in 11: every scene needs a valid version-2 anchor pair, so null geometry is invalid (A2)
         test("null tags and null geometry become empty lists", async () => {
             const { place, scene } = await savedScene();
             const response = await putScene(place, scene.id, { tags: null, anchor_geometry: null });

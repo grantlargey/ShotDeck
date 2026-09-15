@@ -5,6 +5,7 @@ import { signInOwner, startApi } from "./helpers/api.js";
 import {
     createMovieWithScript,
     createScene,
+    sceneBody,
     scenesPath,
     signedUrlPattern,
     TAGS,
@@ -129,7 +130,10 @@ describe("searching captured scenes", () => {
         const second = await createMovieWithScript(api, cookie);
         const older = await createScene(api, cookie, first);
         const newer = await createScene(api, cookie, second);
-        const touched = await api.put(`${scenesPath(first)}/${older.id}`, { cookie, body: { tags: [TAGS.revelation] } });
+        const touched = await api.put(`${scenesPath(first)}/${older.id}`, {
+            cookie,
+            body: sceneBody({ tags: [TAGS.revelation] }),
+        });
         assert.equal(touched.status, 200, touched.text);
 
         const response = await api.get("/script-scenes");
