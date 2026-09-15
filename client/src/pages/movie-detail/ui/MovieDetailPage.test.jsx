@@ -353,6 +353,7 @@ describe("editing a still in the viewer", () => {
       imageKey: null,
       file,
     });
+    expect(within(viewer()).queryByRole("alert")).toBeNull();
   });
 
   it("saves the timestamp with the current image, refreshes the stills and clears the edit", async () => {
@@ -447,6 +448,23 @@ describe("deleting a still", () => {
     expect(api.deleteAnnotation).toHaveBeenCalledWith("m1", "a1");
     expect(api.listAnnotations).toHaveBeenCalledTimes(2);
     expect(editForm()).toBeNull();
+  });
+
+  it("clears a still error once a delete succeeds", async () => {
+    await renderPage();
+    window.confirm.mockReturnValue(true);
+    api.deleteAnnotation.mockRejectedValueOnce(s3Failure()).mockImplementationOnce(async (movieId, annotationId) => {
+      stills = stills.filter((row) => row.id !== annotationId);
+    });
+    openStill("00:05:00");
+    fireEvent.click(viewerButton("Delete"));
+    await waitFor(() => expectErrorAboveStill("Failed to delete the still."));
+
+    fireEvent.click(viewerButton("Delete"));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Open still at 00:05:00" })).toBeNull());
+    expect(api.deleteAnnotation).toHaveBeenCalledTimes(2);
+    expect(within(viewer()).queryByRole("alert")).toBeNull();
   });
 });
 

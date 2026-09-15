@@ -256,7 +256,7 @@
   aspect-ratio: 16 / 9;
 }
 
-/* ---------- Still editing and dialogs ---------- */
+/* ---------- Narrow screens: stacked hero, two-column stills ---------- */
 
 @media (max-width: 600px) {
   .heroInner {
