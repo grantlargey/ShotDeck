@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   anchorsFromGeometry,
   anchorsToGeometry,
+  compareAnchors,
   findOverlappingScriptLocation,
   formatScenePages,
   scenePageRange,
@@ -74,6 +75,15 @@ describe("anchorsToGeometry", () => {
     const geometry = anchorsToGeometry(anchors);
     expect(geometry.every((item) => !("suggested" in item))).toBe(true);
     expect(anchorsFromGeometry(geometry)).toEqual({ start: anchor(1, 0), end: anchor(2, 5) });
+  });
+});
+
+describe("compareAnchors", () => {
+  it("orders anchors by page first, then line, and ties anchors on the same line", () => {
+    expect(compareAnchors(anchor(2, 30), anchor(3, 0))).toBeLessThan(0);
+    expect(compareAnchors(anchor(3, 0), anchor(2, 30))).toBeGreaterThan(0);
+    expect(compareAnchors(anchor(3, 4), anchor(3, 5))).toBeLessThan(0);
+    expect(compareAnchors(anchor(3, 5), { ...anchor(3, 5), top: 0, text: "moved" })).toBe(0);
   });
 });
 

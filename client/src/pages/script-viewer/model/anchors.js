@@ -1,4 +1,4 @@
-import { anchorsFromGeometry, scenePageRange } from "@/entities/script-scene/model/scriptLocation.js";
+import { anchorsFromGeometry, compareAnchors, scenePageRange } from "@/entities/script-scene/model/scriptLocation.js";
 import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 
 /*
@@ -37,10 +37,6 @@ export function anchorPairKey(anchors) {
 
 export function hasAnyAnchor(anchors) {
   return Boolean(anchors?.start || anchors?.end);
-}
-
-function compareAnchors(left, right) {
-  return left.page - right.page || left.line - right.line;
 }
 
 export function withoutSuggestions(anchors) {

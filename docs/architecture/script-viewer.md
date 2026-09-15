@@ -182,7 +182,7 @@ Film timing rules live outside the page slice, in `client/src/entities/script-sc
 
 Where a stored captured scene sits in its script is read outside the page slice, in `client/src/entities/script-scene/model/scriptLocation.js`, so every page reads it the same way:
 
-- **Scene anchors:** version-2 geometry read and write (`anchorsFromGeometry`, `anchorsToGeometry`). Reading returns null for a legacy scene.
+- **Scene anchors:** version-2 geometry read and write (`anchorsFromGeometry`, `anchorsToGeometry`), and their `(page, line)` order (`compareAnchors`), which placement and suggestions in `model/anchors.js` also use. Reading returns null for a legacy scene.
 - **Pages:** `scenePageRange` and its label, `formatScenePages`. Pages are known only when `page_start` is, because the API orders scenes by `page_start` alone. Unknown pages get no label, not "Page 1".
 - **Scroll target:** `sceneScrollTarget` is the start anchor's line, else the first page, else null, in which case the page doesn't scroll.
 - **Script location overlap:** `findOverlappingScriptLocation` compares `(page, line)` ranges inclusively, so ranges that share a line overlap and adjacent lines don't. A valid anchor pair has its start at or before its end. The check skips the excluded scene and any scene without a valid pair: a legacy scene, or a stored pair whose end comes before its start. `buildSave`'s script location check and the page's overlap callout both use it.

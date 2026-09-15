@@ -95,7 +95,8 @@ export function sceneScrollTarget(scene) {
   return range ? { page: range.pageStart, offsetPt: null } : null;
 }
 
-function compareLines(left, right) {
+/** Orders scene anchors by their `(page, line)`: negative when `left` comes first, zero on the same line. */
+export function compareAnchors(left, right) {
   return left.page - right.page || left.line - right.line;
 }
 
@@ -105,7 +106,7 @@ function isLine(anchor) {
 
 /** Whether anchors are a valid pair for comparing script locations: a start and an end, the start at or before the end. */
 function isLinePair(anchors) {
-  return isLine(anchors?.start) && isLine(anchors?.end) && compareLines(anchors.start, anchors.end) <= 0;
+  return isLine(anchors?.start) && isLine(anchors?.end) && compareAnchors(anchors.start, anchors.end) <= 0;
 }
 
 /**
@@ -121,7 +122,7 @@ export function findOverlappingScriptLocation(scenes, anchors, excludeSceneId) {
   for (const scene of Array.isArray(scenes) ? scenes : []) {
     if (excludeSceneId && scene?.id === excludeSceneId) continue;
     const other = anchorsFromGeometry(scene?.anchor_geometry);
-    if (isLinePair(other) && compareLines(anchors.start, other.end) <= 0 && compareLines(other.start, anchors.end) <= 0) {
+    if (isLinePair(other) && compareAnchors(anchors.start, other.end) <= 0 && compareAnchors(other.start, anchors.end) <= 0) {
       return scene;
     }
   }
