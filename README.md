@@ -250,7 +250,7 @@ Client tests run with Vitest and jsdom (`npm test --prefix client`); they curren
 - If the container isn't running, the command fails with a message; start Postgres with `npm run db:up`. The command never starts it.
 - The command sets `DATABASE_URL`, dummy AWS credentials with S3 sends pointed at a closed local port, and an empty `OPENAI_API_KEY` itself, so a `server/.env` can't point the tests at a real database, bucket or OpenAI key. Presigned URLs are signed locally.
 
-To run part of the suite, pass test files or globs ending in `.js` (relative to `server/`), or `node --test` flags written as `--flag=value`. The files always run one at a time, so `--test-concurrency` is refused:
+To run part of the suite, pass test files or globs ending in `.js` (relative to `server/`), or `node --test` flags written as `--flag=value`. Each file always runs alone in its own process, so `--test-concurrency` and the test isolation flags are refused:
 
 ```bash
 TEST_DB_SUFFIX=01 npm test --prefix server -- test/auth.test.js

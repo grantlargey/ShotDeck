@@ -40,17 +40,22 @@ function databaseName() {
     return `shotdeck_test_${suffix}`;
 }
 
+// Each test file must run alone in its own process: the files share the database,
+// and each file closes its database pool and keeps its own sign-in rate limiter.
+const FIXED_FLAGS = ["--test-concurrency", "--test-isolation", "--experimental-test-isolation"];
+
 /**
  * The `node --test` arguments. Extra arguments are test files or globs ending in
- * `.js` (relative to server/), or node --test flags written `--flag=value`. The
- * files share the database, so they always run one at a time.
+ * `.js` (relative to server/), or node --test flags written `--flag=value`. Flags
+ * that change concurrency or isolation are refused.
  */
 function testArgs(extraArgs) {
     const flags = [];
     const files = [];
     for (const arg of extraArgs) {
-        if (arg.startsWith("--test-concurrency")) {
-            fail("--test-concurrency can't be changed: the test files share one database, so they run one at a time.");
+        const fixed = FIXED_FLAGS.find((flag) => arg === flag || arg.startsWith(`${flag}=`));
+        if (fixed) {
+            fail(`${fixed} can't be changed: each test file runs alone, in its own process.`);
         } else if (arg.startsWith("-")) {
             flags.push(arg);
         } else if (arg.endsWith(".js")) {
