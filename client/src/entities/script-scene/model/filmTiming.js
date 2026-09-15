@@ -86,7 +86,7 @@ export function parseFilmMoment(text, runtimeSeconds) {
 export function formatFilmTiming(scene) {
   const start = scene?.start_time_seconds;
   const end = scene?.end_time_seconds;
-  if (!Number.isFinite(start) && !Number.isFinite(end)) return "No timing yet";
+  if (momentSeconds(start) === null && momentSeconds(end) === null) return "No timing yet";
   return `${formatSecondsToHms(start)} – ${formatSecondsToHms(end)}`;
 }
 

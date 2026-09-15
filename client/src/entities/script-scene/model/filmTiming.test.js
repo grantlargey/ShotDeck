@@ -87,6 +87,11 @@ describe("formatFilmTiming", () => {
   it("labels a scene's range", () => {
     expect(formatFilmTiming(scene("a", 600, 720))).toBe("00:10:00 – 00:12:00");
     expect(formatFilmTiming(scene("a", 0, 0))).toBe("00:00:00 – 00:00:00");
+    // Stored seconds can arrive as numeric strings, as overlap and coverage already accept.
+    expect(formatFilmTiming(scene("a", "600", "720"))).toBe("00:10:00 – 00:12:00");
+    expect(formatFilmTiming(findOverlappingFilmTiming([scene("b", "600", "720")], { start: 650, end: 700 }))).toBe(
+      "00:10:00 – 00:12:00"
+    );
   });
 
   it("says there's no timing when neither time is set, and shows the one that is", () => {
