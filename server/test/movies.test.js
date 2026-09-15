@@ -98,6 +98,19 @@ describe("creating a movie", () => {
         }
     });
 
+    // changes in 05: expected to become a 400 (B9)
+    test("a signed-in create with no body at all is a 500", async (t) => {
+        t.mock.method(console, "error", () => {});
+        await expectError(api.post("/movies", { cookie }), 500, "Something went wrong on the server.");
+    });
+
+    // changes in 05: the cover image key must be a string (B9)
+    test("stores a cover image key that isn't a string as text", async () => {
+        const movie = await createMovie(api, cookie, { cover_image_key: 5 });
+        assert.equal(movie.cover_image_key, "5");
+        assert.match(movie.cover_image_url, signedUrlPattern("5"));
+    });
+
     test("trims writer and cinematographer, storing blank, null or missing values as null", async () => {
         assert.equal((await createMovie(api, cookie, { writer: "  Lee Moss  " })).writer, "Lee Moss");
         const blank = await createMovie(api, cookie, { writer: "   ", cinematographer: null });
@@ -214,6 +227,13 @@ describe("updating a movie", () => {
     test("requires the sign-in cookie", async () => {
         const movie = await savedMovie();
         await expectError(api.put(`/movies/${movie.id}`, { body: movieBody() }), 401, "Sign in to make changes.");
+    });
+
+    // changes in 05: expected to become a 400 (B9)
+    test("a signed-in update with no body at all is a 500", async (t) => {
+        t.mock.method(console, "error", () => {});
+        const movie = await savedMovie();
+        await expectError(api.put(`/movies/${movie.id}`, { cookie }), 500, "Something went wrong on the server.");
     });
 });
 

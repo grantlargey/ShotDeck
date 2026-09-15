@@ -159,6 +159,11 @@ describe("creating a captured scene", () => {
         await expectError(api.post(scenesPath(place), { body: sceneBody() }), 401, "Sign in to make changes.");
     });
 
+    test("with no body at all is a 400 about film timing", async () => {
+        const place = await newPlace();
+        await expectError(api.post(scenesPath(place), { cookie }), 400, MESSAGES.createTiming);
+    });
+
     test("answers 404 when the script isn't the movie's, but only after the body is valid", async () => {
         const place = await newPlace();
         const other = await newPlace();

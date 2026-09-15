@@ -96,6 +96,13 @@ describe("creating a still", () => {
         const movie = await createMovie(api, cookie);
         await expectError(api.post(stillsPath(movie), { body: { time_seconds: 3 } }), 401, "Sign in to make changes.");
     });
+
+    // changes in 05: expected to become a 400 (B9)
+    test("a signed-in create with no body at all is a 500", async (t) => {
+        t.mock.method(console, "error", () => {});
+        const movie = await createMovie(api, cookie);
+        await expectError(api.post(stillsPath(movie), { cookie }), 500, "Something went wrong on the server.");
+    });
 });
 
 describe("listing stills", () => {
@@ -176,11 +183,12 @@ describe("updating a still", () => {
         await expectError(api.put(path, { cookie, body: { time_seconds: 5, body: {} } }), 400, INVALID_STILL);
     });
 
-    test("requires time_seconds, and answers 404 for a missing still or one in another movie after validating", async () => {
+    test("requires time_seconds, even with no body at all, and answers 404 for a missing still or one in another movie after validating", async () => {
         const { movie, still } = await stillWithThumbnail();
         const other = await createMovie(api, cookie);
 
         await expectError(api.put(`${stillsPath(movie)}/${still.id}`, { cookie, body: {} }), 400, INVALID_STILL);
+        await expectError(api.put(`${stillsPath(movie)}/${still.id}`, { cookie }), 400, INVALID_STILL);
         await expectError(api.put(`${stillsPath(movie)}/${randomUUID()}`, { cookie, body: {} }), 400, INVALID_STILL);
         await expectError(api.put(`${stillsPath(movie)}/${randomUUID()}`, { cookie, body: { time_seconds: 1 } }), 404, "Annotation not found");
         await expectError(api.put(`${stillsPath(other)}/${still.id}`, { cookie, body: { time_seconds: 1 } }), 404, "Annotation not found");

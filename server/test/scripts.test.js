@@ -52,6 +52,7 @@ describe("saving a movie's script", () => {
         for (const body of [{}, { s3_key: 5 }, { s3_key: "   " }, { s3_key: `covers/${movie.id}/a.pdf` }]) {
             await expectError(api.post(`/movies/${movie.id}/scripts`, { cookie, body }), 400, INVALID_SCRIPT);
         }
+        await expectError(api.post(`/movies/${movie.id}/scripts`, { cookie }), 400, INVALID_SCRIPT);
         await expectError(api.post(`/movies/${randomUUID()}/scripts`, { cookie, body: {} }), 400, INVALID_SCRIPT);
         await expectError(
             api.post(`/movies/${randomUUID()}/scripts`, { cookie, body: { s3_key: "scripts/x/a.pdf" } }),
