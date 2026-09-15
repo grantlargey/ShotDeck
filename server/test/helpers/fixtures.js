@@ -11,6 +11,33 @@ export function signedUrlPattern(key) {
     return new RegExp(`^https://${escape(host)}/${escape(key)}\\?.*X-Amz-Signature=[0-9a-f]+`);
 }
 
+const SIGNED_URL_KEYS = {
+    cover_image_url: "cover_image_key",
+    image_url: "image_key",
+    thumb_url: "thumb_key",
+    script_url: "s3_key",
+};
+
+/**
+ * Asserts that two API records, or two lists of them, are equal apart from their
+ * signed view URLs, which change every UTC hour. Each URL must still be signed
+ * for its record's key, or be null when the record has no key.
+ */
+export function assertSameRecords(actual, expected) {
+    const comparable = (record) => {
+        const copy = { ...record };
+        for (const [urlField, keyField] of Object.entries(SIGNED_URL_KEYS)) {
+            if (!(urlField in copy)) continue;
+            if (copy[keyField]) assert.match(copy[urlField], signedUrlPattern(copy[keyField]), urlField);
+            else assert.equal(copy[urlField], null, urlField);
+            copy[urlField] = "(signed view URL)";
+        }
+        return copy;
+    };
+    const normalize = (value) => (Array.isArray(value) ? value.map(comparable) : comparable(value));
+    assert.deepEqual(normalize(actual), normalize(expected));
+}
+
 export const TAGS = {
     protagonist: "character-focus:protagonist",
     revelation: "narrative-function:revelation",

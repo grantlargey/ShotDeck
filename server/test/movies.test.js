@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, test } from "node:test";
 import { signInOwner, startApi } from "./helpers/api.js";
-import { createMovie, createMovieWithScript, createScene, movieBody, signedUrlPattern } from "./helpers/fixtures.js";
+import {
+    assertSameRecords,
+    createMovie,
+    createMovieWithScript,
+    createScene,
+    movieBody,
+    signedUrlPattern,
+} from "./helpers/fixtures.js";
 
 /*
  * Characterization of the movie routes: POST, GET, PUT and DELETE /movies.
@@ -158,14 +165,14 @@ describe("reading movies", () => {
         const response = await api.get("/movies");
         assert.equal(response.status, 200);
         const listed = response.body.filter((movie) => movie.id === older.id || movie.id === newer.id);
-        assert.deepEqual(listed, [newer, older]);
+        assertSameRecords(listed, [newer, older]);
     });
 
     test("GET /movies/:id is public and answers 404 for a missing movie", async () => {
         const movie = await createMovie(api, cookie);
         const response = await api.get(`/movies/${movie.id}`);
         assert.equal(response.status, 200);
-        assert.deepEqual(response.body, movie);
+        assertSameRecords(response.body, movie);
         await expectError(api.get(`/movies/${randomUUID()}`), 404, "Movie not found");
     });
 });
@@ -205,7 +212,7 @@ describe("updating a movie", () => {
         const body = without(movieBody({ title: "Renamed" }), "writer", "cinematographer");
         const response = await api.put(`/movies/${movie.id}`, { cookie, body });
         assert.equal(response.status, 200, response.text);
-        assert.deepEqual(response.body, { ...movie, title: "Renamed" });
+        assertSameRecords(response.body, { ...movie, title: "Renamed" });
     });
 
     test("clears the cover and credits when they are null, and links when null", async () => {

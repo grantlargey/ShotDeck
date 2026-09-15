@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, test } from "node:test";
 import { signInOwner, startApi } from "./helpers/api.js";
-import { createMovie, signedUrlPattern } from "./helpers/fixtures.js";
+import { assertSameRecords, createMovie, signedUrlPattern } from "./helpers/fixtures.js";
 import { pool } from "../src/db.js";
 
 /*
@@ -114,7 +114,7 @@ describe("listing stills", () => {
 
         const response = await api.get(stillsPath(movie));
         assert.equal(response.status, 200);
-        assert.deepEqual(response.body, [earlyFirst, earlySecond, late]);
+        assertSameRecords(response.body, [earlyFirst, earlySecond, late]);
         assert.deepEqual((await api.get(`/movies/${randomUUID()}/annotations`)).body, []);
     });
 

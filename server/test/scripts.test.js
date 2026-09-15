@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, test } from "node:test";
 import { signInOwner, startApi } from "./helpers/api.js";
-import { createMovie, createMovieWithScript, createScene, saveScript, signedUrlPattern } from "./helpers/fixtures.js";
+import {
+    assertSameRecords,
+    createMovie,
+    createMovieWithScript,
+    createScene,
+    saveScript,
+    signedUrlPattern,
+} from "./helpers/fixtures.js";
 
 /*
  * Characterization of the script routes: POST and GET /movies/:id/scripts,
@@ -77,7 +84,7 @@ describe("reading scripts", () => {
         const { movie, script } = await createMovieWithScript(api, cookie);
         const response = await api.get(`/movies/${movie.id}/scripts`);
         assert.equal(response.status, 200);
-        assert.deepEqual(response.body, [script]);
+        assertSameRecords(response.body, [script]);
 
         const withoutScript = await createMovie(api, cookie);
         assert.deepEqual((await api.get(`/movies/${withoutScript.id}/scripts`)).body, []);
@@ -90,7 +97,7 @@ describe("reading scripts", () => {
 
         const response = await api.get(`/movies/${movie.id}/scripts/${script.id}`);
         assert.equal(response.status, 200);
-        assert.deepEqual(response.body, script);
+        assertSameRecords(response.body, script);
 
         await expectError(api.get(`/movies/${movie.id}/scripts/${other.script.id}`), 404, "Script not found");
         await expectError(api.get(`/movies/${movie.id}/scripts/${randomUUID()}`), 404, "Script not found");
