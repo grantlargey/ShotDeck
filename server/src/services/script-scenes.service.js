@@ -20,14 +20,15 @@ export async function saveScriptScene(pool, { movieId, scriptId, sceneId = null,
     const input = readSceneBody(body);
 
     return withTransaction(pool, async (client) => {
+        await lockScriptScenes(client, scriptId);
         const saved = sceneId ? await lockSavedScene(client, { movieId, scriptId, sceneId }) : null;
         if (sceneId && !saved) throw new HttpError(404, SCENE_NOT_FOUND);
         if (!sceneId && !(await scriptExists(client, { movieId, scriptId }))) {
             throw new HttpError(404, "Script not found");
         }
 
-        const conflict = await findOverlappingScene(client, { movieId, scriptId, sceneId, input });
-        if (conflict) throw conflictError(conflict);
+        const conflict = await findConflict(client, { movieId, scriptId, sceneId, input });
+        if (conflict) throw conflict;
 
         const savedId = await writeScene(client, { movieId, scriptId, saved, input });
         return sceneFromRow(await fetchSceneRow(client, { movieId, scriptId, sceneId: savedId }));
@@ -216,23 +217,43 @@ function isValidSceneAnchor(entry) {
 }
 
 // Overlap -------------------------------------------------------------------
+//
+// Captured scenes of one script can't overlap (CONTEXT.md, "Overlapping
+// scenes"). Every save takes the script's lock before it checks, so two
+// conflicting saves can't both pass the check before either has written.
 
-/** The earliest-starting other scene in the script whose film timing overlaps the input's. */
-async function findOverlappingScene(db, { movieId, scriptId, sceneId, input }) {
+/** Waits for the lock on one script's captured-scene saves, and holds it until the transaction ends. */
+async function lockScriptScenes(db, scriptId) {
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`captured-scenes:${scriptId}`]);
+}
+
+const CONFLICT_MESSAGES = {
+    film_timing: "This scene's film timing overlaps another scene in this script.",
+};
+
+/**
+ * The 409 for the input's first overlap with another scene of the script, or
+ * null. Film timings overlap when each starts before the other ends, so scenes
+ * that only touch are fine, and a zero-length timing overlaps only a scene that
+ * strictly contains it. Other scenes are checked in film timing order.
+ */
+async function findConflict(db, { movieId, scriptId, sceneId, input }) {
     const result = await db.query(
         `SELECT id, start_time_seconds, end_time_seconds
         FROM script_scene_annotations
         WHERE movie_id = $1 AND script_id = $2 AND id IS DISTINCT FROM $3
-          AND NOT (end_time_seconds < $4 OR start_time_seconds > $5)
-        ORDER BY start_time_seconds, end_time_seconds, id
-        LIMIT 1`,
-        [movieId, scriptId, sceneId, input.startTime, input.endTime]
+        ORDER BY start_time_seconds, end_time_seconds, id`,
+        [movieId, scriptId, sceneId]
     );
-    return result.rows[0] ?? null;
+    const timing = result.rows.find(
+        (other) => other.start_time_seconds < input.endTime && input.startTime < other.end_time_seconds
+    );
+    return timing ? conflictError("film_timing", timing) : null;
 }
 
-function conflictError(scene) {
-    return new HttpError(409, "Scene time range overlaps an existing scene in this script.", {
+function conflictError(kind, scene) {
+    return new HttpError(409, CONFLICT_MESSAGES[kind], {
+        conflict_kind: kind,
         conflict_scene_id: scene.id,
         conflict_start_time_seconds: scene.start_time_seconds,
         conflict_end_time_seconds: scene.end_time_seconds,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { signInOwner, startApi } from "./helpers/api.js";
 import {
     anchorPair,
@@ -35,8 +36,7 @@ const MESSAGES = {
         "Invalid body. A version-2 anchor_geometry entry needs kind start or end, version 2, unit pt, a whole page >= 1, a whole line >= 0, finite top and bottom, and text.",
     sceneNotFound: "Script scene annotation not found",
     scriptNotFound: "Script not found",
-    // changes in 04: the message follows the new rule, and a conflict_kind detail is added
-    overlap: "Scene time range overlaps an existing scene in this script.",
+    filmTimingOverlap: "This scene's film timing overlaps another scene in this script.",
 };
 
 // changes in 11: anchor_id, the text fields, offsets and context
@@ -419,19 +419,16 @@ describe("creating a captured scene", () => {
 });
 
 describe("overlapping film timing", () => {
-    function conflict(scene) {
-        return {
-            error: MESSAGES.overlap,
-            conflict_scene_id: scene.id,
-            conflict_start_time_seconds: scene.start_time_seconds,
-            conflict_end_time_seconds: scene.end_time_seconds,
-        };
-    }
-
     async function expectConflict(responsePromise, scene) {
         const response = await responsePromise;
         assert.equal(response.status, 409, response.text);
-        assert.deepEqual(response.body, conflict(scene));
+        assert.deepEqual(response.body, {
+            error: MESSAGES.filmTimingOverlap,
+            conflict_kind: "film_timing",
+            conflict_scene_id: scene.id,
+            conflict_start_time_seconds: scene.start_time_seconds,
+            conflict_end_time_seconds: scene.end_time_seconds,
+        });
     }
 
     test("a new scene that overlaps or contains another is a 409 naming it, and nothing is stored", async () => {
@@ -456,27 +453,33 @@ describe("overlapping film timing", () => {
         await expectConflict(postScene(place, sceneBody({ start_time_seconds: 100, end_time_seconds: 210 })), earlier);
     });
 
-    // changes in 04: scenes that only touch are allowed
-    test("scenes that only touch conflict, on either side", async () => {
+    test("scenes that only touch save, in either order", async () => {
         const place = await newPlace();
-        const existing = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
+        await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
 
-        await expectConflict(postScene(place, sceneBody({ start_time_seconds: 120, end_time_seconds: 180 })), existing);
-        await expectConflict(postScene(place, sceneBody({ start_time_seconds: 0, end_time_seconds: 60 })), existing);
+        const after = await postScene(place, sceneBody({ start_time_seconds: 120, end_time_seconds: 180 }));
+        assert.equal(after.status, 201, after.text);
+        const before = await postScene(place, sceneBody({ start_time_seconds: 0, end_time_seconds: 60 }));
+        assert.equal(before.status, 201, before.text);
     });
 
-    test("a zero-length timing conflicts with a scene that contains it, including at its edges", async () => {
+    test("a zero-length timing overlaps only a scene that strictly contains it", async () => {
         const place = await newPlace();
         const existing = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
 
         await expectConflict(postScene(place, sceneBody({ start_time_seconds: 90, end_time_seconds: 90 })), existing);
-        // changes in 04: a zero-length timing at another scene's edge is allowed
-        await expectConflict(postScene(place, sceneBody({ start_time_seconds: 120, end_time_seconds: 120 })), existing);
+        for (const moment of [60, 120]) {
+            const atEdge = await postScene(place, sceneBody({ start_time_seconds: moment, end_time_seconds: moment }));
+            assert.equal(atEdge.status, 201, atEdge.text);
+        }
 
-        const elsewhere = await postScene(place, sceneBody({ start_time_seconds: 10, end_time_seconds: 10 }));
-        assert.equal(elsewhere.status, 201, elsewhere.text);
-        // changes in 04: two zero-length timings at the same moment don't overlap
-        await expectConflict(postScene(place, sceneBody({ start_time_seconds: 10, end_time_seconds: 10 })), elsewhere.body);
+        const other = await newPlace();
+        const moment = await createScene(api, cookie, other, { start_time_seconds: 10, end_time_seconds: 10 });
+        await expectConflict(postScene(other, sceneBody({ start_time_seconds: 5, end_time_seconds: 15 })), moment);
+        for (const [start, end] of [[10, 10], [0, 10], [10, 20]]) {
+            const touching = await postScene(other, sceneBody({ start_time_seconds: start, end_time_seconds: end }));
+            assert.equal(touching.status, 201, touching.text);
+        }
     });
 
     test("a scene in another movie's script never conflicts", async () => {
@@ -503,8 +506,6 @@ describe("overlapping film timing", () => {
         const second = await createScene(api, cookie, place, { start_time_seconds: 200, end_time_seconds: 260 });
 
         await expectConflict(putScene(place, second.id, sceneBody({ start_time_seconds: 100, end_time_seconds: 150 })), first);
-        // changes in 04: touching is allowed
-        await expectConflict(putScene(place, second.id, sceneBody({ start_time_seconds: 120, end_time_seconds: 180 })), first);
         await expectConflict(putScene(place, second.id, sceneBody({ start_time_seconds: 90, end_time_seconds: 260 })), first);
 
         const list = await api.get(scenesPath(place));
@@ -515,6 +516,16 @@ describe("overlapping film timing", () => {
                 [200, 260],
             ]
         );
+    });
+
+    test("an update that only touches other scenes saves, on either side", async () => {
+        const place = await newPlace();
+        const scene = await createScene(api, cookie, place, { start_time_seconds: 200, end_time_seconds: 260 });
+        await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
+        await createScene(api, cookie, place, { start_time_seconds: 300, end_time_seconds: 360 });
+
+        const response = await putScene(place, scene.id, sceneBody({ start_time_seconds: 120, end_time_seconds: 300 }));
+        assert.equal(response.status, 200, response.text);
     });
 
     test("an update never conflicts with the scene's own saved timing", async () => {
@@ -742,5 +753,59 @@ describe("deleting a captured scene", () => {
         const place = await newPlace();
         await expectError(putScene(place, "not-a-uuid", sceneBody()), 500, "Something went wrong on the server.");
         await expectError(api.delete(`${scenesPath(place)}/not-a-uuid`, { cookie }), 500, "Something went wrong on the server.");
+    });
+});
+
+describe("concurrent saves to one script", () => {
+    /**
+     * Sends the saves at once while another transaction blocks inserts into
+     * script_scene_anchors, and releases that block only once both saves are
+     * waiting on a lock. Without the script's advisory lock, both saves pass the
+     * overlap check before either has written, and both are stored.
+     */
+    async function createAtOnce(place, bodies) {
+        const blocker = await pool.connect();
+        try {
+            await blocker.query("BEGIN");
+            await blocker.query("LOCK TABLE script_scene_anchors IN EXCLUSIVE MODE");
+            const responses = bodies.map((body) => postScene(place, body));
+            await waitForLockWaiters(bodies.length);
+            await blocker.query("COMMIT");
+            return await Promise.all(responses);
+        } catch (err) {
+            await blocker.query("ROLLBACK");
+            throw err;
+        } finally {
+            blocker.release();
+        }
+    }
+
+    async function waitForLockWaiters(count) {
+        for (let attempt = 0; attempt < 500; attempt += 1) {
+            const { rows } = await pool.query(
+                "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'"
+            );
+            if (rows[0].waiting >= count) return;
+            await delay(10);
+        }
+        assert.fail(`${count} saves never waited on a lock`);
+    }
+
+    async function expectOneStored(place, responses, conflictKind) {
+        assert.deepEqual(responses.map((response) => response.status).sort(), [201, 409]);
+        const stored = responses.find((response) => response.status === 201).body;
+        const refused = responses.find((response) => response.status === 409).body;
+        assert.equal(refused.conflict_kind, conflictKind);
+        assert.equal(refused.conflict_scene_id, stored.id);
+        assert.deepEqual((await api.get(scenesPath(place))).body.map((scene) => scene.id), [stored.id]);
+    }
+
+    test("of two scenes whose film timings overlap, exactly one is stored", async () => {
+        const place = await newPlace();
+        const responses = await createAtOnce(place, [
+            sceneBody({ start_time_seconds: 60, end_time_seconds: 120 }),
+            sceneBody({ start_time_seconds: 100, end_time_seconds: 160 }),
+        ]);
+        await expectOneStored(place, responses, "film_timing");
     });
 });
