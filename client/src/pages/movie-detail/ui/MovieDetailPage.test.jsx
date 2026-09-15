@@ -597,6 +597,39 @@ describe("closing the viewer", () => {
     expectErrorAboveStill("Failed to save the still.");
     expect(viewerButton("Save").disabled).toBe(false);
   });
+
+  it("resets the still editor when a reload finds no stills left and closes the viewer", async () => {
+    stills = [WITH_IMAGE];
+    await renderPage();
+    const deletion = startHeldRequest("delete");
+    fireEvent.click(viewerButton("Close"));
+    openStill("00:05:00");
+    const save = deferred();
+    api.updateAnnotation.mockReturnValueOnce(save.promise);
+    fireEvent.click(viewerButton("Edit"));
+    fireEvent.click(viewerButton("Save"));
+
+    await settle(() => deletion.resolve());
+
+    expect(screen.queryByRole("dialog", { name: "Night Diner" })).toBeNull();
+    const added = { id: "a3", movie_id: "m1", time_seconds: 600, image_key: "stills/a3.png", image_url: "https://media.test/a3.png" };
+    api.createAnnotation.mockImplementation(async () => {
+      stills = [added];
+      return added;
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add the first still" }));
+    chooseFile(addDialog(), imageFile());
+    typeTime(addDialog(), "10:00");
+    submitAdd();
+    await screen.findByRole("button", { name: "Open still at 00:10:00" });
+    openStill("00:10:00");
+    expect(viewerButton("Delete").disabled).toBe(false);
+
+    await settle(() => save.reject(s3Failure()));
+
+    expect(within(viewer()).queryByRole("alert")).toBeNull();
+    expect(viewerButton("Delete").disabled).toBe(false);
+  });
 });
 
 describe("visitors", () => {

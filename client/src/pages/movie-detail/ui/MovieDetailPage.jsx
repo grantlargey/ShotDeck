@@ -140,7 +140,7 @@ export default function MovieDetailPage() {
       if (!isLatest()) return;
       const a = sortAnnotationsByTime(annotationRows);
       setStillRows(a);
-      if (a.length === 0) setViewerStillId(null);
+      if (a.length === 0) closeViewer();
       setBackdropStillId((prev) =>
         a.some((row) => row.id === prev) ? prev : (a[Math.floor(Math.random() * a.length)]?.id ?? null)
       );
