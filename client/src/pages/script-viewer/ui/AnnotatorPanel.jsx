@@ -7,7 +7,6 @@ import {
 import { SceneCard } from "@/entities/script-scene/ui/SceneCard.jsx";
 import { TagCategoryList } from "@/entities/script-scene/ui/TagCategoryList.jsx";
 import { cx } from "@/shared/lib/cx.js";
-import { formatSecondsToHms } from "@/shared/lib/time.js";
 import { Badge } from "@/shared/ui/Badge.jsx";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
@@ -19,6 +18,7 @@ import { CloseIcon, PlusIcon } from "@/shared/ui/icons.jsx";
 import { Input } from "@/shared/ui/Input.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { undoShortcutLabel } from "../lib/platform.js";
+import { scriptLocationOverlapError } from "../model/sceneDraft.js";
 import styles from "./AnnotatorPanel.module.css";
 
 const ORIGIN_BADGES = {
@@ -184,8 +184,8 @@ function CaptureTab({
         )}
 
         {overlapScene && (
-          <Callout tone="warning" className={styles.callout} action="Edit that scene" onAction={onEditOverlapScene}>
-            This range overlaps the saved scene at {formatSecondsToHms(overlapScene.start_time_seconds)}.
+          <Callout tone="error" className={styles.callout} action="Edit that scene" onAction={onEditOverlapScene}>
+            {scriptLocationOverlapError(overlapScene)}
           </Callout>
         )}
       </section>

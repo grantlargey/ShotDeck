@@ -345,7 +345,7 @@ function ScriptViewerPage() {
   // ---------- Persistence ----------
 
   async function saveScene() {
-    const { error, payload, applySaved, confirmStaleText } = draftActions.buildSave(runtimeSeconds);
+    const { error, payload, applySaved, confirmStaleText } = draftActions.buildSave({ runtimeSeconds, scenes });
     if (error) {
       setNotice({ tone: "error", text: error });
       return;
