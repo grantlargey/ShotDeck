@@ -198,19 +198,3 @@ export function buildSceneSegmentsByPage(scenes) {
 
   return byPage;
 }
-
-export function findOverlappingSavedScene(scenes, anchors, excludeSceneId) {
-  if (!anchors?.start || !anchors?.end) return null;
-  const start = documentPosition(anchors.start.page, anchors.start.top);
-  const end = documentPosition(anchors.end.page, anchors.end.bottom);
-
-  for (const scene of Array.isArray(scenes) ? scenes : []) {
-    if (scene.id === excludeSceneId) continue;
-    const saved = anchorsFromGeometry(scene.anchor_geometry);
-    if (!saved) continue;
-    const savedStart = documentPosition(saved.start.page, saved.start.top);
-    const savedEnd = documentPosition(saved.end.page, saved.end.bottom);
-    if (start < savedEnd && savedStart < end) return scene;
-  }
-  return null;
-}

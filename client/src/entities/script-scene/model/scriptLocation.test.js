@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   anchorsFromGeometry,
   anchorsToGeometry,
+  findOverlappingScriptLocation,
   formatScenePages,
   scenePageRange,
   sceneScrollTarget,
@@ -131,5 +132,125 @@ describe("sceneScrollTarget", () => {
   it("has no target for a legacy scene without a known page", () => {
     expect(sceneScrollTarget({ page_start: null, page_end: 4, anchor_geometry: [] })).toBeNull();
     expect(sceneScrollTarget(null)).toBeNull();
+  });
+});
+
+describe("findOverlappingScriptLocation", () => {
+  /** A stored scene anchored from `[page, line]` to `[page, line]`. */
+  function located(id, [startPage, startLine], [endPage, endLine]) {
+    return { id, page_start: startPage, page_end: endPage, anchor_geometry: [entry("start", startPage, startLine), entry("end", endPage, endLine)] };
+  }
+
+  function span([startPage, startLine], [endPage, endLine]) {
+    return { start: anchor(startPage, startLine), end: anchor(endPage, endLine) };
+  }
+
+  function overlaps(other, draftAnchors) {
+    return findOverlappingScriptLocation([other], draftAnchors) === other;
+  }
+
+  it("overlaps a scene that shares a boundary line, on either side", () => {
+    const other = located("other", [2, 3], [2, 8]);
+    expect(overlaps(other, span([2, 8], [3, 1]))).toBe(true);
+    expect(overlaps(other, span([1, 20], [2, 3]))).toBe(true);
+  });
+
+  it("doesn't overlap a scene on the adjacent line, on either side", () => {
+    const other = located("other", [2, 3], [2, 8]);
+    expect(overlaps(other, span([2, 9], [3, 1]))).toBe(false);
+    expect(overlaps(other, span([1, 20], [2, 2]))).toBe(false);
+  });
+
+  it("doesn't overlap adjacent lines on the same page even when their line boxes touch", () => {
+    // Page 1's last two lines in the script viewer fixtures, at baselines 204
+    // and 216: line 7's box ends below where line 8's begins.
+    const lineBoxes = { 6: { top: 194.2, bottom: 206.9 }, 7: { top: 206.2, bottom: 218.9 } };
+    const other = {
+      id: "other",
+      page_start: 1,
+      page_end: 1,
+      anchor_geometry: [entry("start", 1, 0), entry("end", 1, 6, lineBoxes[6])],
+    };
+    const draftAnchors = { start: { ...anchor(1, 7), ...lineBoxes[7] }, end: anchor(2, 3) };
+    expect(findOverlappingScriptLocation([other], draftAnchors)).toBeNull();
+    expect(findOverlappingScriptLocation([other], { ...draftAnchors, start: { ...anchor(1, 6), ...lineBoxes[6] } })).toBe(other);
+  });
+
+  it("doesn't overlap across a page break when one scene ends on a page's last line and the other starts the next page", () => {
+    const other = located("other", [1, 0], [1, 7]);
+    expect(overlaps(other, span([2, 0], [2, 3]))).toBe(false);
+    expect(overlaps(other, span([1, 7], [2, 3]))).toBe(true);
+  });
+
+  it("compares ranges across pages by page first, then line", () => {
+    const other = located("other", [2, 30], [4, 1]);
+    // Inside the middle page, on lines numbered outside the other scene's.
+    expect(overlaps(other, span([3, 0], [3, 2]))).toBe(true);
+    expect(overlaps(other, span([3, 40], [3, 45]))).toBe(true);
+    // Earlier lines of the first page and later lines of the last page.
+    expect(overlaps(other, span([1, 40], [2, 29]))).toBe(false);
+    expect(overlaps(other, span([4, 2], [5, 0]))).toBe(false);
+    expect(overlaps(other, span([1, 0], [2, 30]))).toBe(true);
+  });
+
+  it("overlaps a scene that contains the anchors, or that they contain", () => {
+    const other = located("other", [3, 5], [4, 10]);
+    expect(overlaps(other, span([3, 6], [4, 9]))).toBe(true);
+    expect(overlaps(other, span([2, 0], [5, 0]))).toBe(true);
+  });
+
+  it("overlaps a scene with identical anchors", () => {
+    expect(overlaps(located("other", [3, 5], [4, 10]), span([3, 5], [4, 10]))).toBe(true);
+  });
+
+  it("treats a one-line scene as its single line", () => {
+    const oneLine = located("one-line", [3, 5], [3, 5]);
+    expect(overlaps(oneLine, span([3, 5], [3, 5]))).toBe(true);
+    expect(overlaps(oneLine, span([3, 0], [3, 5]))).toBe(true);
+    expect(overlaps(oneLine, span([3, 6], [3, 6]))).toBe(false);
+    expect(overlaps(oneLine, span([3, 4], [3, 4]))).toBe(false);
+    expect(overlaps(located("other", [2, 0], [4, 0]), span([3, 5], [3, 5]))).toBe(true);
+  });
+
+  it("compares a stored pair saved end first as the lines between its anchors", () => {
+    const reversed = { id: "reversed", anchor_geometry: [entry("start", 4, 0), entry("end", 3, 5)] };
+    expect(overlaps(reversed, span([3, 8], [3, 9]))).toBe(true);
+    expect(overlaps(reversed, span([4, 1], [4, 2]))).toBe(false);
+  });
+
+  it("skips legacy scenes, even when their pages cover the anchors", () => {
+    const legacy = [
+      { id: "empty", page_start: 1, page_end: 9, anchor_geometry: [] },
+      { id: "one-sided", page_start: 1, page_end: 9, anchor_geometry: [entry("start", 3, 5)] },
+      { id: "pixels", page_start: 1, page_end: 9, anchor_geometry: [{ x: 0, y: 0, width: 400, height: 900, pageNumber: 3 }] },
+      { id: "no-geometry", page_start: 3, page_end: 3 },
+    ];
+    const anchored = located("anchored", [3, 5], [3, 5]);
+    expect(findOverlappingScriptLocation(legacy, span([3, 0], [3, 9]))).toBeNull();
+    expect(findOverlappingScriptLocation([...legacy, anchored], span([3, 0], [3, 9]))).toBe(anchored);
+  });
+
+  it("excludes the scene's own row, and returns the first other overlapping scene", () => {
+    const own = located("own", [3, 0], [3, 9]);
+    const first = located("first", [3, 9], [4, 0]);
+    const second = located("second", [2, 0], [3, 0]);
+    expect(findOverlappingScriptLocation([own, first, second], span([3, 0], [3, 9]), "own")).toBe(first);
+    expect(findOverlappingScriptLocation([own], span([3, 0], [3, 9]), "own")).toBeNull();
+    expect(findOverlappingScriptLocation([own], span([3, 0], [3, 9]), undefined)).toBe(own);
+    expect(findOverlappingScriptLocation([own], span([3, 0], [3, 9]), "")).toBe(own);
+  });
+
+  it("accepts anchors carrying extra fields, such as suggested anchors", () => {
+    const suggested = { start: { ...anchor(3, 1), suggested: true }, end: { ...anchor(3, 2), suggested: true } };
+    const other = located("other", [3, 2], [3, 4]);
+    expect(findOverlappingScriptLocation([other], suggested)).toBe(other);
+  });
+
+  it("overlaps nothing without both anchors", () => {
+    const scenes = [located("other", [1, 0], [9, 0])];
+    for (const draftAnchors of [null, undefined, { start: null, end: null }, { start: anchor(3, 1), end: null }, { start: null, end: anchor(3, 1) }]) {
+      expect(findOverlappingScriptLocation(scenes, draftAnchors)).toBeNull();
+    }
+    expect(findOverlappingScriptLocation(null, span([3, 0], [3, 1]))).toBeNull();
   });
 });

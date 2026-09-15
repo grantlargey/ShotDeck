@@ -15,6 +15,12 @@
  * server orders scenes by `page_start` alone, so a `page_end` without a start
  * doesn't place a scene either. An unknown page has no default: it gets no
  * label, no page to scroll to, and sorts after every known page.
+ *
+ * Captured scenes of the same script can't overlap. Two script locations
+ * overlap when their anchor ranges share a line: comparing `(page, line)`,
+ * `a.first <= b.last && b.first <= a.last`. Scenes on adjacent lines are fine,
+ * however close their lines sit on the page. Until legacy scenes are removed,
+ * a scene without a valid anchor pair isn't compared.
  */
 
 const GEOMETRY_VERSION = 2;
@@ -86,4 +92,39 @@ export function sceneScrollTarget(scene) {
   if (anchors) return { page: anchors.start.page, offsetPt: anchors.start.top };
   const range = scenePageRange(scene);
   return range ? { page: range.pageStart, offsetPt: null } : null;
+}
+
+function compareLines(left, right) {
+  return left.page - right.page || left.line - right.line;
+}
+
+function isLine(anchor) {
+  return Number.isInteger(anchor?.page) && Number.isInteger(anchor?.line);
+}
+
+/** The lines an anchor pair spans, first to last, or null without both anchors. A reversed pair spans the same lines. */
+function lineRange(anchors) {
+  const { start, end } = anchors || {};
+  if (!isLine(start) || !isLine(end)) return null;
+  return compareLines(start, end) <= 0 ? { first: start, last: end } : { first: end, last: start };
+}
+
+/**
+ * The first captured scene whose script location shares a line with the
+ * anchors `{ start, end }`, or null. Skips the scene with `excludeSceneId`,
+ * usually the draft's own saved scene, and legacy scenes. Anchors without both
+ * a start and an end overlap nothing.
+ */
+export function findOverlappingScriptLocation(scenes, anchors, excludeSceneId) {
+  const range = lineRange(anchors);
+  if (!range) return null;
+
+  for (const scene of Array.isArray(scenes) ? scenes : []) {
+    if (excludeSceneId && scene?.id === excludeSceneId) continue;
+    const other = lineRange(anchorsFromGeometry(scene?.anchor_geometry));
+    if (other && compareLines(range.first, other.last) <= 0 && compareLines(other.first, range.last) <= 0) {
+      return scene;
+    }
+  }
+  return null;
 }

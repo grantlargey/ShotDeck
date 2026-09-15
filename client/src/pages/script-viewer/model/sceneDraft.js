@@ -4,13 +4,16 @@ import {
   safeScriptSceneTags,
 } from "@/entities/script-scene/model/capturedScene.js";
 import { findOverlappingFilmTiming, formatFilmTiming, parseFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
-import { anchorsFromGeometry, anchorsToGeometry } from "@/entities/script-scene/model/scriptLocation.js";
+import {
+  anchorsFromGeometry,
+  anchorsToGeometry,
+  findOverlappingScriptLocation,
+} from "@/entities/script-scene/model/scriptLocation.js";
 import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
 import { formatSecondsToHms, normalizeTypedTime, parseTimeInputToSeconds } from "@/shared/lib/time.js";
 import {
   anchorPairKey,
   createLineAnchor,
-  findOverlappingSavedScene,
   hasAnyAnchor,
   NO_ANCHORS,
   placeAnchor,
@@ -340,7 +343,7 @@ function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, sce
     return { error: "Place start and end anchors in the script to capture the scene text." };
   }
   // Locations without a valid anchor pair, this draft's or another scene's, aren't compared.
-  const locationOverlap = findOverlappingSavedScene(scenes, anchorsFromGeometry(location.anchor_geometry), savedScene?.id);
+  const locationOverlap = findOverlappingScriptLocation(scenes, anchorsFromGeometry(location.anchor_geometry), savedScene?.id);
   if (locationOverlap) {
     return { error: scriptLocationOverlapError(locationOverlap) };
   }

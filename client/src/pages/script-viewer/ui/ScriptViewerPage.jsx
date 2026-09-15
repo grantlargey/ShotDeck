@@ -7,7 +7,11 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import { getStillProjectPath } from "@/entities/annotation/model/still.js";
 import { sortScriptScenes } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
-import { formatScenePages, sceneScrollTarget } from "@/entities/script-scene/model/scriptLocation.js";
+import {
+  findOverlappingScriptLocation,
+  formatScenePages,
+  sceneScrollTarget,
+} from "@/entities/script-scene/model/scriptLocation.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { getMovie } from "@/shared/api/movies.js";
 import { formatScreenplaySelection } from "@/shared/api/screenplayFormat.js";
@@ -23,7 +27,7 @@ import { SceneModalButton } from "@/widgets/scene-detail-modal/ui/SceneDetailMod
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
 import { isTypingTarget } from "../lib/pdfViewport.js";
-import { buildSceneSegmentsByPage, findOverlappingSavedScene } from "../model/anchors.js";
+import { buildSceneSegmentsByPage } from "../model/anchors.js";
 import { useSceneDraft } from "../model/sceneDraft.js";
 import { usePdfPageWindowing } from "../model/usePdfPageWindowing.js";
 import { useScriptTextIndex } from "../model/useScriptTextIndex.js";
@@ -139,7 +143,7 @@ function ScriptViewerPage() {
 
   const sceneSegmentsByPage = useMemo(() => buildSceneSegmentsByPage(scenes), [scenes]);
   const overlapScene = useMemo(
-    () => findOverlappingSavedScene(scenes, draft.anchors, draftSceneId),
+    () => findOverlappingScriptLocation(scenes, draft.anchors, draftSceneId),
     [scenes, draft.anchors, draftSceneId]
   );
   const tagsDisabled = !draft.text.trim();
