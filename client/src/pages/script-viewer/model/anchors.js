@@ -1,12 +1,14 @@
+import { anchorsFromGeometry } from "@/entities/script-scene/model/scriptLocation.js";
 import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 
 /*
- * Anchors mark the first and last line of a scene in the PDF. They are stored
- * in PDF points (scale 1, top-left origin) so they render correctly at any
- * zoom, and they are persisted in the scene's `anchor_geometry` column.
+ * Scene anchors while an admin captures a scene: placing and swapping them,
+ * their keys, finding a stored anchor's current line, suggestions from saved
+ * text, and the saved scenes' bars in the page margin. Anchors are in PDF
+ * points (scale 1, top-left origin). How a captured scene stores them is in
+ * `@/entities/script-scene/model/scriptLocation.js`.
  */
 
-const GEOMETRY_VERSION = 2;
 const POSITION_SCALE = 100000;
 
 export const NO_ANCHORS = { start: null, end: null };
@@ -60,35 +62,6 @@ export function placeAnchor(anchors, kind, anchor) {
     return { start: next.end, end: next.start };
   }
   return next;
-}
-
-export function anchorsToGeometry(anchors) {
-  const clean = withoutSuggestions(anchors);
-  return ["start", "end"]
-    .filter((kind) => clean[kind])
-    .map((kind) => ({ kind, version: GEOMETRY_VERSION, unit: "pt", ...clean[kind] }));
-}
-
-/**
- * Reads anchors saved by this viewer. Older scenes stored client-pixel
- * rectangles from DOM selections, which cannot be re-anchored, so they return
- * null.
- */
-export function anchorsFromGeometry(geometry) {
-  const anchors = { start: null, end: null };
-  for (const entry of Array.isArray(geometry) ? geometry : []) {
-    if (entry?.version !== GEOMETRY_VERSION || !(entry.kind in anchors)) continue;
-    if (!Number.isInteger(entry.page) || !Number.isInteger(entry.line)) continue;
-    if (!Number.isFinite(entry.top) || !Number.isFinite(entry.bottom)) continue;
-    anchors[entry.kind] = {
-      page: entry.page,
-      line: entry.line,
-      top: entry.top,
-      bottom: entry.bottom,
-      text: String(entry.text || ""),
-    };
-  }
-  return anchors.start && anchors.end ? anchors : null;
 }
 
 /**

@@ -1,6 +1,7 @@
+import { anchorsToGeometry } from "@/entities/script-scene/model/scriptLocation.js";
 import { buildPageTextLines } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { estimateActionMargin } from "@/shared/lib/screenplay/layoutClassifier.js";
-import { anchorsToGeometry, createLineAnchor } from "../model/anchors.js";
+import { createLineAnchor } from "../model/anchors.js";
 
 /*
  * Synthetic screenplay pages for script viewer tests. Lines are placed in PDF

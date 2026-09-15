@@ -4,12 +4,11 @@ import {
   safeScriptSceneTags,
 } from "@/entities/script-scene/model/capturedScene.js";
 import { findOverlappingFilmTiming, formatFilmTiming, parseFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
+import { anchorsFromGeometry, anchorsToGeometry } from "@/entities/script-scene/model/scriptLocation.js";
 import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
 import { formatSecondsToHms, normalizeTypedTime, parseTimeInputToSeconds } from "@/shared/lib/time.js";
 import {
   anchorPairKey,
-  anchorsFromGeometry,
-  anchorsToGeometry,
   createLineAnchor,
   findOverlappingSavedScene,
   hasAnyAnchor,
