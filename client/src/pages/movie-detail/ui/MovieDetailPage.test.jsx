@@ -419,6 +419,27 @@ describe("deleting a still", () => {
   });
 });
 
+describe("closing the viewer", () => {
+  it("drops the still edit and its error", async () => {
+    await renderPage();
+    window.confirm.mockReturnValue(true);
+    api.deleteAnnotation.mockRejectedValue(s3Failure());
+    openStill("00:05:00");
+    fireEvent.click(viewerButton("Edit"));
+    fireEvent.click(viewerButton("Delete"));
+    await waitFor(() => expectErrorAboveStill("Failed to delete the still."));
+
+    fireEvent.click(viewerButton("Close"));
+
+    expect(screen.queryByRole("dialog", { name: "Night Diner" })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    openStill("00:05:00");
+    expect(within(viewer()).queryByRole("alert")).toBeNull();
+    expect(editForm()).toBeNull();
+    expect(viewerButton("Edit")).toBeTruthy();
+  });
+});
+
 describe("visitors", () => {
   it("get no still editing controls", async () => {
     await renderPage({ admin: false });
