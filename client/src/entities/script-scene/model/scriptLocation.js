@@ -1,5 +1,3 @@
-import { getScriptScenePageRange } from "./capturedScene.js";
-
 /*
  * Script location: where a captured scene sits in its script. A stored scene
  * says this through its page range and, when recorded, its scene anchors.
@@ -12,6 +10,11 @@ import { getScriptScenePageRange } from "./capturedScene.js";
  * A legacy scene is one whose geometry has no valid version-2 start and end
  * pair, such as the client-pixel rectangles saved before anchors existed.
  * `anchorsFromGeometry` returns null for it.
+ *
+ * A scene's pages are known when its `page_start` is a whole page number. The
+ * server orders scenes by `page_start` alone, so a `page_end` without a start
+ * doesn't place a scene either. An unknown page has no default: it gets no
+ * label, no page to scroll to, and sorts after every known page.
  */
 
 const GEOMETRY_VERSION = 2;
@@ -48,12 +51,39 @@ export function anchorsFromGeometry(geometry) {
   return anchors.start && anchors.end ? anchors : null;
 }
 
+function pageNumber(value) {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page : null;
+}
+
+/**
+ * A stored scene's inclusive page range, `{ pageStart, pageEnd }`, or null
+ * when its pages are unknown. Pages may be numbers or numeric strings. A
+ * missing, invalid or earlier `page_end` ends the range on its first page.
+ */
+export function scenePageRange(scene) {
+  const pageStart = pageNumber(scene?.page_start);
+  if (pageStart === null) return null;
+  const pageEnd = pageNumber(scene?.page_end);
+  return { pageStart, pageEnd: pageEnd !== null && pageEnd > pageStart ? pageEnd : pageStart };
+}
+
+/** "Page 3" or "Pages 3–4", or "" when the scene's pages are unknown. */
+export function formatScenePages(scene) {
+  const range = scenePageRange(scene);
+  if (!range) return "";
+  return range.pageEnd > range.pageStart ? `Pages ${range.pageStart}–${range.pageEnd}` : `Page ${range.pageStart}`;
+}
+
 /**
  * Where the script viewer scrolls to show a scene: its start anchor's line,
- * else the top of its first page. `offsetPt` is null when only the page is known.
+ * else the top of its first page, else null when neither is known.
+ * `offsetPt` is null when only the page is known.
  */
 export function sceneScrollTarget(scene) {
   const anchors = anchorsFromGeometry(scene?.anchor_geometry);
   if (anchors) return { page: anchors.start.page, offsetPt: anchors.start.top };
-  return { page: getScriptScenePageRange(scene).pageStart, offsetPt: null };
+  const range = scenePageRange(scene);
+  return range ? { page: range.pageStart, offsetPt: null } : null;
 }

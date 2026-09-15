@@ -1,4 +1,4 @@
-import { anchorsFromGeometry } from "@/entities/script-scene/model/scriptLocation.js";
+import { anchorsFromGeometry, scenePageRange } from "@/entities/script-scene/model/scriptLocation.js";
 import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 
 /*
@@ -111,10 +111,10 @@ function findWordRunLine(page, words, fromEnd) {
  * saved text's first and last words on its saved pages.
  */
 export function suggestAnchorsFromSavedText(scene, pages) {
-  const pageStart = Number(scene?.page_start || scene?.page_end);
-  const pageEnd = Number(scene?.page_end || scene?.page_start);
-  const startPage = pages.get(pageStart);
-  const endPage = pages.get(pageEnd);
+  const range = scenePageRange(scene);
+  if (!range) return null;
+  const startPage = pages.get(range.pageStart);
+  const endPage = pages.get(range.pageEnd);
   if (!startPage || !endPage) return null;
 
   const words = comparableWords(scene.raw_selected_text || scene.selected_text);
@@ -145,13 +145,12 @@ function sceneLocation(scene) {
     };
   }
 
-  const pageStart = Number(scene?.page_start || scene?.page_end);
-  const pageEnd = Number(scene?.page_end || scene?.page_start);
-  if (!Number.isInteger(pageStart) || pageStart < 1) return null;
+  const range = scenePageRange(scene);
+  if (!range) return null;
   return {
     approximate: true,
-    start: { page: pageStart, y: null },
-    end: { page: Math.max(pageStart, Number.isInteger(pageEnd) ? pageEnd : pageStart), y: null },
+    start: { page: range.pageStart, y: null },
+    end: { page: range.pageEnd, y: null },
   };
 }
 

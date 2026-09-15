@@ -5,12 +5,9 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { getStillProjectPath } from "@/entities/annotation/model/still.js";
-import {
-  formatScriptScenePages,
-  sortScriptScenes,
-} from "@/entities/script-scene/model/capturedScene.js";
+import { sortScriptScenes } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
-import { sceneScrollTarget } from "@/entities/script-scene/model/scriptLocation.js";
+import { formatScenePages, sceneScrollTarget } from "@/entities/script-scene/model/scriptLocation.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { getMovie } from "@/shared/api/movies.js";
 import { formatScreenplaySelection } from "@/shared/api/screenplayFormat.js";
@@ -173,7 +170,8 @@ function ScriptViewerPage() {
     deepLinkedSceneRef.current = sceneIdFromQuery;
     if (canEdit) draftActions.loadScene(target);
     else setFocusSceneId(target.id);
-    setPendingScroll(sceneScrollTarget(target));
+    const scroll = sceneScrollTarget(target);
+    if (scroll) setPendingScroll(scroll);
   }, [sessionReady, canEdit, sceneIdFromQuery, scenes, draftActions]);
 
   const runPendingScroll = useStableHandler((target) => {
@@ -200,10 +198,8 @@ function ScriptViewerPage() {
       draftActions.loadScene(scene);
       setActiveTab("capture");
     }
-    if (scroll) {
-      const target = sceneScrollTarget(scene);
-      scrollToPoint(target.page, target.offsetPt);
-    }
+    const target = scroll && sceneScrollTarget(scene);
+    if (target) scrollToPoint(target.page, target.offsetPt);
   }
 
   function startNewScene() {
@@ -221,7 +217,7 @@ function ScriptViewerPage() {
   function revealScene(scene) {
     setFocusSceneId(scene.id);
     const target = sceneScrollTarget(scene);
-    scrollToPoint(target.page, target.offsetPt);
+    if (target) scrollToPoint(target.page, target.offsetPt);
   }
 
   function openStillInProject(still) {
@@ -543,7 +539,9 @@ function ScriptViewerPage() {
       {modal?.kind === "draft" && (
         <DraftEditorModal
           title={title}
-          meta={`${draftSceneId ? "Editing saved scene" : "New scene draft"} · ${formatScriptScenePages(draft.previewScene)}`}
+          meta={[draftSceneId ? "Editing saved scene" : "New scene draft", formatScenePages(draft.previewScene)]
+            .filter(Boolean)
+            .join(" · ")}
           editorKey={draft.editorKey}
           markdown={draft.text}
           onChangeMarkdown={draftActions.editText}

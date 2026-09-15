@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { anchorsFromGeometry, anchorsToGeometry, sceneScrollTarget } from "./scriptLocation.js";
+import {
+  anchorsFromGeometry,
+  anchorsToGeometry,
+  formatScenePages,
+  scenePageRange,
+  sceneScrollTarget,
+} from "./scriptLocation.js";
 
 /** A stored version-2 geometry entry, as the API returns it. */
 function entry(kind, page, line, fields = {}) {
@@ -70,13 +76,60 @@ describe("anchorsToGeometry", () => {
   });
 });
 
+describe("scenePageRange", () => {
+  it("reads an inclusive range from the first page to the last", () => {
+    expect(scenePageRange({ page_start: 3, page_end: 5 })).toEqual({ pageStart: 3, pageEnd: 5 });
+    expect(scenePageRange({ page_start: 3, page_end: 3 })).toEqual({ pageStart: 3, pageEnd: 3 });
+  });
+
+  it("ends a range with only a start, or an unusable end, on its first page", () => {
+    for (const pageEnd of [undefined, null, "", 0, -2, 4.5, "abc", 2]) {
+      expect(scenePageRange({ page_start: 3, page_end: pageEnd })).toEqual({ pageStart: 3, pageEnd: 3 });
+    }
+  });
+
+  it("has no range without a usable first page, even when the last page is known", () => {
+    for (const pageStart of [undefined, null, "", " ", 0, -1, 1.5, "abc", true]) {
+      expect(scenePageRange({ page_start: pageStart, page_end: 4 })).toBeNull();
+    }
+    expect(scenePageRange({})).toBeNull();
+    expect(scenePageRange(null)).toBeNull();
+  });
+
+  it("reads numeric strings as page numbers", () => {
+    expect(scenePageRange({ page_start: "3", page_end: "12" })).toEqual({ pageStart: 3, pageEnd: 12 });
+    expect(scenePageRange({ page_start: " 7 ", page_end: null })).toEqual({ pageStart: 7, pageEnd: 7 });
+  });
+});
+
+describe("formatScenePages", () => {
+  it("labels one page or a range of pages", () => {
+    expect(formatScenePages({ page_start: 3, page_end: 3 })).toBe("Page 3");
+    expect(formatScenePages({ page_start: 3, page_end: null })).toBe("Page 3");
+    expect(formatScenePages({ page_start: "3", page_end: "4" })).toBe("Pages 3–4");
+  });
+
+  it("gives unknown pages no label, instead of Page 1", () => {
+    expect(formatScenePages({ page_start: null, page_end: null })).toBe("");
+    expect(formatScenePages({ page_start: null, page_end: 4 })).toBe("");
+    expect(formatScenePages(undefined)).toBe("");
+  });
+});
+
 describe("sceneScrollTarget", () => {
   it("scrolls an anchored scene to its start anchor's line", () => {
     const scene = { page_start: 2, page_end: 4, anchor_geometry: [entry("start", 3, 1), entry("end", 4, 0)] };
     expect(sceneScrollTarget(scene)).toEqual({ page: 3, offsetPt: 112 });
+    expect(sceneScrollTarget({ ...scene, page_start: null, page_end: null })).toEqual({ page: 3, offsetPt: 112 });
   });
 
   it("scrolls a legacy scene to the top of its first page", () => {
     expect(sceneScrollTarget({ page_start: 2, page_end: 4, anchor_geometry: [] })).toEqual({ page: 2, offsetPt: null });
+    expect(sceneScrollTarget({ page_start: "5", anchor_geometry: [entry("start", 5, 0)] })).toEqual({ page: 5, offsetPt: null });
+  });
+
+  it("has no target for a legacy scene without a known page", () => {
+    expect(sceneScrollTarget({ page_start: null, page_end: 4, anchor_geometry: [] })).toBeNull();
+    expect(sceneScrollTarget(null)).toBeNull();
   });
 });
