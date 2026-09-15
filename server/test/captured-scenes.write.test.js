@@ -34,6 +34,7 @@ const MESSAGES = {
     geometry: "Invalid body. anchor_geometry must be a JSON array when provided.",
     sceneAnchor:
         "Invalid body. A version-2 anchor_geometry entry needs kind start or end, version 2, unit pt, a whole page >= 1, a whole line >= 0, finite top and bottom, and text.",
+    reversedPair: "Invalid body. The start anchor must come before or on the same line as the end anchor.",
     sceneNotFound: "Script scene annotation not found",
     scriptNotFound: "Script not found",
     filmTimingOverlap: "This scene's film timing overlaps another scene in this script.",
@@ -423,6 +424,22 @@ describe("creating a captured scene", () => {
             await expectError(postScene(place, sceneBody({ anchor_geometry: [start, { ...end, kind: "End" }] })), 400, MESSAGES.sceneAnchor);
         });
 
+        test("with a start anchor after its end anchor is a 400, and both on one line is fine", async () => {
+            const place = await newPlace();
+            const reversed = [
+                anchorPair({ startPage: 1, startLine: 9, endLine: 3 }),
+                anchorPair({ startPage: 3, startLine: 0, endPage: 2, endLine: 40 }),
+                // A repeated kind's last valid entry is the one that counts.
+                [...anchorPair({ startPage: 1, startLine: 0, endLine: 4 }), anchorPair({ startPage: 1, startLine: 8 })[0]],
+            ];
+            for (const anchorGeometry of reversed) {
+                await expectError(postScene(place, sceneBody({ anchor_geometry: anchorGeometry })), 400, MESSAGES.reversedPair);
+            }
+
+            const oneLine = await postScene(place, sceneBody({ anchor_geometry: anchorPair({ startPage: 1, startLine: 7, endLine: 7 }) }));
+            assert.equal(oneLine.status, 201, oneLine.text);
+        });
+
         // changes in 11: every scene needs a valid version-2 anchor pair (A2)
         test("stores legacy pixel geometry unchanged", async () => {
             const legacy = [{ page: 1, x: 72, y: 140, width: 400, height: 14 }];
@@ -645,10 +662,22 @@ describe("overlapping script locations", () => {
         assert.equal(anchored.status, 201, anchored.text);
     });
 
-    test("an anchor pair stored end before start still covers the lines between", async () => {
+    test("a start anchor after its end anchor is a 400 on write, and a stored one is skipped", async () => {
         const place = await newPlace();
-        const reversed = await createScene(api, cookie, place, atLines({ startPage: 3, startLine: 0, endPage: 2, endLine: 10 }));
-        await expectConflict(postScene(place, atLines({ startPage: 2, startLine: 30, endPage: 2, endLine: 31 })), reversed);
+        const reversedRange = { startPage: 3, startLine: 0, endPage: 2, endLine: 10 };
+        await expectError(postScene(place, atLines(reversedRange)), 400, MESSAGES.reversedPair);
+
+        // changes in 11: every scene needs a valid version-2 anchor pair (A2)
+        const stored = await createScene(api, cookie, place, atLines(PAGE_TWO));
+        await pool.query("UPDATE script_scene_anchors SET anchor_geometry = $1::jsonb WHERE id = $2", [
+            JSON.stringify(anchorPair(reversedRange)),
+            stored.anchor_id,
+        ]);
+        // One range shares the stored end anchor's line; the other lies between its anchors.
+        for (const range of [PAGE_TWO, { startPage: 2, startLine: 30, endPage: 2, endLine: 31 }]) {
+            const response = await postScene(place, atLines(range));
+            assert.equal(response.status, 201, response.text);
+        }
     });
 
     test("an update never conflicts with the scene's own saved lines", async () => {
@@ -799,6 +828,7 @@ describe("updating a captured scene", () => {
                 [{ anchor_geometry: JSON.stringify(anchorPair()) }, MESSAGES.geometry],
                 [{ anchor_geometry: "" }, MESSAGES.geometry],
                 [{ anchor_geometry: [{ ...start, unit: "px" }, end] }, MESSAGES.sceneAnchor],
+                [{ anchor_geometry: [{ ...end, kind: "start" }, { ...start, kind: "end" }] }, MESSAGES.reversedPair],
             ];
             for (const [fields, message] of invalid) {
                 await expectError(putScene(place, scene.id, sceneBody(fields)), 400, message);

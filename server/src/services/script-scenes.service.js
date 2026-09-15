@@ -93,6 +93,7 @@ const INVALID_BODY = {
     geometry: "Invalid body. anchor_geometry must be a JSON array when provided.",
     sceneAnchor:
         "Invalid body. A version-2 anchor_geometry entry needs kind start or end, version 2, unit pt, a whole page >= 1, a whole line >= 0, finite top and bottom, and text.",
+    reversedPair: "Invalid body. The start anchor must come before or on the same line as the end anchor.",
 };
 
 /**
@@ -187,8 +188,10 @@ function readTags(value) {
 }
 
 /**
- * Version-2 scene anchors are checked strictly. Other entries are stored as
- * they are sent, because legacy scenes send their stored geometry back.
+ * Version-2 scene anchors are checked strictly, and the start anchor (the
+ * scene's first line) can't come after the end anchor (its last line). Other
+ * entries are stored as they are sent, because legacy scenes send their stored
+ * geometry back.
  */
 function readGeometry(value) {
     if (value === undefined || value === null) return [];
@@ -196,6 +199,8 @@ function readGeometry(value) {
     if (value.some((entry) => isSceneAnchorEntry(entry) && !isValidSceneAnchor(entry))) {
         throw invalidBody(INVALID_BODY.sceneAnchor);
     }
+    const anchors = sceneAnchorsOf(value);
+    if (anchors && compareLines(anchors.start, anchors.end) > 0) throw invalidBody(INVALID_BODY.reversedPair);
     return value;
 }
 
@@ -252,8 +257,9 @@ const CONFLICT_MESSAGES = {
  *   only touch are fine, and a zero-length timing overlaps only a scene that
  *   strictly contains it.
  * - Script locations overlap when their anchor ranges share a line, so scenes on
- *   adjacent lines are fine. A scene without a valid version-2 anchor pair (a
- *   legacy scene) is skipped.
+ *   adjacent lines are fine. A scene without a valid version-2 anchor pair is
+ *   skipped: a legacy scene, a lone anchor, or a stored pair whose start comes
+ *   after its end.
  */
 async function findConflict(db, { movieId, scriptId, sceneId, input }) {
     const result = await db.query(
@@ -271,32 +277,35 @@ async function findConflict(db, { movieId, scriptId, sceneId, input }) {
     );
     if (timing) return conflictError("film_timing", timing);
 
-    const inputLocation = scriptLocationOf(input.anchorGeometry);
-    if (!inputLocation) return null;
+    const inputPair = validAnchorPair(input.anchorGeometry);
+    if (!inputPair) return null;
     const lines = others.find((other) => {
-        const otherLocation = scriptLocationOf(other.anchor_geometry);
+        const otherPair = validAnchorPair(other.anchor_geometry);
         return (
-            otherLocation !== null &&
-            compareLines(inputLocation.first, otherLocation.last) <= 0 &&
-            compareLines(otherLocation.first, inputLocation.last) <= 0
+            otherPair !== null &&
+            compareLines(inputPair.start, otherPair.end) <= 0 &&
+            compareLines(otherPair.start, inputPair.end) <= 0
         );
     });
     return lines ? conflictError("script_location", lines) : null;
 }
 
 /**
- * The first and last line of a scene's anchor range, or null without a valid
- * version-2 start and end anchor. Where a kind repeats, its last entry wins, as
- * in the script viewer.
+ * A scene's version-2 start and end anchors, or null when either is missing.
+ * Where a kind repeats, its last valid entry wins.
  */
-function scriptLocationOf(geometry) {
+function sceneAnchorsOf(geometry) {
     const anchors = {};
     for (const entry of Array.isArray(geometry) ? geometry : []) {
         if (isSceneAnchorEntry(entry) && isValidSceneAnchor(entry)) anchors[entry.kind] = entry;
     }
-    if (!anchors.start || !anchors.end) return null;
-    const [first, last] = [anchors.start, anchors.end].sort(compareLines);
-    return { first, last };
+    return anchors.start && anchors.end ? anchors : null;
+}
+
+/** A scene's anchor pair when its start comes before or on the same line as its end, and otherwise null. */
+function validAnchorPair(geometry) {
+    const anchors = sceneAnchorsOf(geometry);
+    return anchors && compareLines(anchors.start, anchors.end) <= 0 ? anchors : null;
 }
 
 /** Orders scene anchors by page, then by line. */
