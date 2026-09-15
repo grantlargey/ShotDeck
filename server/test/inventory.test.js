@@ -150,6 +150,12 @@ const MAIN_SCRIPT_SCENES = [
             { version: 1, x: 72, y: 154, width: 310, height: 14 },
         ],
     },
+    // A repeated kind: each kind's last strictly valid entry wins, as in issue 04's sceneAnchorsOf.
+    // The second start (line 10) comes after the end (line 5), so the pair is reversed; the first start would make it valid.
+    { n: 42, start: 17000, end: 17010, geometry: [lines(17, 0, 5)[0], lines(17, 10, 14)[0], lines(17, 0, 5)[1]] },
+    // The last end (line 2, in px) fails the strict check, so the earlier valid end (line 4) wins and shares a line with 44.
+    { n: 43, start: 18000, end: 18010, geometry: [...lines(18, 0, 4), { ...lines(18, 0, 2)[1], unit: "px" }] },
+    { n: 44, start: 18100, end: 18110, geometry: lines(18, 4, 6) },
 ];
 
 const OTHER_SCENES = [
@@ -349,19 +355,19 @@ describe("the inventory report", () => {
 
     test("sorts captured scenes by their anchor pair under the server's strict check, and finds invalid anchor entries", () => {
         assert.deepEqual(report.captured_scenes, {
-            total: 41,
-            valid_anchor_pair: 30,
+            total: 44,
+            valid_anchor_pair: 32,
             without_valid_anchor_pair: {
-                count: 11,
+                count: 12,
                 empty_geometry: scenes(25),
-                reversed: scenes(23),
+                reversed: scenes(23, 42),
                 lenient_only: scenes(29, 30, 31, 32),
                 one_sided: scenes(27),
                 pixel_geometry: scenes(26, 41),
                 malformed: scenes(28, 36),
             },
             // Across the categories: scenes 39 and 40 have a valid pair, 41 is pixel geometry, 28 to 32 have none.
-            with_invalid_anchor_entry: scenes(28, 29, 30, 31, 32, 39, 40, 41),
+            with_invalid_anchor_entry: scenes(28, 29, 30, 31, 32, 39, 40, 41, 43),
         });
     });
 
@@ -394,8 +400,9 @@ describe("the inventory report", () => {
 
     test("pairs scenes of one script whose valid pairs' line ranges share a line, but not adjacent lines", () => {
         // Scene 23's reversed pair isn't compared, though its lines cover scene 24's.
+        // Scene 43 is compared through its last strictly valid end, not its later invalid one.
         assert.deepEqual(report.script_location, {
-            overlapping_pairs: scenePairs([13, 14], [15, 16], [21, 22], [37, 38]),
+            overlapping_pairs: scenePairs([13, 14], [15, 16], [21, 22], [37, 38], [43, 44]),
         });
     });
 
