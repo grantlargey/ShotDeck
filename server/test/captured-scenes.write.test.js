@@ -255,6 +255,7 @@ describe("creating a captured scene", () => {
             }
         });
 
+        // changes in 04: numeric and empty strings are rejected (B9)
         test("offsets are null when missing, null or empty, and numeric strings are coerced", async () => {
             const missing = await saveInNewPlace(without(sceneBody(), "start_offset", "end_offset"));
             assert.equal(missing.start_offset, null);
@@ -353,7 +354,7 @@ describe("creating a captured scene", () => {
             assert.deepEqual(scene.tags, [TAGS.revelation, TAGS.protagonist, TAGS.revelation]);
         });
 
-        // changes in 11: only taxonomy tags are accepted (A9)
+        // changes in 11: only taxonomy tags are accepted (A9); changes in 04: non-string tags are rejected (B9)
         test("accept values outside the tag taxonomy, and turn numbers into strings", async () => {
             const scene = await saveInNewPlace(sceneBody({ tags: ["Diner", 7] }));
             assert.deepEqual(scene.tags, ["Diner", "7"]);
@@ -674,6 +675,7 @@ describe("updating a captured scene", () => {
         });
     });
 
+    // changes in 04: an update is validated like a create, with create's required fields and messages
     describe("validation", () => {
         test("film timing must be whole numbers, start >= 0 and end >= start", async () => {
             const { place, scene } = await savedScene();

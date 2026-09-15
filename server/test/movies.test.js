@@ -110,6 +110,7 @@ describe("creating a movie", () => {
 
     // changes in 11: movie links are removed (A8)
     describe("links", () => {
+        // changes in 05: non-string links are rejected (B9)
         test("are trimmed, blanks dropped and values turned into strings; null is an empty list", async () => {
             assert.deepEqual((await createMovie(api, cookie, { links: [" https://a.example ", "", 5] })).links, [
                 "https://a.example",
