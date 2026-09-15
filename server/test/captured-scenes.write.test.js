@@ -103,6 +103,23 @@ async function expectError(responsePromise, status, error) {
     assert.deepEqual(response.body, { error });
 }
 
+/** Takes the script's captured-scene lock, with the same key the module uses. */
+const LOCK_SCRIPT_SCENES_SQL = "SELECT pg_advisory_xact_lock(hashtextextended('captured-scenes:' || $1::uuid::text, 0))";
+
+/** Waits until at least `count` sessions wait on a lock, of the `waitEvent` kind ("advisory", say) when given. */
+async function waitForLockWaiters(count, waitEvent = null) {
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+        const { rows } = await pool.query(
+            `SELECT count(*)::int AS waiting FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND ($1::text IS NULL OR wait_event = $1)`,
+            [waitEvent]
+        );
+        if (rows[0].waiting >= count) return;
+        await delay(10);
+    }
+    assert.fail(`${count} requests never waited on a${waitEvent ? `n ${waitEvent}` : ""} lock`);
+}
+
 /**
  * Sends a body with every field invalid, then repairs one field at a time, and
  * checks that each 400 names the next field in the fixed order.
@@ -879,6 +896,29 @@ describe("deleting a captured scene", () => {
         await expectError(api.delete(`${scenesPath(place)}/${scene.id}`), 401, "Sign in to make changes.");
     });
 
+    test("waits for the script's lock, which saves hold until they commit, then answers 204", async () => {
+        const place = await newPlace();
+        const scene = await createScene(api, cookie, place);
+        const holder = await pool.connect();
+        try {
+            await holder.query("BEGIN");
+            // An uppercase spelling of the id names the same script, so it takes the same lock.
+            await holder.query(LOCK_SCRIPT_SCENES_SQL, [place.script.id.toUpperCase()]);
+            const deleting = api.delete(`${scenesPath(place)}/${scene.id}`, { cookie });
+            await waitForLockWaiters(1, "advisory");
+            await holder.query("COMMIT");
+
+            const response = await deleting;
+            assert.equal(response.status, 204, response.text);
+            assert.deepEqual((await api.get(scenesPath(place))).body, []);
+        } catch (err) {
+            await holder.query("ROLLBACK");
+            throw err;
+        } finally {
+            holder.release();
+        }
+    });
+
     test("a scene id that isn't a UUID is a 500, on update and delete", async (t) => {
         t.mock.method(console, "error", () => {});
         const place = await newPlace();
@@ -909,17 +949,6 @@ describe("concurrent saves to one script", () => {
         } finally {
             blocker.release();
         }
-    }
-
-    async function waitForLockWaiters(count) {
-        for (let attempt = 0; attempt < 500; attempt += 1) {
-            const { rows } = await pool.query(
-                "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'"
-            );
-            if (rows[0].waiting >= count) return;
-            await delay(10);
-        }
-        assert.fail(`${count} saves never waited on a lock`);
     }
 
     async function expectOneStored(place, responses, conflictKind) {

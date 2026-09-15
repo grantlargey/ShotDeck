@@ -21,7 +21,7 @@ export async function saveScriptScene(pool, { movieId, scriptId, sceneId = null,
 
     return withTransaction(pool, async (client) => {
         await lockScriptScenes(client, scriptId);
-        const saved = sceneId ? await lockSavedScene(client, { movieId, scriptId, sceneId }) : null;
+        const saved = sceneId ? await findSavedScene(client, { movieId, scriptId, sceneId }) : null;
         if (sceneId && !saved) throw new HttpError(404, SCENE_NOT_FOUND);
         if (!sceneId && !(await scriptExists(client, { movieId, scriptId }))) {
             throw new HttpError(404, "Script not found");
@@ -45,15 +45,18 @@ export async function listScriptScenes(db, { movieId, scriptId }) {
     return result.rows.map(sceneFromRow);
 }
 
-export async function deleteScriptScene(db, { movieId, scriptId, sceneId }) {
-    // Deleting the anchor row deletes its scene row too (ON DELETE CASCADE).
-    const result = await db.query(
-        `DELETE FROM script_scene_anchors a
-        USING script_scene_annotations sc
-        WHERE sc.anchor_id = a.id AND sc.id = $1 AND sc.movie_id = $2 AND sc.script_id = $3`,
-        [sceneId, movieId, scriptId]
-    );
-    if (result.rowCount === 0) throw new HttpError(404, SCENE_NOT_FOUND);
+export async function deleteScriptScene(pool, { movieId, scriptId, sceneId }) {
+    await withTransaction(pool, async (client) => {
+        await lockScriptScenes(client, scriptId);
+        // Deleting the anchor row deletes its scene row too (ON DELETE CASCADE).
+        const result = await client.query(
+            `DELETE FROM script_scene_anchors a
+            USING script_scene_annotations sc
+            WHERE sc.anchor_id = a.id AND sc.id = $1 AND sc.movie_id = $2 AND sc.script_id = $3`,
+            [sceneId, movieId, scriptId]
+        );
+        if (result.rowCount === 0) throw new HttpError(404, SCENE_NOT_FOUND);
+    });
 }
 
 /** Scenes in every script with all of `tags`, or any of them when `match` is "any". No tags matches every scene. */
@@ -219,11 +222,13 @@ function isValidSceneAnchor(entry) {
 // Overlap -------------------------------------------------------------------
 //
 // Captured scenes of one script can't overlap (CONTEXT.md, "Overlapping
-// scenes"). Every save takes the script's lock before it checks, so two
-// conflicting saves can't both pass the check before either has written.
+// scenes"). Every captured-scene write, a delete included, takes the script's
+// lock first and holds it until its transaction ends. So two conflicting saves
+// can't both pass the check before either has written, and writes to one
+// script never take row locks in opposite orders.
 
 /**
- * Waits for the lock on one script's captured-scene saves, and holds it until
+ * Waits for the lock on one script's captured-scene writes, and holds it until
  * the transaction ends. The key uses the id as Postgres reads it, so every
  * spelling of one UUID (uppercase, for example) takes the same lock.
  */
@@ -380,12 +385,11 @@ async function fetchSceneRow(db, { movieId, scriptId, sceneId }) {
     return result.rows[0];
 }
 
-/** The saved scene's ids, with its row locked so a delete waits for the save to finish. */
-async function lockSavedScene(db, { movieId, scriptId, sceneId }) {
+/** The saved scene's ids. A delete waits for the script's lock, so the scene stays until the save commits. */
+async function findSavedScene(db, { movieId, scriptId, sceneId }) {
     const result = await db.query(
         `SELECT id, anchor_id FROM script_scene_annotations
-        WHERE id = $1 AND movie_id = $2 AND script_id = $3
-        FOR UPDATE`,
+        WHERE id = $1 AND movie_id = $2 AND script_id = $3`,
         [sceneId, movieId, scriptId]
     );
     return result.rows[0] ?? null;
