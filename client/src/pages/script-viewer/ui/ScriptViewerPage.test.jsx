@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { ApiError } from "@/shared/lib/errors.js";
 import { captureAnchoredRange } from "../model/captureRange.js";
 import {
@@ -29,6 +29,7 @@ import {
   settle,
   timeInput,
   typeTime,
+  windowingDouble,
 } from "../test/pageHarness.js";
 import {
   LEGACY_RAW,
@@ -40,7 +41,9 @@ import {
   page3,
   SAVED_V2_TEXT,
   savedV2Scene,
+  sceneRow,
   SCRIPT_PAGES,
+  v2Geometry,
 } from "../test/textIndexFixtures.js";
 import ScriptViewerRoute from "./ScriptViewerPage.jsx";
 
@@ -1682,5 +1685,130 @@ describe("P20 overlapping scenes", () => {
       page_end: 1,
       anchor_geometry: [GEOMETRY.p1Line1, { kind: "end", page: 1, line: 7 }],
     });
+  });
+
+  it("refuses anchors on another scene's last line, then saves them from the next line on the same page, where the line boxes touch", async () => {
+    const OVERLAP_TOP_OF_P1 =
+      "These anchors share lines with the scene at 00:15:00 – 00:16:00. Move the anchors so the scenes don't overlap.";
+    // A scene on p1 lines 1–7. Line 7's box ends below where line 8's begins.
+    const topOfPage1 = sceneRow({
+      id: "scene-p1-top",
+      start_time_seconds: 900,
+      end_time_seconds: 960,
+      page_start: 1,
+      page_end: 1,
+      anchor_geometry: v2Geometry(page1, 0, page1, 6),
+    });
+    await renderViewer(ScriptViewerRoute, { scenes: [topOfPage1] });
+    publishWholeScript();
+    typeTime("Start", "00:01:00");
+    typeTime("End", "00:02:00");
+    placeAnchorsWithKeys([1, 6], [2, 0]);
+
+    expect(inPanel().getByText(OVERLAP_TOP_OF_P1).closest('[role="alert"]')).toBeTruthy();
+    click(saveButton());
+    expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
+
+    hoverLine(1, 7);
+    pressKey("[");
+    expect(inPanel().getByText("Start · p. 1 · line 8")).toBeTruthy();
+    expect(inPanel().queryByText(OVERLAP_TOP_OF_P1)).toBeNull();
+    click(saveButton());
+    expect(screen.queryByText(OVERLAP_TOP_OF_P1)).toBeNull();
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(lastSavePayload()).toMatchObject({
+      page_start: 1,
+      page_end: 2,
+      anchor_geometry: [
+        { kind: "start", page: 1, line: 7 },
+        { kind: "end", page: 2, line: 0 },
+      ],
+    });
+  });
+});
+
+// ---------- P21: scrolling to a scene ----------
+
+describe("P21 scrolling to a scene", () => {
+  // A legacy scene whose pages are unknown, so it has no scroll target.
+  const unplacedScene = sceneRow({
+    id: "scene-unplaced",
+    start_time_seconds: 1200,
+    end_time_seconds: 1260,
+    selected_text: "Words saved before pages were recorded.",
+    raw_selected_text: "Words saved before pages were recorded.",
+  });
+  const UNPLACED_TIMING = "00:20:00 – 00:21:00";
+  // savedV2Scene's start anchor is p3's first line, 86.2pt down the page.
+  const TO_SAVED_V2_START = [3, expect.objectContaining({ offsetPx: 86.2 })];
+
+  /** Errors reported to the window during the test, such as a click handler that throws. */
+  function recordWindowErrors() {
+    const errors = [];
+    const record = (event) => {
+      errors.push(event.error);
+      event.preventDefault();
+    };
+    window.addEventListener("error", record);
+    onTestFinished(() => window.removeEventListener("error", record));
+    return errors;
+  }
+
+  /** Lets effects and a macrotask run, so a scroll arriving after a wait still shows. */
+  async function afterPendingWork() {
+    await act(() => new Promise((resolve) => window.setTimeout(resolve, 0)));
+  }
+
+  function showInScript() {
+    click(within(screen.getByRole("dialog")).getByRole("button", { name: "Show in script" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }
+
+  it.each([
+    ["an admin", true],
+    ["a visitor", false],
+  ])("scrolls %s to a deep-linked scene's start anchor with only a sceneId", async (_, admin) => {
+    await renderViewer(ScriptViewerRoute, { admin, scenes: [savedV2Scene], sceneId: savedV2Scene.id });
+
+    await waitFor(() => expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1));
+    await afterPendingWork();
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledWith(3, expect.objectContaining({ behavior: "auto", offsetPx: 86.2 }));
+  });
+
+  it("doesn't scroll an admin to a scene without a known page, from a deep link or its card", async () => {
+    const errors = recordWindowErrors();
+    await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene, unplacedScene], sceneId: unplacedScene.id });
+    await waitFor(() => expect(sceneTitle()).toBe(UNPLACED_TIMING));
+    await afterPendingWork();
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+
+    click(sceneCard(V2_TIMING));
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(...TO_SAVED_V2_START);
+
+    click(sceneCard(UNPLACED_TIMING));
+    expect(sceneTitle()).toBe(UNPLACED_TIMING);
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("doesn't scroll a visitor to a scene without a known page, from a deep link or Show in script", async () => {
+    const errors = recordWindowErrors();
+    await renderViewer(ScriptViewerRoute, { admin: false, scenes: [savedV2Scene, unplacedScene], sceneId: unplacedScene.id });
+    await waitFor(() => expect(frameProps(3).activeSceneId).toBe(unplacedScene.id));
+    await afterPendingWork();
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+
+    click(sceneCard(V2_TIMING));
+    showInScript();
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(...TO_SAVED_V2_START);
+
+    click(sceneCard(UNPLACED_TIMING));
+    showInScript();
+    expect(frameProps(3).activeSceneId).toBe(unplacedScene.id);
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
   });
 });

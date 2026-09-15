@@ -1,9 +1,9 @@
 import { useState } from "react";
 import {
   displayScriptSceneText,
-  formatScriptScenePages,
 } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
+import { formatScenePages } from "@/entities/script-scene/model/scriptLocation.js";
 import { groupScriptTagsByCategory } from "@/entities/script-scene/model/scriptTagCategories.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
@@ -116,12 +116,12 @@ export function SceneViewerModal({
   let meta = "Script";
   if (showStill) {
     meta = still
-      ? [`Film still · ${formatSecondsToHms(still.time_seconds)}`, scene && formatScriptScenePages(scene)]
+      ? [`Film still · ${formatSecondsToHms(still.time_seconds)}`, scene && formatScenePages(scene)]
           .filter(Boolean)
           .join(" · ")
       : "Film still";
   } else if (scene) {
-    meta = `${formatScriptScenePages(scene)} · ${formatFilmTiming(scene)}`;
+    meta = [formatScenePages(scene), formatFilmTiming(scene)].filter(Boolean).join(" · ");
   }
 
   let counter = null;

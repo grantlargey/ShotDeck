@@ -1,12 +1,14 @@
+import { anchorsFromGeometry, compareAnchors, scenePageRange } from "@/entities/script-scene/model/scriptLocation.js";
 import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 
 /*
- * Anchors mark the first and last line of a scene in the PDF. They are stored
- * in PDF points (scale 1, top-left origin) so they render correctly at any
- * zoom, and they are persisted in the scene's `anchor_geometry` column.
+ * Scene anchors while an admin captures a scene: placing and swapping them,
+ * their keys, finding a stored anchor's current line, suggestions from saved
+ * text, and the saved scenes' bars in the page margin. Anchors are in PDF
+ * points (scale 1, top-left origin). How a captured scene stores them is in
+ * `@/entities/script-scene/model/scriptLocation.js`.
  */
 
-const GEOMETRY_VERSION = 2;
 const POSITION_SCALE = 100000;
 
 export const NO_ANCHORS = { start: null, end: null };
@@ -37,10 +39,6 @@ export function hasAnyAnchor(anchors) {
   return Boolean(anchors?.start || anchors?.end);
 }
 
-function compareAnchors(left, right) {
-  return left.page - right.page || left.line - right.line;
-}
-
 export function withoutSuggestions(anchors) {
   const strip = (anchor) => {
     if (!anchor) return null;
@@ -60,35 +58,6 @@ export function placeAnchor(anchors, kind, anchor) {
     return { start: next.end, end: next.start };
   }
   return next;
-}
-
-export function anchorsToGeometry(anchors) {
-  const clean = withoutSuggestions(anchors);
-  return ["start", "end"]
-    .filter((kind) => clean[kind])
-    .map((kind) => ({ kind, version: GEOMETRY_VERSION, unit: "pt", ...clean[kind] }));
-}
-
-/**
- * Reads anchors saved by this viewer. Older scenes stored client-pixel
- * rectangles from DOM selections, which cannot be re-anchored, so they return
- * null.
- */
-export function anchorsFromGeometry(geometry) {
-  const anchors = { start: null, end: null };
-  for (const entry of Array.isArray(geometry) ? geometry : []) {
-    if (entry?.version !== GEOMETRY_VERSION || !(entry.kind in anchors)) continue;
-    if (!Number.isInteger(entry.page) || !Number.isInteger(entry.line)) continue;
-    if (!Number.isFinite(entry.top) || !Number.isFinite(entry.bottom)) continue;
-    anchors[entry.kind] = {
-      page: entry.page,
-      line: entry.line,
-      top: entry.top,
-      bottom: entry.bottom,
-      text: String(entry.text || ""),
-    };
-  }
-  return anchors.start && anchors.end ? anchors : null;
 }
 
 /**
@@ -138,10 +107,10 @@ function findWordRunLine(page, words, fromEnd) {
  * saved text's first and last words on its saved pages.
  */
 export function suggestAnchorsFromSavedText(scene, pages) {
-  const pageStart = Number(scene?.page_start || scene?.page_end);
-  const pageEnd = Number(scene?.page_end || scene?.page_start);
-  const startPage = pages.get(pageStart);
-  const endPage = pages.get(pageEnd);
+  const range = scenePageRange(scene);
+  if (!range) return null;
+  const startPage = pages.get(range.pageStart);
+  const endPage = pages.get(range.pageEnd);
   if (!startPage || !endPage) return null;
 
   const words = comparableWords(scene.raw_selected_text || scene.selected_text);
@@ -172,13 +141,12 @@ function sceneLocation(scene) {
     };
   }
 
-  const pageStart = Number(scene?.page_start || scene?.page_end);
-  const pageEnd = Number(scene?.page_end || scene?.page_start);
-  if (!Number.isInteger(pageStart) || pageStart < 1) return null;
+  const range = scenePageRange(scene);
+  if (!range) return null;
   return {
     approximate: true,
-    start: { page: pageStart, y: null },
-    end: { page: Math.max(pageStart, Number.isInteger(pageEnd) ? pageEnd : pageStart), y: null },
+    start: { page: range.pageStart, y: null },
+    end: { page: range.pageEnd, y: null },
   };
 }
 
@@ -225,20 +193,4 @@ export function buildSceneSegmentsByPage(scenes) {
   }
 
   return byPage;
-}
-
-export function findOverlappingSavedScene(scenes, anchors, excludeSceneId) {
-  if (!anchors?.start || !anchors?.end) return null;
-  const start = documentPosition(anchors.start.page, anchors.start.top);
-  const end = documentPosition(anchors.end.page, anchors.end.bottom);
-
-  for (const scene of Array.isArray(scenes) ? scenes : []) {
-    if (scene.id === excludeSceneId) continue;
-    const saved = anchorsFromGeometry(scene.anchor_geometry);
-    if (!saved) continue;
-    const savedStart = documentPosition(saved.start.page, saved.start.top);
-    const savedEnd = documentPosition(saved.end.page, saved.end.bottom);
-    if (start < savedEnd && savedStart < end) return scene;
-  }
-  return null;
 }

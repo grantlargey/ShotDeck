@@ -1,6 +1,10 @@
+import { momentSeconds } from "./filmTiming.js";
+import { scenePageRange } from "./scriptLocation.js";
+
 /*
- * Reading a stored captured scene: its tags, display text, pages, order among
- * other scenes, and the script viewer link that opens it.
+ * Reading a stored captured scene: its tags, display text, order among other
+ * scenes, and the script viewer link that opens it. Where it sits in its
+ * script is read in scriptLocation.js.
  */
 
 /**
@@ -24,45 +28,42 @@ export function displayScriptSceneText(item) {
   return item?.selected_text || "";
 }
 
-/**
- * Converts optional page_start/page_end fields into a stable inclusive range.
- */
-export function getScriptScenePageRange(scene) {
-  const start = Number(scene?.page_start || scene?.page_end || 1);
-  const end = Number(scene?.page_end || scene?.page_start || start);
-  return {
-    pageStart: Number.isFinite(start) ? start : 1,
-    pageEnd: Number.isFinite(end) ? end : Number.isFinite(start) ? start : 1,
-  };
+/** Ascending, with missing values last, as Postgres sorts `ASC`. */
+function compareNullsLast(left, right) {
+  if (left === null || right === null) return (left === null) - (right === null);
+  return left - right;
 }
 
-export function formatScriptScenePages(scene) {
-  const { pageStart, pageEnd } = getScriptScenePageRange(scene);
-  return pageEnd > pageStart ? `Pages ${pageStart}–${pageEnd}` : `Page ${pageStart}`;
+function compareText(left, right) {
+  const a = String(left ?? "");
+  const b = String(right ?? "");
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /**
- * Shared sort order for script scenes: page first, timeline second, creation
- * time last. Both the viewer and search flows rely on this staying stable.
+ * Captured scenes in the order the API lists a script's scenes: first page
+ * (unknown pages last), then film timing start, then creation time. Rows the
+ * order can't separate keep their given order. Both the viewer and search
+ * flows rely on this staying stable.
  */
 export function sortScriptScenes(rows) {
-  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
-    const { pageStart: pageA } = getScriptScenePageRange(a);
-    const { pageStart: pageB } = getScriptScenePageRange(b);
-    if (pageA !== pageB) return pageA - pageB;
-
-    const startA = Number(a.start_time_seconds || 0);
-    const startB = Number(b.start_time_seconds || 0);
-    if (startA !== startB) return startA - startB;
-
-    return String(a.created_at || "").localeCompare(String(b.created_at || ""));
-  });
+  return [...(Array.isArray(rows) ? rows : [])].sort(
+    (a, b) =>
+      compareNullsLast(scenePageRange(a)?.pageStart ?? null, scenePageRange(b)?.pageStart ?? null) ||
+      compareNullsLast(momentSeconds(a.start_time_seconds), momentSeconds(b.start_time_seconds)) ||
+      compareText(a.created_at, b.created_at)
+  );
 }
 
-/** Script viewer path that opens a scene for editing, scrolled to its first page. */
+/**
+ * Script viewer path that opens a scene. It names the scene's first page when
+ * that's known, so the viewer can scroll before its scenes load; either way the
+ * viewer scrolls to the scene once they have.
+ */
 export function getSceneScriptPath(scene) {
   const params = new URLSearchParams();
   params.set("sceneId", scene.id);
-  params.set("page", String(getScriptScenePageRange(scene).pageStart));
+  const range = scenePageRange(scene);
+  if (range) params.set("page", String(range.pageStart));
   return `/movies/${scene.movie_id}/scripts/${scene.script_id}?${params.toString()}`;
 }

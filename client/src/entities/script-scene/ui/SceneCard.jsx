@@ -7,10 +7,10 @@ import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
 import { Skeleton } from "@/shared/ui/Skeleton.jsx";
 import {
   displayScriptSceneText,
-  formatScriptScenePages,
   safeScriptSceneTags,
 } from "../model/capturedScene.js";
 import { formatFilmTiming } from "../model/filmTiming.js";
+import { formatScenePages } from "../model/scriptLocation.js";
 import { getScriptTagLabel } from "../model/scriptTagCategories.js";
 import styles from "./SceneCard.module.css";
 
@@ -46,7 +46,7 @@ export function SceneCard({
   const imageKey = still?.thumb_key || still?.image_key || null;
   const imageUrl = useSignedMediaUrl(imageKey);
   const cardTitle = title ?? (scene?.movie_title || "Unknown title");
-  const pages = formatScriptScenePages(scene);
+  const pages = formatScenePages(scene);
 
   function handleKeyDown(event) {
     if (event.target !== event.currentTarget) return;
@@ -92,7 +92,7 @@ export function SceneCard({
       <div className={styles.meta}>
         <div className={styles.titleRow}>
           <span className={styles.title}>{cardTitle}</span>
-          <span className={styles.pages}>{pages}</span>
+          {pages && <span className={styles.pages}>{pages}</span>}
         </div>
         <div className={styles.subRow}>
           <span>{formatFilmTiming(scene)}</span>

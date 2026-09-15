@@ -5,12 +5,13 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { getStillProjectPath } from "@/entities/annotation/model/still.js";
-import {
-  formatScriptScenePages,
-  getScriptScenePageRange,
-  sortScriptScenes,
-} from "@/entities/script-scene/model/capturedScene.js";
+import { sortScriptScenes } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
+import {
+  findOverlappingScriptLocation,
+  formatScenePages,
+  sceneScrollTarget,
+} from "@/entities/script-scene/model/scriptLocation.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { getMovie } from "@/shared/api/movies.js";
 import { formatScreenplaySelection } from "@/shared/api/screenplayFormat.js";
@@ -26,7 +27,7 @@ import { SceneModalButton } from "@/widgets/scene-detail-modal/ui/SceneDetailMod
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
 import { isTypingTarget } from "../lib/pdfViewport.js";
-import { anchorsFromGeometry, buildSceneSegmentsByPage, findOverlappingSavedScene } from "../model/anchors.js";
+import { buildSceneSegmentsByPage } from "../model/anchors.js";
 import { useSceneDraft } from "../model/sceneDraft.js";
 import { usePdfPageWindowing } from "../model/usePdfPageWindowing.js";
 import { useScriptTextIndex } from "../model/useScriptTextIndex.js";
@@ -58,12 +59,6 @@ const STALE_SAVE_PROMPT =
 function parsePageParam(value) {
   const page = Number(value);
   return value !== null && Number.isInteger(page) && page > 0 ? page : null;
-}
-
-function sceneScrollTarget(scene) {
-  const anchors = anchorsFromGeometry(scene?.anchor_geometry);
-  if (anchors) return { page: anchors.start.page, offsetPt: anchors.start.top };
-  return { page: getScriptScenePageRange(scene).pageStart, offsetPt: null };
 }
 
 /**
@@ -148,7 +143,7 @@ function ScriptViewerPage() {
 
   const sceneSegmentsByPage = useMemo(() => buildSceneSegmentsByPage(scenes), [scenes]);
   const overlapScene = useMemo(
-    () => findOverlappingSavedScene(scenes, draft.anchors, draftSceneId),
+    () => findOverlappingScriptLocation(scenes, draft.anchors, draftSceneId),
     [scenes, draft.anchors, draftSceneId]
   );
   const tagsDisabled = !draft.text.trim();
@@ -179,7 +174,8 @@ function ScriptViewerPage() {
     deepLinkedSceneRef.current = sceneIdFromQuery;
     if (canEdit) draftActions.loadScene(target);
     else setFocusSceneId(target.id);
-    setPendingScroll(sceneScrollTarget(target));
+    const scroll = sceneScrollTarget(target);
+    if (scroll) setPendingScroll(scroll);
   }, [sessionReady, canEdit, sceneIdFromQuery, scenes, draftActions]);
 
   const runPendingScroll = useStableHandler((target) => {
@@ -206,10 +202,8 @@ function ScriptViewerPage() {
       draftActions.loadScene(scene);
       setActiveTab("capture");
     }
-    if (scroll) {
-      const target = sceneScrollTarget(scene);
-      scrollToPoint(target.page, target.offsetPt);
-    }
+    const target = scroll && sceneScrollTarget(scene);
+    if (target) scrollToPoint(target.page, target.offsetPt);
   }
 
   function startNewScene() {
@@ -227,7 +221,7 @@ function ScriptViewerPage() {
   function revealScene(scene) {
     setFocusSceneId(scene.id);
     const target = sceneScrollTarget(scene);
-    scrollToPoint(target.page, target.offsetPt);
+    if (target) scrollToPoint(target.page, target.offsetPt);
   }
 
   function openStillInProject(still) {
@@ -549,7 +543,9 @@ function ScriptViewerPage() {
       {modal?.kind === "draft" && (
         <DraftEditorModal
           title={title}
-          meta={`${draftSceneId ? "Editing saved scene" : "New scene draft"} · ${formatScriptScenePages(draft.previewScene)}`}
+          meta={[draftSceneId ? "Editing saved scene" : "New scene draft", formatScenePages(draft.previewScene)]
+            .filter(Boolean)
+            .join(" · ")}
           editorKey={draft.editorKey}
           markdown={draft.text}
           onChangeMarkdown={draftActions.editText}
