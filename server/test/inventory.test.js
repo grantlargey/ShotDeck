@@ -366,7 +366,7 @@ describe("the inventory report", () => {
                 pixel_geometry: scenes(26, 41),
                 malformed: scenes(28, 36),
             },
-            // Across the categories: scenes 39 and 40 have a valid pair, 41 is pixel geometry, 28 to 32 have none.
+            // Across the categories: scenes 39, 40 and 43 have a valid pair, 41 is pixel geometry, 28 to 32 have none.
             with_invalid_anchor_entry: scenes(28, 29, 30, 31, 32, 39, 40, 41, 43),
         });
     });

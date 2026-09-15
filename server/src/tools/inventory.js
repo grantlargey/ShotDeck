@@ -28,13 +28,13 @@
  *   - pixel geometry: only the old `{ x, y, width, height }` rectangles;
  *   - malformed geometry: anything else, including a scene with no anchor row.
  * - A scene with an invalid anchor entry (`with_invalid_anchor_entry`) has a
- *   geometry entry that names `kind` or `version`, so it isn't an old pixel
- *   rectangle, and fails the strict check. Issue 04's write rule rejects the
- *   whole geometry with a 400, even beside a valid pair, so the scene can't be
- *   saved again as stored. This figure crosses the categories above: such a
- *   scene may have a valid pair, or fall into any category without one. The
- *   categories and the location check are unchanged, and use only strictly
- *   valid entries.
+ *   geometry entry that names `kind` or `version`, which issue 04 treats as a
+ *   scene anchor rather than a pixel rectangle, and that entry fails the strict
+ *   check. Issue 04's write rule rejects the whole geometry with a 400, even
+ *   beside a valid pair, so the scene can't be saved again as stored. This
+ *   figure crosses the categories above: such a scene may have a valid pair, or
+ *   fall into any category without one. The categories and the location check
+ *   are unchanged, and use only strictly valid entries.
  * - Scene text: null formatted text (as the legacy import stores it) is counted
  *   apart from formatted text that is empty or only whitespace. Raw and selected
  *   text are NOT NULL columns, so only their empty or whitespace-only values are
