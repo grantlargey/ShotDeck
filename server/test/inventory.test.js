@@ -404,26 +404,33 @@ describe("the inventory report", () => {
     });
 });
 
-test("every query reads in a read-only transaction with a statement timeout, which ends afterwards", async () => {
+test("sends only a read-only begin, the timeout, six reads under both, and a rollback, in that order", async () => {
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
-        const settings = [];
+        const statements = [];
         const probe = {
             async query(text, values) {
-                if (/^\s*SELECT\b/i.test(text)) {
+                const statement = text.trim();
+                if (statement.startsWith("SELECT")) {
                     const { rows } = await client.query(
                         "SELECT current_setting('transaction_read_only') AS read_only, current_setting('statement_timeout') AS timeout"
                     );
-                    settings.push(`${rows[0].read_only} ${rows[0].timeout}`);
+                    statements.push(`SELECT (read only ${rows[0].read_only}, timeout ${rows[0].timeout})`);
+                } else {
+                    statements.push(statement);
                 }
                 return client.query(text, values);
             },
         };
 
         assert.deepEqual(await collectInventory(probe), report);
-        assert.equal(settings.length, 6);
-        assert.deepEqual(new Set(settings), new Set(["on 30s"]));
+        assert.deepEqual(statements, [
+            "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+            "SET LOCAL statement_timeout = '30s'",
+            ...Array(6).fill("SELECT (read only on, timeout 30s)"),
+            "ROLLBACK",
+        ]);
 
         const { rows } = await client.query("SELECT current_setting('transaction_read_only') AS read_only");
         assert.equal(rows[0].read_only, "off");
