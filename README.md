@@ -245,12 +245,12 @@ Client tests run with Vitest and jsdom (`npm test --prefix client`); they curren
 
 `npm test --prefix server` runs the API's tests with `node --test`. They start the Express app on a free port and call it over HTTP, pinning the current HTTP contract of each route, against a throwaway Postgres database:
 
-- The command creates `shotdeck_test_<suffix>` in the running `shotdeck-db-1` container with `docker exec`, applies the schema with `src/migrate.js`, and runs the test files one at a time. It drops the database afterwards, including when tests fail or you press Ctrl+C.
+- The command creates `shotdeck_test_<suffix>` in the running `shotdeck-db-1` container with `docker exec`, applies the schema with `src/migrate.js`, and runs the test files one at a time. It drops the database afterwards, including when tests fail, you press Ctrl+C, or the terminal closes.
 - The suffix comes from `TEST_DB_SUFFIX` (lowercase letters, digits and underscores) and defaults to the command's process ID. Runs that happen at the same time need different suffixes. A run refuses to start if its database already exists, and prints the command that drops a leftover one.
 - If the container isn't running, the command fails with a message; start Postgres with `npm run db:up`. The command never starts it.
 - The command sets `DATABASE_URL`, dummy AWS credentials with S3 sends pointed at a closed local port, and an empty `OPENAI_API_KEY` itself, so a `server/.env` can't point the tests at a real database, bucket or OpenAI key. Presigned URLs are signed locally.
 
-Pass test files (relative to `server/`) or `node --test` flags to run part of the suite:
+To run part of the suite, pass test files or globs ending in `.js` (relative to `server/`), or `node --test` flags written as `--flag=value`. The files always run one at a time, so `--test-concurrency` is refused:
 
 ```bash
 TEST_DB_SUFFIX=01 npm test --prefix server -- test/auth.test.js

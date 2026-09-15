@@ -4,7 +4,7 @@
  *
  *   TEST_DB_SUFFIX=01 npm test --prefix server              every test file
  *   npm test --prefix server -- test/auth.test.js          only these files (relative to server/)
- *   npm test --prefix server -- --test-name-pattern=login  node --test flags pass through
+ *   npm test --prefix server -- --test-name-pattern=login  node --test flags, written --flag=value
  *
  * The database is `shotdeck_test_<TEST_DB_SUFFIX>`; give runs that happen at the
  * same time different suffixes. Without one, the suffix is this process's id.
@@ -40,6 +40,31 @@ function databaseName() {
     return `shotdeck_test_${suffix}`;
 }
 
+/**
+ * The `node --test` arguments. Extra arguments are test files or globs ending in
+ * `.js` (relative to server/), or node --test flags written `--flag=value`. The
+ * files share the database, so they always run one at a time.
+ */
+function testArgs(extraArgs) {
+    const flags = [];
+    const files = [];
+    for (const arg of extraArgs) {
+        if (arg.startsWith("--test-concurrency")) {
+            fail("--test-concurrency can't be changed: the test files share one database, so they run one at a time.");
+        } else if (arg.startsWith("-")) {
+            flags.push(arg);
+        } else if (arg.endsWith(".js")) {
+            files.push(arg);
+        } else {
+            fail(
+                `"${arg}" isn't a test file (a path or glob ending in .js). ` +
+                    "Give node --test flags their value with =, for example --test-name-pattern=login."
+            );
+        }
+    }
+    return ["--test", ...flags, "--test-concurrency=1", ...(files.length > 0 ? files : DEFAULT_TEST_FILES)];
+}
+
 function checkContainer() {
     const inspect = spawnSync("docker", ["inspect", "-f", "{{.State.Running}}", CONTAINER], {
         encoding: "utf8",
@@ -55,6 +80,10 @@ function checkContainer() {
     if (ping.status !== 0) fail(`Postgres in ${CONTAINER} isn't accepting connections yet:\n${ping.stderr}`);
 }
 
+function dropCommand(name) {
+    return `docker exec ${CONTAINER} psql -U app -d postgres -c 'DROP DATABASE IF EXISTS ${name} WITH (FORCE)'`;
+}
+
 function createDatabase(name) {
     const existing = psql(`SELECT 1 FROM pg_database WHERE datname = '${name}'`);
     if (existing.status !== 0) fail(`Couldn't check for ${name}:\n${existing.stderr}`);
@@ -62,7 +91,7 @@ function createDatabase(name) {
         fail(
             `The database ${name} already exists. Another run with the same TEST_DB_SUFFIX may be in progress, ` +
                 "or an earlier run was killed before it could clean up.\n" +
-                `If no run is in progress, drop it with:\n  docker exec ${CONTAINER} psql -U app -d postgres -c 'DROP DATABASE ${name}'`
+                `If no run is in progress, drop it with:\n  ${dropCommand(name)}`
         );
     }
     const created = psql(`CREATE DATABASE ${name}`);
@@ -73,7 +102,7 @@ function dropDatabase(name) {
     // FORCE ends connections a crashed test process may have left open.
     const dropped = psql(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
     if (dropped.status !== 0) {
-        console.error(`\nCouldn't drop ${name}. Drop it by hand:\n${dropped.stderr}`);
+        console.error(`\nCouldn't drop ${name}:\n${dropped.stderr || dropped.error || ""}\nDrop it by hand with:\n  ${dropCommand(name)}`);
         return false;
     }
     return true;
@@ -98,6 +127,8 @@ function testEnvironment(databaseUrl) {
         AWS_SESSION_TOKEN: "",
         AWS_PROFILE: "",
         AWS_ENDPOINT_URL_S3: "http://127.0.0.1:9",
+        // "true" here would make the SDK skip the endpoint above.
+        AWS_IGNORE_CONFIGURED_ENDPOINT_URLS: "false",
         AWS_MAX_ATTEMPTS: "1",
         AWS_EC2_METADATA_DISABLED: "true",
         // Empty counts as unset for the formatter, which then answers 503.
@@ -108,7 +139,8 @@ function testEnvironment(databaseUrl) {
 
 let child = null;
 let interrupted = false;
-for (const signal of ["SIGINT", "SIGTERM"]) {
+// SIGHUP arrives when the terminal closes; the database is dropped then too.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => {
         interrupted = true;
         child?.kill(signal);
@@ -129,14 +161,8 @@ function runNode(args, env) {
     });
 }
 
-function testArgs(extraArgs) {
-    const flags = extraArgs.filter((arg) => arg.startsWith("-"));
-    const files = extraArgs.filter((arg) => !arg.startsWith("-"));
-    // One file at a time: the files share the database.
-    return ["--test", "--test-concurrency=1", ...flags, ...(files.length > 0 ? files : DEFAULT_TEST_FILES)];
-}
-
 const database = databaseName();
+const args = testArgs(process.argv.slice(2));
 checkContainer();
 createDatabase(database);
 
@@ -147,7 +173,7 @@ try {
     if (exitCode !== 0) {
         console.error(`\nApplying the schema to ${database} failed.`);
     } else if (!interrupted) {
-        exitCode = await runNode(testArgs(process.argv.slice(2)), env);
+        exitCode = await runNode(args, env);
     }
 } finally {
     if (!dropDatabase(database)) exitCode = exitCode || 1;
