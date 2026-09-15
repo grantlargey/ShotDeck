@@ -1,10 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
 
-export async function ensureMovieExists(db, movieId) {
-    const result = await db.query(`SELECT id FROM movies WHERE id = $1`, [movieId]);
-    return result.rows[0] || null;
-}
-
 export async function listAnnotationsForMovie(db, movieId) {
     const result = await db.query(
         `

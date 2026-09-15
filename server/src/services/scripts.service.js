@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { HttpError } from "../utils/http-error.js";
-import { ensureMovieExists } from "../repositories/annotations.repository.js";
+import { ensureMovieExists } from "./movies.service.js";
 import * as scriptsRepository from "../repositories/scripts.repository.js";
 import { withScriptViewUrl } from "../serializers/scripts.serializer.js";
 
@@ -12,8 +12,7 @@ export async function saveScript(db, movieId, body) {
         throw new HttpError(400, "Invalid body. Expected { s3_key:string }");
     }
 
-    const movie = await ensureMovieExists(db, movieId);
-    if (!movie) throw new HttpError(404, "Movie not found");
+    await ensureMovieExists(db, movieId);
 
     const row = await scriptsRepository.upsertScriptForMovie(db, {
         id: uuidv4(),

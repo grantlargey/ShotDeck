@@ -1,6 +1,7 @@
 import { HttpError } from "../utils/http-error.js";
 import * as annotationsRepository from "../repositories/annotations.repository.js";
 import { mapImageAnnotationRow, withAnnotationImageUrls } from "../serializers/annotations.serializer.js";
+import { ensureMovieExists } from "./movies.service.js";
 import { queueThumbnailsForRows } from "./thumbnails.service.js";
 
 function validateAnnotationPayload({ time_seconds, title, body, image_key }, { allowTitleBody = false } = {}) {
@@ -28,8 +29,7 @@ export async function createAnnotation(db, movieId, body) {
         );
     }
 
-    const movie = await annotationsRepository.ensureMovieExists(db, movieId);
-    if (!movie) throw new HttpError(404, "Movie not found");
+    await ensureMovieExists(db, movieId);
 
     const row = await annotationsRepository.createAnnotationRecord(db, {
         movieId,
