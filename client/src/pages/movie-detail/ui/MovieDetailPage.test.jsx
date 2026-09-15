@@ -396,6 +396,27 @@ describe("editing a still in the viewer", () => {
     expect(editForm()).toBeNull();
   });
 
+  it("disables Save and Delete while saving, so a double click sends one request", async () => {
+    await renderPage();
+    const request = deferred();
+    api.updateAnnotation.mockReturnValue(request.promise);
+    openStill("00:05:00");
+    fireEvent.click(viewerButton("Edit"));
+
+    fireEvent.click(viewerButton("Save"));
+    fireEvent.click(viewerButton("Save"));
+
+    expect(api.updateAnnotation).toHaveBeenCalledTimes(1);
+    expect(viewerButton("Save").disabled).toBe(true);
+    expect(viewerButton("Delete").disabled).toBe(true);
+
+    await settle(() => request.reject(s3Failure()));
+
+    expectErrorAboveStill("Failed to save the still.");
+    expect(viewerButton("Save").disabled).toBe(false);
+    expect(viewerButton("Delete").disabled).toBe(false);
+  });
+
   it("toggles the edit with Cancel edit", async () => {
     await renderPage();
     openStill("00:05:00");
@@ -448,6 +469,29 @@ describe("deleting a still", () => {
     expect(api.deleteAnnotation).toHaveBeenCalledWith("m1", "a1");
     expect(api.listAnnotations).toHaveBeenCalledTimes(2);
     expect(editForm()).toBeNull();
+  });
+
+  it("disables Delete and Save while deleting, so a double click sends one request", async () => {
+    await renderPage();
+    window.confirm.mockReturnValue(true);
+    const request = deferred();
+    api.deleteAnnotation.mockReturnValue(request.promise);
+    openStill("00:05:00");
+    fireEvent.click(viewerButton("Edit"));
+
+    fireEvent.click(viewerButton("Delete"));
+    fireEvent.click(viewerButton("Delete"));
+
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(api.deleteAnnotation).toHaveBeenCalledTimes(1);
+    expect(viewerButton("Delete").disabled).toBe(true);
+    expect(viewerButton("Save").disabled).toBe(true);
+
+    await settle(() => request.reject(s3Failure()));
+
+    expectErrorAboveStill("Failed to delete the still.");
+    expect(viewerButton("Delete").disabled).toBe(false);
+    expect(viewerButton("Save").disabled).toBe(false);
   });
 
   it("clears a still error once a delete succeeds", async () => {
@@ -530,6 +574,28 @@ describe("closing the viewer", () => {
     expect(api.listAnnotations).toHaveBeenCalledTimes(2);
     expect(editForm()).not.toBeNull();
     expect(within(viewer()).queryByRole("alert")).toBeNull();
+  });
+
+  it("lets the next viewer save while an earlier save runs, and keeps that save from re-enabling its buttons", async () => {
+    await renderPage();
+    const earlier = startHeldRequest("save");
+    fireEvent.click(viewerButton("Close"));
+    openStill("00:05:00");
+    const later = deferred();
+    api.updateAnnotation.mockReturnValueOnce(later.promise);
+    fireEvent.click(viewerButton("Edit"));
+    fireEvent.click(viewerButton("Save"));
+    expect(api.updateAnnotation).toHaveBeenCalledTimes(2);
+
+    await settle(() => earlier.resolve());
+
+    expect(viewerButton("Save").disabled).toBe(true);
+    expect(viewerButton("Delete").disabled).toBe(true);
+
+    await settle(() => later.reject(s3Failure()));
+
+    expectErrorAboveStill("Failed to save the still.");
+    expect(viewerButton("Save").disabled).toBe(false);
   });
 });
 

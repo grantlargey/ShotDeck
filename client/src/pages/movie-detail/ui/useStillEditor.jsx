@@ -33,10 +33,11 @@ function readStillSeconds(text, runtimeSeconds) {
  *   is that dialog, or null while it's closed. Errors from adding show in it.
  * - `renderActions` and `renderStillTools` fill the scene viewer's slots of the
  *   same names: Delete and Edit in the footer, and above the still, the edit
- *   form and the last edit or delete error.
- * - `reset()` drops the edit and that error. Call it when the viewer closes.
- *   A save or delete that settles after it still awaits `onChange()`, but
- *   leaves the edit and error of a later viewer session alone.
+ *   form and the last edit or delete error. Delete and Save are disabled while
+ *   a save or delete runs.
+ * - `reset()` drops the edit, that error and the busy state. Call it when the
+ *   viewer closes. A save or delete that settles after it still awaits
+ *   `onChange()`, but leaves a later viewer session's state alone.
  */
 export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
   const [adding, setAdding] = useState(false);
@@ -51,6 +52,8 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
   const [edit, setEdit] = useState(null);
   // The last edit or delete failure, shown above whichever still the viewer shows.
   const [error, setError] = useState("");
+  // True while the viewer's save or delete runs, including the refresh after it.
+  const [busy, setBusy] = useState(false);
   // Counts viewer sessions; reset() starts the next one.
   const viewerSessionRef = useRef(0);
 
@@ -107,6 +110,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
         throw new ValidationError("Choose an image for this still.");
       }
 
+      setBusy(true);
       await updateAnnotation({
         movieId,
         annotationId: still.id,
@@ -119,6 +123,8 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
       if (isSameSession()) setEdit(null);
     } catch (e) {
       if (isSameSession()) setError(getErrorMessage(e, "Failed to save the still."));
+    } finally {
+      if (isSameSession()) setBusy(false);
     }
   }
 
@@ -126,6 +132,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
     if (!window.confirm("Delete this still?")) return;
     const isSameSession = trackViewerSession();
     try {
+      setBusy(true);
       await deleteAnnotation(movieId, still.id);
       if (isSameSession()) {
         setEdit(null);
@@ -134,6 +141,8 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
       await onChange();
     } catch (e) {
       if (isSameSession()) setError(getErrorMessage(e, "Failed to delete the still."));
+    } finally {
+      if (isSameSession()) setBusy(false);
     }
   }
 
@@ -141,13 +150,14 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
     viewerSessionRef.current += 1;
     setEdit(null);
     setError("");
+    setBusy(false);
   }
 
   function renderActions({ view, still }) {
     if (view !== "still" || !still) return null;
     return (
       <>
-        <SceneModalButton variant="danger" onClick={() => deleteStill(still)}>
+        <SceneModalButton variant="danger" disabled={busy} onClick={() => deleteStill(still)}>
           Delete
         </SceneModalButton>
         <SceneModalButton onClick={() => toggleEdit(still)}>
@@ -187,7 +197,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
               />
             </Field>
             <div className={styles.editActions}>
-              <Button variant="primary" onClick={() => saveEdit(still)}>
+              <Button variant="primary" disabled={busy} onClick={() => saveEdit(still)}>
                 Save
               </Button>
             </div>
