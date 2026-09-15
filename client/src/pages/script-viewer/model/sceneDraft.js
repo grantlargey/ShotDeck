@@ -4,7 +4,7 @@ import {
   safeScriptSceneTags,
 } from "@/entities/script-scene/model/capturedScene.js";
 import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
-import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time.js";
+import { formatSecondsToHms, normalizeTypedTime, parseTimeInputToSeconds } from "@/shared/lib/time.js";
 import {
   anchorPairKey,
   anchorsFromGeometry,
@@ -493,10 +493,9 @@ export function useSceneDraft(textIndex) {
 
     /** Reformats a parseable time as HH:MM:SS and leaves anything else as typed. */
     normalizeTime(field) {
-      const seconds = parseTimeInputToSeconds(latestRef.current.state[field]);
-      if (seconds !== null) {
-        dispatch({ type: "setTime", field, value: formatSecondsToHms(seconds, { fallback: "00:00:00" }) });
-      }
+      const typed = latestRef.current.state[field];
+      const normalized = normalizeTypedTime(typed);
+      if (normalized !== typed) dispatch({ type: "setTime", field, value: normalized });
     },
 
     toggleTag(tag) {

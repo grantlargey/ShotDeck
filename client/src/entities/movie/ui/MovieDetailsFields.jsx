@@ -1,4 +1,4 @@
-import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time.js";
+import { normalizeTypedTime } from "@/shared/lib/time.js";
 import { Field } from "@/shared/ui/Field.jsx";
 import { Input } from "@/shared/ui/Input.jsx";
 import { MOVIE_CREDITS } from "../model/movieCredits.js";
@@ -43,10 +43,9 @@ export function MovieDetailsFields({ values, onChange }) {
           placeholder="00:00:00"
           onChange={(event) => onChange("runtime_hms", event.target.value)}
           onBlur={(event) => {
-            const parsed = parseTimeInputToSeconds(event.target.value);
-            if (parsed !== null) {
-              onChange("runtime_hms", formatSecondsToHms(parsed, { fallback: "00:00:00" }));
-            }
+            const typed = event.target.value;
+            const normalized = normalizeTypedTime(typed);
+            if (normalized !== typed) onChange("runtime_hms", normalized);
           }}
           required
         />
