@@ -1601,4 +1601,31 @@ describe("overlapping scenes", () => {
     run(result, (a) => a.clearAnchors());
     expect(saveWith(result, [copy, otherScene])).toEqual({ error: LINES_OVERLAP_OTHER });
   });
+
+  it("saves anchors that start on the line after another scene ends on the same page, even where the line boxes touch", () => {
+    const LINES_OVERLAP_TOP_OF_P1 =
+      "These anchors share lines with the scene at 00:15:00 – 00:16:00. Move the anchors so the scenes don't overlap.";
+    // A scene on p1 lines 1–7. Line 7's box ends below where line 8's begins.
+    const topOfPage1 = sceneRow({
+      id: "scene-p1-top",
+      start_time_seconds: 900,
+      end_time_seconds: 960,
+      page_start: 1,
+      page_end: 1,
+      anchor_geometry: v2Geometry(page1, 0, page1, 6),
+    });
+    expect(page1.lines[6].bottom).toBeGreaterThan(page1.lines[7].top);
+
+    const { result } = renderDraft();
+    setTiming(result, "00:01:00", "00:02:00");
+    place(result, "start", page1, 6);
+    place(result, "end", page2, 0);
+    expect(saveWith(result, [topOfPage1])).toEqual({ error: LINES_OVERLAP_TOP_OF_P1 });
+
+    place(result, "start", page1, 7);
+    expect(saveWith(result, [topOfPage1])).toMatchObject({
+      confirmStaleText: false,
+      payload: { page_start: 1, page_end: 2, anchor_geometry: v2Geometry(page1, 7, page2, 0) },
+    });
+  });
 });

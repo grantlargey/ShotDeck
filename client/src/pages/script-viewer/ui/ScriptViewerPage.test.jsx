@@ -40,7 +40,9 @@ import {
   page3,
   SAVED_V2_TEXT,
   savedV2Scene,
+  sceneRow,
   SCRIPT_PAGES,
+  v2Geometry,
 } from "../test/textIndexFixtures.js";
 import ScriptViewerRoute from "./ScriptViewerPage.jsx";
 
@@ -1681,6 +1683,45 @@ describe("P20 overlapping scenes", () => {
       page_start: 1,
       page_end: 1,
       anchor_geometry: [GEOMETRY.p1Line1, { kind: "end", page: 1, line: 7 }],
+    });
+  });
+
+  it("refuses anchors on another scene's last line, then saves them from the next line on the same page, where the line boxes touch", async () => {
+    const OVERLAP_TOP_OF_P1 =
+      "These anchors share lines with the scene at 00:15:00 – 00:16:00. Move the anchors so the scenes don't overlap.";
+    // A scene on p1 lines 1–7. Line 7's box ends below where line 8's begins.
+    const topOfPage1 = sceneRow({
+      id: "scene-p1-top",
+      start_time_seconds: 900,
+      end_time_seconds: 960,
+      page_start: 1,
+      page_end: 1,
+      anchor_geometry: v2Geometry(page1, 0, page1, 6),
+    });
+    await renderViewer(ScriptViewerRoute, { scenes: [topOfPage1] });
+    publishWholeScript();
+    typeTime("Start", "00:01:00");
+    typeTime("End", "00:02:00");
+    placeAnchorsWithKeys([1, 6], [2, 0]);
+
+    expect(inPanel().getByText(OVERLAP_TOP_OF_P1).closest('[role="alert"]')).toBeTruthy();
+    click(saveButton());
+    expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
+
+    hoverLine(1, 7);
+    pressKey("[");
+    expect(inPanel().getByText("Start · p. 1 · line 8")).toBeTruthy();
+    expect(inPanel().queryByText(OVERLAP_TOP_OF_P1)).toBeNull();
+    click(saveButton());
+    expect(screen.queryByText(OVERLAP_TOP_OF_P1)).toBeNull();
+    expect(fakeApi.createScriptScene).toHaveBeenCalledTimes(1);
+    expect(lastSavePayload()).toMatchObject({
+      page_start: 1,
+      page_end: 2,
+      anchor_geometry: [
+        { kind: "start", page: 1, line: 7 },
+        { kind: "end", page: 2, line: 0 },
+      ],
     });
   });
 });
