@@ -25,8 +25,11 @@
  *   - one-sided geometry: the viewer reads only a start or only an end;
  *   - pixel geometry: only the old `{ x, y, width, height }` rectangles;
  *   - malformed geometry: anything else, including a scene with no anchor row.
- * - Blank text is null or only whitespace. Selected text differs from formatted
- *   text only where the formatted text isn't null.
+ * - Scene text: null formatted text (as the legacy import stores it) is counted
+ *   apart from formatted text that is empty or only whitespace. Raw and selected
+ *   text are NOT NULL columns, so only their empty or whitespace-only values are
+ *   counted. Selected text differs from formatted text only where the formatted
+ *   text isn't null. Only scenes with an anchor row are counted.
  * - Overlap rules (overhaul spec, Decisions 1) compare scenes of the same
  *   script (`script_scene_annotations.script_id`). Film timings overlap when
  *   a.start < b.end && b.start < a.end, and touch when they don't overlap but
@@ -178,9 +181,10 @@ const SCENES_SQL = `
         a.movie_id <> sc.movie_id AS movie_id_differs,
         a.script_id <> sc.script_id AS script_id_differs,
         a.formatted_selected_text <> a.selected_text AS selected_differs_from_formatted,
-        COALESCE(a.formatted_selected_text, '') ~ '^[[:space:]]*$' AS blank_formatted,
-        COALESCE(a.raw_selected_text, '') ~ '^[[:space:]]*$' AS blank_raw,
-        COALESCE(a.selected_text, '') ~ '^[[:space:]]*$' AS blank_selected,
+        a.formatted_selected_text IS NULL AS formatted_null,
+        a.formatted_selected_text ~ '^[[:space:]]*$' AS formatted_empty_or_whitespace,
+        a.raw_selected_text ~ '^[[:space:]]*$' AS raw_empty_or_whitespace,
+        a.selected_text ~ '^[[:space:]]*$' AS selected_empty_or_whitespace,
         a.start_offset IS NOT NULL AS has_start_offset,
         a.end_offset IS NOT NULL AS has_end_offset,
         a.context_prefix IS NOT NULL AS has_context_prefix,
@@ -253,9 +257,10 @@ export async function collectInventory(client) {
             },
             scene_text: {
                 selected_differs_from_formatted: idsWhere(withAnchorRow, (scene) => scene.selected_differs_from_formatted),
-                blank_formatted: idsWhere(withAnchorRow, (scene) => scene.blank_formatted),
-                blank_raw: idsWhere(withAnchorRow, (scene) => scene.blank_raw),
-                blank_selected: idsWhere(withAnchorRow, (scene) => scene.blank_selected),
+                formatted_null: idsWhere(withAnchorRow, (scene) => scene.formatted_null),
+                formatted_empty_or_whitespace: idsWhere(withAnchorRow, (scene) => scene.formatted_empty_or_whitespace),
+                raw_empty_or_whitespace: idsWhere(withAnchorRow, (scene) => scene.raw_empty_or_whitespace),
+                selected_empty_or_whitespace: idsWhere(withAnchorRow, (scene) => scene.selected_empty_or_whitespace),
             },
             offsets_and_context: {
                 start_offset: countWith("has_start_offset"),

@@ -340,12 +340,14 @@ describe("the inventory report", () => {
         });
     });
 
-    test("finds scene text that differs or is blank, among scenes with an anchor row", () => {
+    test("finds scene text that differs, is null, or is empty or whitespace, among scenes with an anchor row", () => {
+        // Scenes 27 and 28 give each text column one empty and one whitespace-only value.
         assert.deepEqual(report.scene_text, {
             selected_differs_from_formatted: scenes(25),
-            blank_formatted: scenes(26, 27, 28),
-            blank_raw: scenes(27, 28),
-            blank_selected: scenes(27, 28),
+            formatted_null: scenes(26),
+            formatted_empty_or_whitespace: scenes(27, 28),
+            raw_empty_or_whitespace: scenes(27, 28),
+            selected_empty_or_whitespace: scenes(27, 28),
         });
     });
 
