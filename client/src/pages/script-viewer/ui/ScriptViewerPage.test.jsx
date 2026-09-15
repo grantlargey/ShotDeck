@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { ApiError } from "@/shared/lib/errors.js";
 import { captureAnchoredRange } from "../model/captureRange.js";
 import {
@@ -1742,6 +1742,18 @@ describe("P21 scrolling to a scene", () => {
   // savedV2Scene's start anchor is p3's first line, 86.2pt down the page.
   const TO_SAVED_V2_START = [3, expect.objectContaining({ offsetPx: 86.2 })];
 
+  /** Errors reported to the window during the test, such as a click handler that throws. */
+  function recordWindowErrors() {
+    const errors = [];
+    const record = (event) => {
+      errors.push(event.error);
+      event.preventDefault();
+    };
+    window.addEventListener("error", record);
+    onTestFinished(() => window.removeEventListener("error", record));
+    return errors;
+  }
+
   function showInScript() {
     click(within(screen.getByRole("dialog")).getByRole("button", { name: "Show in script" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1758,6 +1770,7 @@ describe("P21 scrolling to a scene", () => {
   });
 
   it("doesn't scroll an admin to a scene without a known page, from a deep link or its card", async () => {
+    const errors = recordWindowErrors();
     await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene, unplacedScene], sceneId: unplacedScene.id });
     await waitFor(() => expect(sceneTitle()).toBe(UNPLACED_TIMING));
     expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
@@ -1769,9 +1782,11 @@ describe("P21 scrolling to a scene", () => {
     click(sceneCard(UNPLACED_TIMING));
     expect(sceneTitle()).toBe(UNPLACED_TIMING);
     expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
   });
 
   it("doesn't scroll a visitor to a scene without a known page, from a deep link or Show in script", async () => {
+    const errors = recordWindowErrors();
     await renderViewer(ScriptViewerRoute, { admin: false, scenes: [savedV2Scene, unplacedScene], sceneId: unplacedScene.id });
     await waitFor(() => expect(frameProps(3).activeSceneId).toBe(unplacedScene.id));
     expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
@@ -1785,5 +1800,6 @@ describe("P21 scrolling to a scene", () => {
     showInScript();
     expect(frameProps(3).activeSceneId).toBe(unplacedScene.id);
     expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
   });
 });
