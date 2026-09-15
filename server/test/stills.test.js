@@ -97,11 +97,9 @@ describe("creating a still", () => {
         await expectError(api.post(stillsPath(movie), { body: { time_seconds: 3 } }), 401, "Sign in to make changes.");
     });
 
-    // changes in 05: expected to become a 400 (B9)
-    test("a signed-in create with no body at all is a 500", async (t) => {
-        t.mock.method(console, "error", () => {});
+    test("a signed-in create with no body at all is a 400", async () => {
         const movie = await createMovie(api, cookie);
-        await expectError(api.post(stillsPath(movie), { cookie }), 500, "Something went wrong on the server.");
+        await expectError(api.post(stillsPath(movie), { cookie }), 400, INVALID_STILL);
     });
 });
 
