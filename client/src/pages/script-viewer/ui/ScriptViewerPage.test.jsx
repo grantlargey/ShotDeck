@@ -1754,6 +1754,11 @@ describe("P21 scrolling to a scene", () => {
     return errors;
   }
 
+  /** Lets effects and a macrotask run, so a scroll arriving after a wait still shows. */
+  async function afterPendingWork() {
+    await act(() => new Promise((resolve) => window.setTimeout(resolve, 0)));
+  }
+
   function showInScript() {
     click(within(screen.getByRole("dialog")).getByRole("button", { name: "Show in script" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1766,6 +1771,8 @@ describe("P21 scrolling to a scene", () => {
     await renderViewer(ScriptViewerRoute, { admin, scenes: [savedV2Scene], sceneId: savedV2Scene.id });
 
     await waitFor(() => expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1));
+    await afterPendingWork();
+    expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
     expect(windowingDouble.scrollToPage).toHaveBeenCalledWith(3, expect.objectContaining({ behavior: "auto", offsetPx: 86.2 }));
   });
 
@@ -1773,6 +1780,7 @@ describe("P21 scrolling to a scene", () => {
     const errors = recordWindowErrors();
     await renderViewer(ScriptViewerRoute, { scenes: [savedV2Scene, unplacedScene], sceneId: unplacedScene.id });
     await waitFor(() => expect(sceneTitle()).toBe(UNPLACED_TIMING));
+    await afterPendingWork();
     expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
 
     click(sceneCard(V2_TIMING));
@@ -1789,6 +1797,7 @@ describe("P21 scrolling to a scene", () => {
     const errors = recordWindowErrors();
     await renderViewer(ScriptViewerRoute, { admin: false, scenes: [savedV2Scene, unplacedScene], sceneId: unplacedScene.id });
     await waitFor(() => expect(frameProps(3).activeSceneId).toBe(unplacedScene.id));
+    await afterPendingWork();
     expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
 
     click(sceneCard(V2_TIMING));
