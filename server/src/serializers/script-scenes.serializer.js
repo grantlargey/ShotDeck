@@ -36,21 +36,6 @@ export function mapScriptSceneRow(row) {
         end_offset: row.end_offset,
         anchor_geometry: anchorGeometry,
         first_image_annotation: firstImageAnnotation,
-        anchor: {
-            id: row.anchor_id,
-            page_start: row.page_start,
-            page_end: row.page_end,
-            selected_text: row.selected_text,
-            raw_selected_text: row.raw_selected_text,
-            formatted_selected_text: row.formatted_selected_text,
-            context_prefix: row.context_prefix,
-            context_suffix: row.context_suffix,
-            start_offset: row.start_offset,
-            end_offset: row.end_offset,
-            anchor_geometry: anchorGeometry,
-            created_at: row.anchor_created_at,
-            updated_at: row.anchor_updated_at,
-        },
         ...(row.movie_title ? { movie_title: row.movie_title } : {}),
     };
 }

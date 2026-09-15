@@ -46,9 +46,8 @@ const MESSAGES = {
     overlap: "Scene time range overlaps an existing scene in this script.",
 };
 
-// changes in 04: no nested `anchor` (B4); changes in 11: anchor_id, the text fields, offsets and context
+// changes in 11: anchor_id, the text fields, offsets and context
 const SCENE_FIELDS = [
-    "anchor",
     "anchor_geometry",
     "anchor_id",
     "context_prefix",
@@ -92,11 +91,9 @@ function without(body, ...fields) {
     return copy;
 }
 
-// changes in 04: there is no nested anchor to strip (B4)
 function withoutUpdatedAt(scene) {
-    const { updated_at: _updatedAt, anchor, ...rest } = scene;
-    const { updated_at: _anchorUpdatedAt, ...anchorRest } = anchor;
-    return { ...rest, anchor: anchorRest };
+    const { updated_at: _updatedAt, ...rest } = scene;
+    return rest;
 }
 
 async function newPlace() {
@@ -125,7 +122,7 @@ async function saveInNewPlace(body) {
 }
 
 describe("creating a captured scene", () => {
-    test("returns 201 with the scene, its script location flat and again under `anchor`", async () => {
+    test("returns 201 with the scene and its script location, with no nested `anchor` object", async () => {
         const place = await newPlace();
         const body = sceneBody();
         const response = await postScene(place, body);
@@ -145,15 +142,6 @@ describe("creating a captured scene", () => {
         assert.equal(scene.first_image_annotation, null);
         assert.ok(!Number.isNaN(Date.parse(scene.created_at)));
         assert.ok(!Number.isNaN(Date.parse(scene.updated_at)));
-
-        // changes in 04: the nested anchor object is removed (B4)
-        assert.deepEqual(scene.anchor, {
-            id: scene.anchor_id,
-            ...Object.fromEntries(LOCATION_FIELDS.map((field) => [field, body[field]])),
-            created_at: scene.anchor.created_at,
-            updated_at: scene.anchor.updated_at,
-        });
-        assert.ok(!Number.isNaN(Date.parse(scene.anchor.created_at)));
     });
 
     test("requires the sign-in cookie", async () => {
@@ -591,13 +579,7 @@ describe("updating a captured scene", () => {
         assert.equal(updated.start_time_seconds, 300);
         assert.equal(updated.end_time_seconds, 360);
         assert.deepEqual(updated.tags, body.tags);
-        for (const field of LOCATION_FIELDS) {
-            assert.deepEqual(updated[field], body[field], field);
-            // changes in 04: no nested anchor (B4)
-            assert.deepEqual(updated.anchor[field], body[field], `anchor.${field}`);
-        }
-        // changes in 04: no nested anchor (B4)
-        assert.equal(updated.anchor.created_at, scene.anchor.created_at);
+        for (const field of LOCATION_FIELDS) assert.deepEqual(updated[field], body[field], field);
     });
 
     test("answers 404 for a missing scene or one in another script, before validating the body", async () => {

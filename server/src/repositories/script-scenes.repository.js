@@ -26,8 +26,6 @@ export const SCRIPT_SCENE_SELECT_FIELDS_SQL = `
       a.start_offset,
       a.end_offset,
       a.anchor_geometry,
-      a.created_at AS anchor_created_at,
-      a.updated_at AS anchor_updated_at,
       first_image_ann.first_image_annotation_id,
       first_image_ann.first_image_annotation_time_seconds,
       first_image_ann.first_image_annotation_image_key,
