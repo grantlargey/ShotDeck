@@ -12,9 +12,19 @@ const router = Router();
 
 const SCENES_PATH = "/movies/:movieId/scripts/:scriptId/scene-annotations";
 
+/** Search's `tags` query: comma-separated values, and the parameter may repeat. */
+function tagsFromQuery(value) {
+    return [value]
+        .flat()
+        .filter((part) => typeof part === "string")
+        .flatMap((part) => part.split(/[,\n]/))
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+}
+
 router.post(SCENES_PATH, requireAdmin, async (req, res) => {
     const { movieId, scriptId } = req.params;
-    res.status(201).json(await scriptScenes.createScriptScene(pool, { movieId, scriptId, body: req.body }));
+    res.status(201).json(await scriptScenes.saveScriptScene(pool, { movieId, scriptId, body: req.body }));
 });
 
 router.get(SCENES_PATH, async (req, res) => {
@@ -24,7 +34,7 @@ router.get(SCENES_PATH, async (req, res) => {
 
 router.put(`${SCENES_PATH}/:sceneId`, requireAdmin, async (req, res) => {
     const { movieId, scriptId, sceneId } = req.params;
-    res.json(await scriptScenes.updateScriptScene(pool, { movieId, scriptId, sceneId, body: req.body || {} }));
+    res.json(await scriptScenes.saveScriptScene(pool, { movieId, scriptId, sceneId, body: req.body }));
 });
 
 router.delete(`${SCENES_PATH}/:sceneId`, requireAdmin, async (req, res) => {
@@ -36,7 +46,7 @@ router.delete(`${SCENES_PATH}/:sceneId`, requireAdmin, async (req, res) => {
 router.get("/script-scenes", async (req, res) => {
     res.json(
         await scriptScenes.searchScriptScenes(pool, {
-            rawTags: Array.isArray(req.query.tags) ? req.query.tags.join(",") : req.query.tags,
+            tags: tagsFromQuery(req.query.tags),
             match: req.query.match === "any" ? "any" : "all",
         })
     );
