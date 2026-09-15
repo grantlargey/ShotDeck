@@ -6,6 +6,7 @@ import { getStillThumbnail } from "@/entities/annotation/model/still.js";
 import { buildMovieSavePayload, createMovieEditForm } from "@/entities/movie/model/movieForms.js";
 import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
+import { parseFilmMoment } from "@/entities/script-scene/model/filmTiming.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { createAnnotation, deleteAnnotation, listAnnotations, updateAnnotation } from "@/shared/api/annotations.js";
 import { getMovie, updateMovie } from "@/shared/api/movies.js";
@@ -14,11 +15,7 @@ import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
-import {
-  formatSecondsToHms,
-  parseTimeInputToMinutes,
-  parseTimeInputToSeconds,
-} from "@/shared/lib/time.js";
+import { formatSecondsToHms, normalizeTypedTime, parseTimeInputToMinutes } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Dialog } from "@/shared/ui/Dialog.jsx";
@@ -36,26 +33,6 @@ import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
 import { MovieHeader, MovieHeaderSkeleton } from "./MovieHeader.jsx";
 import { MovieScriptPanel } from "./MovieScriptPanel.jsx";
 import styles from "./MovieDetailPage.module.css";
-
-/** Reformats typed time as HH:MM:SS, leaving input it can't parse untouched. */
-function normalizeHms(value) {
-  const parsed = parseTimeInputToSeconds(value);
-  return parsed === null ? value : formatSecondsToHms(parsed, { fallback: "00:00:00" });
-}
-
-/** Parses a still's timestamp, rejecting bad input and times past the film's runtime. */
-function parseStillTime(text, runtimeSeconds) {
-  const seconds = parseTimeInputToSeconds(text);
-  if (seconds === null || seconds < 0) {
-    throw new ValidationError("Use HH:MM:SS (or MM:SS) for the timestamp.");
-  }
-  if (runtimeSeconds > 0 && seconds > runtimeSeconds) {
-    throw new ValidationError(
-      `The timestamp can't be later than the film's runtime (${formatSecondsToHms(runtimeSeconds)}).`
-    );
-  }
-  return seconds;
-}
 
 /**
  * A still in the grid. The callbacks take the still's id, so the page can pass
@@ -231,7 +208,8 @@ export default function MovieDetailPage() {
     setAddError("");
 
     try {
-      const timeSeconds = parseStillTime(addForm.time_hms, runtimeSeconds);
+      const { seconds: timeSeconds, error: timeError } = parseFilmMoment(addForm.time_hms, runtimeSeconds);
+      if (timeError) throw new ValidationError(timeError);
       if (!addFile) {
         throw new ValidationError("Choose a still image to add.");
       }
@@ -260,7 +238,8 @@ export default function MovieDetailPage() {
     setErr("");
 
     try {
-      const timeSeconds = parseStillTime(stillEdit.time_hms, runtimeSeconds);
+      const { seconds: timeSeconds, error: timeError } = parseFilmMoment(stillEdit.time_hms, runtimeSeconds);
+      if (timeError) throw new ValidationError(timeError);
       if (!still.image_key && !stillEdit.file) {
         throw new ValidationError("Choose an image for this still.");
       }
@@ -506,7 +485,7 @@ export default function MovieDetailPage() {
                         setStillEdit((edit) => ({ ...edit, time_hms: value }));
                       }}
                       onBlur={(e) => {
-                        const value = normalizeHms(e.target.value);
+                        const value = normalizeTypedTime(e.target.value);
                         setStillEdit((edit) => ({ ...edit, time_hms: value }));
                       }}
                     />
@@ -568,7 +547,7 @@ export default function MovieDetailPage() {
                 placeholder="HH:MM:SS"
                 value={addForm.time_hms}
                 onChange={(e) => setAddForm({ time_hms: e.target.value })}
-                onBlur={(e) => setAddForm({ time_hms: normalizeHms(e.target.value) })}
+                onBlur={(e) => setAddForm({ time_hms: normalizeTypedTime(e.target.value) })}
                 required
               />
             </Field>
