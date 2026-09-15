@@ -187,7 +187,7 @@ Where a stored captured scene sits in its script is read outside the page slice,
 - **Scene anchors:** version-2 geometry read and write (`anchorsFromGeometry`, `anchorsToGeometry`). Reading returns null for a legacy scene.
 - **Pages:** `scenePageRange` and its label, `formatScenePages`. Pages are known only when `page_start` is, because the API orders scenes by `page_start` alone. Unknown pages get no label, not "Page 1".
 - **Scroll target:** `sceneScrollTarget` is the start anchor's line, else the first page, else null, in which case the page doesn't scroll.
-- **Script location overlap:** `findOverlappingScriptLocation` compares `(page, line)` ranges inclusively, so ranges that share a line overlap and adjacent lines don't. It skips legacy scenes and the excluded scene. The page's overlap warning uses it.
+- **Script location overlap:** `findOverlappingScriptLocation` compares `(page, line)` ranges inclusively, so ranges that share a line overlap and adjacent lines don't. A valid anchor pair has its start at or before its end. The check skips the excluded scene and any scene without a valid pair: a legacy scene, or a stored pair whose end comes before its start. The page's overlap warning uses it.
 
 `client/src/entities/script-scene/model/capturedScene.js` reads pages through that module for `sortScriptScenes`, which matches the API's list order (first page with unknown pages last, then film timing start, then creation time), and for `getSceneScriptPath`, which leaves out `page` when it's unknown.
 
@@ -280,7 +280,7 @@ Where a stored scene sits is tested through the entity modules' exports, using s
   - version-2 pairs, and missing, empty, one-sided, wrong-version and malformed geometry;
   - page ranges with a start only, an end only, neither, or string values, and their labels;
   - scroll targets for anchored and legacy scenes;
-  - script location overlap: a shared boundary line, adjacent lines on one page and across a page break, cross-page ranges, containment, identical ranges, one-line scenes, reversed stored pairs, skipped legacy scenes, and the excluded row.
+  - script location overlap: a shared boundary line, adjacent lines on one page and across a page break, cross-page ranges, containment, identical ranges, one-line scenes, skipped legacy scenes and reversed stored pairs, and the excluded row.
 - **`capturedScene.test.js`** covers the API's list order, including ties on page and on film timing start, and links with and without a known page.
 
 Both suites cover persistence response races: switching drafts, preserving newer edits, attaching the id from a first save, and keeping newer changes after deletion. Hook tests also cover an edit/reset and a response queued in the same React batch.

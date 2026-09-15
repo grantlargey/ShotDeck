@@ -19,8 +19,9 @@
  * Captured scenes of the same script can't overlap. Two script locations
  * overlap when their anchor ranges share a line: comparing `(page, line)`,
  * `a.first <= b.last && b.first <= a.last`. Scenes on adjacent lines are fine,
- * however close their lines sit on the page. Until legacy scenes are removed,
- * a scene without a valid anchor pair isn't compared.
+ * however close their lines sit on the page. A valid anchor pair has its start
+ * at or before its end, so a scene without one isn't compared: a legacy scene,
+ * until they're removed, or a stored pair whose end comes before its start.
  */
 
 const GEOMETRY_VERSION = 2;
@@ -102,27 +103,25 @@ function isLine(anchor) {
   return Number.isInteger(anchor?.page) && Number.isInteger(anchor?.line);
 }
 
-/** The lines an anchor pair spans, first to last, or null without both anchors. A reversed pair spans the same lines. */
-function lineRange(anchors) {
-  const { start, end } = anchors || {};
-  if (!isLine(start) || !isLine(end)) return null;
-  return compareLines(start, end) <= 0 ? { first: start, last: end } : { first: end, last: start };
+/** Whether anchors are a valid pair for comparing script locations: a start and an end, the start at or before the end. */
+function isLinePair(anchors) {
+  return isLine(anchors?.start) && isLine(anchors?.end) && compareLines(anchors.start, anchors.end) <= 0;
 }
 
 /**
  * The first captured scene whose script location shares a line with the
  * anchors `{ start, end }`, or null. Skips the scene with `excludeSceneId`,
- * usually the draft's own saved scene, and legacy scenes. Anchors without both
- * a start and an end overlap nothing.
+ * usually the draft's own saved scene, and scenes without a valid anchor pair:
+ * legacy scenes, and stored pairs whose end comes before their start. Anchors
+ * that aren't a valid pair themselves overlap nothing.
  */
 export function findOverlappingScriptLocation(scenes, anchors, excludeSceneId) {
-  const range = lineRange(anchors);
-  if (!range) return null;
+  if (!isLinePair(anchors)) return null;
 
   for (const scene of Array.isArray(scenes) ? scenes : []) {
     if (excludeSceneId && scene?.id === excludeSceneId) continue;
-    const other = lineRange(anchorsFromGeometry(scene?.anchor_geometry));
-    if (other && compareLines(range.first, other.last) <= 0 && compareLines(other.first, range.last) <= 0) {
+    const other = anchorsFromGeometry(scene?.anchor_geometry);
+    if (isLinePair(other) && compareLines(anchors.start, other.end) <= 0 && compareLines(other.start, anchors.end) <= 0) {
       return scene;
     }
   }

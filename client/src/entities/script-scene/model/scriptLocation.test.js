@@ -212,10 +212,16 @@ describe("findOverlappingScriptLocation", () => {
     expect(overlaps(located("other", [2, 0], [4, 0]), span([3, 5], [3, 5]))).toBe(true);
   });
 
-  it("compares a stored pair saved end first as the lines between its anchors", () => {
-    const reversed = { id: "reversed", anchor_geometry: [entry("start", 4, 0), entry("end", 3, 5)] };
-    expect(overlaps(reversed, span([3, 8], [3, 9]))).toBe(true);
-    expect(overlaps(reversed, span([4, 1], [4, 2]))).toBe(false);
+  it("skips a stored pair whose end comes before its start, like a legacy scene", () => {
+    const reversed = { id: "reversed", page_start: 3, page_end: 4, anchor_geometry: [entry("start", 4, 0), entry("end", 3, 5)] };
+    const sameLineReversed = { id: "same-page", anchor_geometry: [entry("start", 3, 9), entry("end", 3, 8)] };
+    const anchored = located("anchored", [3, 9], [3, 9]);
+    // Neither the lines between its anchors nor the anchors' own lines count.
+    expect(findOverlappingScriptLocation([reversed, sameLineReversed], span([3, 8], [3, 9]))).toBeNull();
+    expect(findOverlappingScriptLocation([reversed], span([3, 5], [4, 0]))).toBeNull();
+    expect(findOverlappingScriptLocation([reversed, sameLineReversed, anchored], span([3, 8], [3, 9]))).toBe(anchored);
+    // Reading the stored anchors is unchanged; only the overlap check skips them.
+    expect(anchorsFromGeometry(reversed.anchor_geometry)).toEqual({ start: anchor(4, 0), end: anchor(3, 5) });
   });
 
   it("skips legacy scenes, even when their pages cover the anchors", () => {
@@ -246,9 +252,17 @@ describe("findOverlappingScriptLocation", () => {
     expect(findOverlappingScriptLocation([other], suggested)).toBe(other);
   });
 
-  it("overlaps nothing without both anchors", () => {
+  it("overlaps nothing without both anchors, or with the end before the start", () => {
     const scenes = [located("other", [1, 0], [9, 0])];
-    for (const draftAnchors of [null, undefined, { start: null, end: null }, { start: anchor(3, 1), end: null }, { start: null, end: anchor(3, 1) }]) {
+    for (const draftAnchors of [
+      null,
+      undefined,
+      { start: null, end: null },
+      { start: anchor(3, 1), end: null },
+      { start: null, end: anchor(3, 1) },
+      { start: anchor(3, 5), end: anchor(3, 1) },
+      { start: anchor(4, 0), end: anchor(3, 9) },
+    ]) {
       expect(findOverlappingScriptLocation(scenes, draftAnchors)).toBeNull();
     }
     expect(findOverlappingScriptLocation(null, span([3, 0], [3, 1]))).toBeNull();
