@@ -1,9 +1,11 @@
 import {
   safeScriptSceneTags,
+  sortScriptScenes,
+} from "@/entities/script-scene/model/capturedScene.js";
+import {
   SCRIPT_TAG_CATEGORIES,
   SCRIPT_TAG_LABELS,
-  sortScriptScenes,
-} from "@/entities/script-scene";
+} from "@/entities/script-scene/model/scriptTagCategories.js";
 
 export const SCENE_SORT_OPTIONS = [
   { value: "recent", label: "Recently updated" },

@@ -1,4 +1,8 @@
-import { findFirstStillInScene, findSceneAtTime, getSceneFirstStill } from "@/entities/script-scene";
+import {
+  findFirstStillInScene,
+  findSceneAtTime,
+  getSceneFirstStill,
+} from "@/entities/script-scene/model/sceneStill.js";
 
 /**
  * Navigation state for the shared scene viewer.

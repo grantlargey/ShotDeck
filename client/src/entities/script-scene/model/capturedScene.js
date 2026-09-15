@@ -1,3 +1,8 @@
+/*
+ * Reading a stored captured scene: its tags, display text, pages, order among
+ * other scenes, and the script viewer link that opens it.
+ */
+
 /**
  * Normalizes tag values from the API before UI code renders chips or filters.
  */
@@ -34,4 +39,30 @@ export function getScriptScenePageRange(scene) {
 export function formatScriptScenePages(scene) {
   const { pageStart, pageEnd } = getScriptScenePageRange(scene);
   return pageEnd > pageStart ? `Pages ${pageStart}–${pageEnd}` : `Page ${pageStart}`;
+}
+
+/**
+ * Shared sort order for script scenes: page first, timeline second, creation
+ * time last. Both the viewer and search flows rely on this staying stable.
+ */
+export function sortScriptScenes(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+    const { pageStart: pageA } = getScriptScenePageRange(a);
+    const { pageStart: pageB } = getScriptScenePageRange(b);
+    if (pageA !== pageB) return pageA - pageB;
+
+    const startA = Number(a.start_time_seconds || 0);
+    const startB = Number(b.start_time_seconds || 0);
+    if (startA !== startB) return startA - startB;
+
+    return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+  });
+}
+
+/** Script viewer path that opens a scene for editing, scrolled to its first page. */
+export function getSceneScriptPath(scene) {
+  const params = new URLSearchParams();
+  params.set("sceneId", scene.id);
+  params.set("page", String(getScriptScenePageRange(scene).pageStart));
+  return `/movies/${scene.movie_id}/scripts/${scene.script_id}?${params.toString()}`;
 }

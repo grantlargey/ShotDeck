@@ -1,4 +1,4 @@
-import { findLineAtY } from "@/shared/lib/pdf-text";
+import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 
 /*
  * Anchors mark the first and last line of a scene in the PDF. They are stored
@@ -25,7 +25,7 @@ export function createLineAnchor(page, line) {
   };
 }
 
-export function anchorKey(anchor) {
+function anchorKey(anchor) {
   return anchor ? `${anchor.page}:${anchor.line}` : "";
 }
 

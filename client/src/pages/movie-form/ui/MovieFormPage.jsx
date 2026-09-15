@@ -1,16 +1,21 @@
 // client/src/pages/movie-form/ui/MovieFormPage.jsx
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { buildMovieSavePayload, createMovieEditForm, MovieDetailsFields } from "@/entities/movie";
-import { movieActions } from "@/features/movie-actions";
-import { saveScriptPdf } from "@/features/script-actions";
-import { uploadMediaFile } from "@/features/upload-media";
-import { api } from "@/shared/api";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
-import { useFilePreviewUrl } from "@/shared/lib/media";
-import { parseTimeInputToMinutes } from "@/shared/lib/time";
-import { Badge, Button, Callout, FileDropzone, PageHeader, SectionHeading } from "@/shared/ui";
+import { buildMovieSavePayload, createMovieEditForm } from "@/entities/movie/model/movieForms.js";
+import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
+import { createMovie, getMovie, updateMovie } from "@/shared/api/movies.js";
+import { saveScript } from "@/shared/api/scripts.js";
+import { uploadMediaFile } from "@/shared/api/uploads.js";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
+import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
+import { parseTimeInputToMinutes } from "@/shared/lib/time.js";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { FileDropzone } from "@/shared/ui/FileDropzone.jsx";
+import { PageHeader } from "@/shared/ui/PageHeader.jsx";
+import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import styles from "./MovieFormPage.module.css";
 
 export default function MovieFormPage({ mode }) {
@@ -41,12 +46,11 @@ export default function MovieFormPage({ mode }) {
 
     (async () => {
       try {
-        const m = await api.getMovie(id);
+        const m = await getMovie(id);
 
         setForm(createMovieEditForm(m));
 
-        // Prefer cover_url / cover_image_url if backend provides it
-        setExistingCoverUrl(m.cover_url || m.cover_image_url || "");
+        setExistingCoverUrl(m.cover_image_url || "");
       } catch (e) {
         setErr(getErrorMessage(e, "Failed to load project."));
       }
@@ -67,9 +71,7 @@ export default function MovieFormPage({ mode }) {
         throw new ValidationError("Please choose a PDF file for the script.");
       }
 
-      const runtimeMinutes = parseTimeInputToMinutes(form.runtime_hms, {
-        rounding: "nearest",
-      });
+      const runtimeMinutes = parseTimeInputToMinutes(form.runtime_hms);
       if (runtimeMinutes === null || runtimeMinutes < 1) {
         throw new ValidationError("Runtime must use HH:MM:SS and be at least 00:01:00.");
       }
@@ -77,7 +79,7 @@ export default function MovieFormPage({ mode }) {
       const basePayload = buildMovieSavePayload(form, runtimeMinutes);
 
       if (isEdit) {
-        await movieActions.update(id, basePayload);
+        await updateMovie(id, basePayload);
 
         if (coverFile) {
           const key = await uploadMediaFile({
@@ -86,18 +88,18 @@ export default function MovieFormPage({ mode }) {
             file: coverFile,
           });
 
-          await movieActions.update(id, { ...basePayload, cover_image_key: key });
+          await updateMovie(id, { ...basePayload, cover_image_key: key });
         }
 
         if (scriptFile) {
-          await saveScriptPdf({ movieId: id, file: scriptFile });
+          await saveScript({ movieId: id, file: scriptFile });
         }
 
         nav(`/movies/${id}`);
         return;
       }
 
-      const created = await movieActions.create(basePayload);
+      const created = await createMovie(basePayload);
 
       if (coverFile) {
         const key = await uploadMediaFile({
@@ -106,11 +108,11 @@ export default function MovieFormPage({ mode }) {
           file: coverFile,
         });
 
-        await movieActions.update(created.id, { ...basePayload, cover_image_key: key });
+        await updateMovie(created.id, { ...basePayload, cover_image_key: key });
       }
 
       if (scriptFile) {
-        await saveScriptPdf({ movieId: created.id, file: scriptFile });
+        await saveScript({ movieId: created.id, file: scriptFile });
       }
 
       nav(`/movies`);

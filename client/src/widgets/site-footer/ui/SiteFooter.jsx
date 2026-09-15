@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
-import { useSession } from "@/entities/session";
-import { BrandLogo } from "@/shared/ui";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { BrandLogo } from "@/shared/ui/BrandLogo.jsx";
 import styles from "./SiteFooter.module.css";
 
 export default function SiteFooter() {

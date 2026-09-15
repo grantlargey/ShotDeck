@@ -2,11 +2,13 @@ import { useState } from "react";
 import {
   displayScriptSceneText,
   formatScriptScenePages,
-  groupScriptTagsByCategory,
-} from "@/entities/script-scene";
-import { useSignedMediaUrl } from "@/shared/lib/media";
-import { formatSecondsToHms } from "@/shared/lib/time";
-import { ImageIcon, ScreenplayView, ScriptIcon, SegmentedControl } from "@/shared/ui";
+} from "@/entities/script-scene/model/capturedScene.js";
+import { groupScriptTagsByCategory } from "@/entities/script-scene/model/scriptTagCategories.js";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
+import { ImageIcon, ScriptIcon } from "@/shared/ui/icons.jsx";
+import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import {
   createSceneViewerCursor,
   resolveSceneViewerCursor,

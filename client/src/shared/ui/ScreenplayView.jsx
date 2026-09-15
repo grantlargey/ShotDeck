@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { parseScreenplayMarkdown } from "@/shared/lib/screenplay";
+import { parseScreenplayMarkdown } from "@/shared/lib/screenplay/grammar.js";
 import styles from "./ScreenplayView.module.css";
 
 /**

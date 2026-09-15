@@ -1,5 +1,6 @@
-import { SceneCard } from "@/entities/script-scene";
-import { Badge, EmptyState } from "@/shared/ui";
+import { SceneCard } from "@/entities/script-scene/ui/SceneCard.jsx";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { EmptyState } from "@/shared/ui/EmptyState.jsx";
 import styles from "./ScriptViewerPage.module.css";
 
 /**

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { formatSecondsToHms } from "@/shared/lib/time";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
 import { undoShortcutLabel } from "../lib/platform.js";
 import styles from "./AnchorContextMenu.module.css";
 

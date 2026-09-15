@@ -1,43 +1,38 @@
 // client/src/pages/movie-detail/ui/MovieDetailPage.jsx
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { getStillThumbnail, sortAnnotationsByTime } from "@/entities/annotation";
-import { buildMovieSavePayload, createMovieEditForm, getMovieCoverUrl } from "@/entities/movie";
-import { getCurrentScript } from "@/entities/script";
-import { getSceneScriptPath } from "@/entities/script-scene";
-import { useSession } from "@/entities/session";
-import {
-  createImageAnnotation,
-  deleteImageAnnotation,
-  updateImageAnnotation,
-} from "@/features/annotation-actions";
-import { movieActions } from "@/features/movie-actions";
-import { saveScriptPdf as saveScriptPdfAction } from "@/features/script-actions";
-import { api } from "@/shared/api";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
-import { useFilePreviewUrl, useSignedMediaUrl } from "@/shared/lib/media";
+import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
+import { getStillThumbnail } from "@/entities/annotation/model/still.js";
+import { buildMovieSavePayload, createMovieEditForm } from "@/entities/movie/model/movieForms.js";
+import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
+import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { createAnnotation, deleteAnnotation, listAnnotations, updateAnnotation } from "@/shared/api/annotations.js";
+import { getMovie, updateMovie } from "@/shared/api/movies.js";
+import { listScripts, saveScript } from "@/shared/api/scripts.js";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
+import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import {
   formatSecondsToHms,
   parseTimeInputToMinutes,
   parseTimeInputToSeconds,
-} from "@/shared/lib/time";
-import {
-  Button,
-  Callout,
-  Dialog,
-  EmptyState,
-  Field,
-  FileDropzone,
-  FileInput,
-  Input,
-  PlusIcon,
-  SectionHeading,
-  Skeleton,
-} from "@/shared/ui";
-import { SceneModalButton, SceneViewerModal } from "@/widgets/scene-detail-modal";
+} from "@/shared/lib/time.js";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Dialog } from "@/shared/ui/Dialog.jsx";
+import { EmptyState } from "@/shared/ui/EmptyState.jsx";
+import { Field } from "@/shared/ui/Field.jsx";
+import { FileDropzone } from "@/shared/ui/FileDropzone.jsx";
+import { FileInput } from "@/shared/ui/FileInput.jsx";
+import { PlusIcon } from "@/shared/ui/icons.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
+import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
+import { Skeleton } from "@/shared/ui/Skeleton.jsx";
+import { SceneModalButton } from "@/widgets/scene-detail-modal/ui/SceneDetailModal.jsx";
+import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
-import { MovieEditPanel } from "./MovieEditPanel.jsx";
 import { MovieHeader, MovieHeaderSkeleton } from "./MovieHeader.jsx";
 import { MovieScriptPanel } from "./MovieScriptPanel.jsx";
 import styles from "./MovieDetailPage.module.css";
@@ -173,7 +168,7 @@ export default function MovieDetailPage() {
     const isLatest = () => loadIdRef.current === loadId;
     setErr("");
 
-    const details = Promise.all([api.getMovie(id), api.listScripts(id)]).then(([m, scriptRows]) => {
+    const details = Promise.all([getMovie(id), listScripts(id)]).then(([m, scriptRows]) => {
       if (!isLatest()) return;
       setMovie(m);
       setScripts(Array.isArray(scriptRows) ? scriptRows : []);
@@ -181,7 +176,7 @@ export default function MovieDetailPage() {
       setEditForm(createMovieEditForm(m));
     });
 
-    const stills = api.listAnnotations(id).then((annotationRows) => {
+    const stills = listAnnotations(id).then((annotationRows) => {
       if (!isLatest()) return;
       const a = sortAnnotationsByTime(annotationRows);
       setStillRows(a);
@@ -242,7 +237,7 @@ export default function MovieDetailPage() {
       }
 
       setAddBusy(true);
-      await createImageAnnotation({ movieId: id, timeSeconds, file: addFile });
+      await createAnnotation({ movieId: id, timeSeconds, file: addFile });
       setAdding(false);
       await load();
     } catch (e2) {
@@ -270,7 +265,7 @@ export default function MovieDetailPage() {
         throw new ValidationError("Choose an image for this still.");
       }
 
-      await updateImageAnnotation({
+      await updateAnnotation({
         movieId: id,
         annotationId: still.id,
         timeSeconds,
@@ -288,7 +283,7 @@ export default function MovieDetailPage() {
   async function deleteStill(still) {
     if (!window.confirm("Delete this still?")) return;
     try {
-      await deleteImageAnnotation(id, still.id);
+      await deleteAnnotation(id, still.id);
       setStillEdit(null);
       await load();
     } catch (e) {
@@ -307,7 +302,7 @@ export default function MovieDetailPage() {
     setSavingScript(true);
 
     try {
-      const script = await saveScriptPdfAction({ movieId: id, file: scriptFile });
+      const script = await saveScript({ movieId: id, file: scriptFile });
       setScriptFile(null);
       setScripts((prev) => {
         if (!script?.id) return prev;
@@ -324,14 +319,12 @@ export default function MovieDetailPage() {
   async function saveMovieEdits() {
     setErr("");
     try {
-      const runtimeMinutes = parseTimeInputToMinutes(editForm.runtime_hms, {
-        rounding: "nearest",
-      });
+      const runtimeMinutes = parseTimeInputToMinutes(editForm.runtime_hms);
       if (runtimeMinutes === null || runtimeMinutes < 1) {
         throw new ValidationError("Runtime must use HH:MM:SS and be at least 00:01:00.");
       }
 
-      await movieActions.update(id, buildMovieSavePayload(editForm, runtimeMinutes));
+      await updateMovie(id, buildMovieSavePayload(editForm, runtimeMinutes));
       await load();
       setEditMode(false);
     } catch (e) {
@@ -344,8 +337,9 @@ export default function MovieDetailPage() {
     setEditMode(false);
   }
 
-  const coverUrl = movie ? getMovieCoverUrl(movie) || null : null;
-  const currentScript = getCurrentScript(scripts);
+  const coverUrl = movie?.cover_image_url || null;
+  // A movie has at most one script; the API still returns it in a list.
+  const currentScript = scripts[0] || null;
 
   function openScript() {
     if (currentScript) nav(`/movies/${id}/scripts/${currentScript.id}`);
@@ -391,12 +385,20 @@ export default function MovieDetailPage() {
         {err && !viewerStillId && <Callout tone="error">{err}</Callout>}
 
         {editMode && canEdit && (
-          <MovieEditPanel
-            editForm={editForm}
-            setEditForm={setEditForm}
-            onCancel={cancelMovieEdits}
-            onSave={saveMovieEdits}
-          />
+          <section aria-labelledby="project-edit-heading">
+            <SectionHeading id="project-edit-heading" title="Edit details" />
+            <MovieDetailsFields
+              values={editForm}
+              onChange={(field, value) => setEditForm((f) => ({ ...f, [field]: value }))}
+            />
+
+            <div className={styles.panelActions}>
+              <Button onClick={cancelMovieEdits}>Cancel</Button>
+              <Button variant="primary" onClick={saveMovieEdits}>
+                Save changes
+              </Button>
+            </div>
+          </section>
         )}
 
         <MovieScriptPanel

@@ -1,26 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { getStillProjectPath } from "@/entities/annotation";
-import {
-  getSceneScriptPath,
-  getScriptTagLabel,
-  SceneCard,
-  SceneCardSkeleton,
-} from "@/entities/script-scene";
-import { api } from "@/shared/api";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage } from "@/shared/lib/errors";
-import {
-  Button,
-  Callout,
-  Chip,
-  EmptyState,
-  ScriptIcon,
-  SegmentedControl,
-  Select,
-  SplitViewIcon,
-} from "@/shared/ui";
-import { SceneViewerModal } from "@/widgets/scene-detail-modal";
+import { getStillProjectPath } from "@/entities/annotation/model/still.js";
+import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
+import { getScriptTagLabel } from "@/entities/script-scene/model/scriptTagCategories.js";
+import { SceneCard, SceneCardSkeleton } from "@/entities/script-scene/ui/SceneCard.jsx";
+import { searchScriptScenes } from "@/shared/api/scriptScenes.js";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Chip } from "@/shared/ui/Chip.jsx";
+import { EmptyState } from "@/shared/ui/EmptyState.jsx";
+import { ScriptIcon, SplitViewIcon } from "@/shared/ui/icons.jsx";
+import { Select } from "@/shared/ui/Input.jsx";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
+import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import {
   buildFilterGroups,
   countSceneTags,
@@ -69,8 +63,7 @@ export default function ScriptSearchPage() {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .searchScriptScenes({ tags: selectedTags, match })
+    searchScriptScenes({ tags: selectedTags, match })
       .then((data) => {
         if (cancelled) return;
         const rows = Array.isArray(data) ? data : [];
@@ -92,8 +85,7 @@ export default function ScriptSearchPage() {
   // A linked, pre-filtered view still needs the unfiltered catalog for tag counts.
   useEffect(() => {
     if (!openedWithTagsRef.current) return;
-    api
-      .searchScriptScenes({ tags: [], match: "all" })
+    searchScriptScenes({ tags: [], match: "all" })
       .then((data) => setCatalog(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);

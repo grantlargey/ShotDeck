@@ -1,9 +1,11 @@
 import {
-  estimateActionMargin,
-  screenplayElementsFromLayout,
   screenplayToPlainText,
   serializeScreenplayMarkdown,
-} from "@/shared/lib/screenplay";
+} from "@/shared/lib/screenplay/grammar.js";
+import {
+  estimateActionMargin,
+  screenplayElementsFromLayout,
+} from "@/shared/lib/screenplay/layoutClassifier.js";
 import { anchorPairKey, resolveAnchorLine } from "./anchors.js";
 
 const CONTEXT_LENGTH = 180;

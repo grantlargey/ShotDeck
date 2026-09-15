@@ -1,4 +1,4 @@
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import styles from "./PageHeader.module.css";
 
 /** Page title block: optional eyebrow, the page's h1, a description, and actions. */

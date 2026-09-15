@@ -1,4 +1,4 @@
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import styles from "./LoadingState.module.css";
 
 export function LoadingState({ children = "Loading…", className }) {

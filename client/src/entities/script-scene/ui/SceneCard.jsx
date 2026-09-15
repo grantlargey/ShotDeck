@@ -1,13 +1,16 @@
-import { cx } from "@/shared/lib/cx";
-import { useSignedMediaUrl } from "@/shared/lib/media";
-import { getScreenplaySceneHeading } from "@/shared/lib/screenplay";
-import { formatSecondsToHms } from "@/shared/lib/time";
-import { Badge, ImageIcon, ScreenplayView, Skeleton } from "@/shared/ui";
+import { cx } from "@/shared/lib/cx.js";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { getScreenplaySceneHeading } from "@/shared/lib/screenplay/grammar.js";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { ImageIcon } from "@/shared/ui/icons.jsx";
+import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
+import { Skeleton } from "@/shared/ui/Skeleton.jsx";
 import {
   displayScriptSceneText,
   formatScriptScenePages,
   safeScriptSceneTags,
-} from "../model/scriptSceneText.js";
+} from "../model/capturedScene.js";
 import { getScriptTagLabel } from "../model/scriptTagCategories.js";
 import styles from "./SceneCard.module.css";
 

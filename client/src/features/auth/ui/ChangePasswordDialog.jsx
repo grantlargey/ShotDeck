@@ -1,8 +1,12 @@
 import { useState } from "react";
-import { useSession } from "@/entities/session";
-import { api } from "@/shared/api";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
-import { Button, Callout, Dialog, Field, Input } from "@/shared/ui";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { changePassword } from "@/shared/api/auth.js";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Dialog } from "@/shared/ui/Dialog.jsx";
+import { Field } from "@/shared/ui/Field.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
 import styles from "./ChangePasswordDialog.module.css";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -27,7 +31,7 @@ export function ChangePasswordDialog({ onClose }) {
       }
       if (newPassword !== confirmPassword) throw new ValidationError("The passwords don't match.");
       setBusy(true);
-      const { user: updated } = await api.changePassword({ currentPassword, newPassword });
+      const { user: updated } = await changePassword({ currentPassword, newPassword });
       applyUser(updated);
       setSaved(true);
     } catch (e) {

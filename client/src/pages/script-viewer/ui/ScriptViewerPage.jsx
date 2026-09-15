@@ -4,21 +4,26 @@ import { Document, pdfjs } from "react-pdf";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
-import { getStillProjectPath } from "@/entities/annotation";
+import { getStillProjectPath } from "@/entities/annotation/model/still.js";
 import {
   formatScriptScenePages,
   getScriptScenePageRange,
   sortScriptScenes,
-} from "@/entities/script-scene";
-import { useSession } from "@/entities/session";
-import { scriptSceneActions } from "@/features/script-scene-actions";
-import { api } from "@/shared/api";
-import { cx } from "@/shared/lib/cx";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage } from "@/shared/lib/errors";
-import { formatSecondsToHms } from "@/shared/lib/time";
-import { CloseIcon, IconButton, LoadingState } from "@/shared/ui";
-import { SceneModalButton, SceneViewerModal } from "@/widgets/scene-detail-modal";
+} from "@/entities/script-scene/model/capturedScene.js";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { getMovie } from "@/shared/api/movies.js";
+import { formatScreenplaySelection } from "@/shared/api/screenplayFormat.js";
+import { createScriptScene, deleteScriptScene, listScriptScenes, updateScriptScene } from "@/shared/api/scriptScenes.js";
+import { getScript } from "@/shared/api/scripts.js";
+import { cx } from "@/shared/lib/cx.js";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
+import { IconButton } from "@/shared/ui/IconButton.jsx";
+import { CloseIcon } from "@/shared/ui/icons.jsx";
+import { LoadingState } from "@/shared/ui/LoadingState.jsx";
+import { SceneModalButton } from "@/widgets/scene-detail-modal/ui/SceneDetailModal.jsx";
+import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
 import { isTypingTarget } from "../lib/pdfViewport.js";
 import { anchorsFromGeometry, buildSceneSegmentsByPage, findOverlappingSavedScene } from "../model/anchors.js";
@@ -125,7 +130,7 @@ function ScriptViewerPage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.getMovie(movieId), api.getScript(movieId, scriptId), api.listScriptScenes(movieId, scriptId)])
+    Promise.all([getMovie(movieId), getScript(movieId, scriptId), listScriptScenes(movieId, scriptId)])
       .then(([movieData, scriptData, sceneData]) => {
         if (cancelled) return;
         setMovie(movieData);
@@ -328,7 +333,7 @@ function ScriptViewerPage() {
           ? await renderSelectionSnapshots(pdfDocument, request.snapshotAnchors)
           : { pageImages: [], omittedPageCount: 0 };
       const { capturedText, draftMarkdown, pageStart, pageEnd } = request;
-      const result = await api.formatScreenplaySelection({
+      const result = await formatScreenplaySelection({
         capturedText,
         draftMarkdown,
         pageStart,
@@ -357,8 +362,8 @@ function ScriptViewerPage() {
     setSaving(true);
     try {
       const saved = wasEditing
-        ? await scriptSceneActions.update(movieId, scriptId, draftSceneId, payload)
-        : await scriptSceneActions.create(movieId, scriptId, payload);
+        ? await updateScriptScene(movieId, scriptId, draftSceneId, payload)
+        : await createScriptScene(movieId, scriptId, payload);
       setScenes((prev) => sortScriptScenes([...prev.filter((scene) => scene.id !== saved.id), saved]));
       applySaved(saved);
       setNotice({ tone: "info", text: wasEditing ? "Scene updated." : "Scene saved." });
@@ -375,7 +380,7 @@ function ScriptViewerPage() {
     const completeDelete = draftActions.prepareDelete(scene.id);
     setDeletingSceneId(scene.id);
     try {
-      await scriptSceneActions.delete(movieId, scriptId, scene.id);
+      await deleteScriptScene(movieId, scriptId, scene.id);
       setScenes((prev) => prev.filter((row) => row.id !== scene.id));
       completeDelete();
       // Deleting from the scene viewer closes it, whichever scene it had stepped to.

@@ -1,10 +1,13 @@
 import { useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { useSession } from "@/entities/session";
-import { api } from "@/shared/api";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors";
-import { Button, Callout, Field, Input } from "@/shared/ui";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { changePassword } from "@/shared/api/auth.js";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { Field } from "@/shared/ui/Field.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
 import styles from "./LoginPage.module.css";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -67,7 +70,7 @@ export default function LoginPage() {
       }
       if (newPassword !== confirmPassword) throw new ValidationError("The passwords don't match.");
       setBusy(true);
-      const { user } = await api.changePassword({ currentPassword: temporaryPassword, newPassword });
+      const { user } = await changePassword({ currentPassword: temporaryPassword, newPassword });
       applyUser(user);
       nav(next, { replace: true });
     } catch (e) {

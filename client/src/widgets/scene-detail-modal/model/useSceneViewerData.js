@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { sortAnnotationsByTime } from "@/entities/annotation";
-import { sortScriptScenes } from "@/entities/script-scene";
-import { api } from "@/shared/api";
+import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
+import { sortScriptScenes } from "@/entities/script-scene/model/capturedScene.js";
+import { listAnnotations } from "@/shared/api/annotations.js";
+import { listScriptScenes } from "@/shared/api/scriptScenes.js";
 
 const EMPTY = [];
 
@@ -21,8 +22,7 @@ export function useSceneViewerData({ movieId, scriptId, stills, scriptScenes }) 
   useEffect(() => {
     if (!needsStills) return undefined;
     let cancelled = false;
-    api
-      .listAnnotations(movieId)
+    listAnnotations(movieId)
       .then((rows) => ({ rows: sortAnnotationsByTime(rows), failed: false }))
       .catch(() => ({ rows: EMPTY, failed: true }))
       .then((entry) => {
@@ -36,8 +36,7 @@ export function useSceneViewerData({ movieId, scriptId, stills, scriptScenes }) 
   useEffect(() => {
     if (!needsScenes) return undefined;
     let cancelled = false;
-    api
-      .listScriptScenes(movieId, scriptId)
+    listScriptScenes(movieId, scriptId)
       .then((rows) => ({ rows: sortScriptScenes(rows), failed: false }))
       .catch(() => ({ rows: EMPTY, failed: true }))
       .then((entry) => {

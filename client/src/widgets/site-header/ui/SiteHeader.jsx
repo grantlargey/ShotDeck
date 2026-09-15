@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useSession } from "@/entities/session";
-import { ChangePasswordDialog } from "@/features/auth";
-import { cx } from "@/shared/lib/cx";
-import { BrandLogo, Button, ChevronDownIcon, DropdownMenu, PlusIcon } from "@/shared/ui";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { ChangePasswordDialog } from "@/features/auth/ui/ChangePasswordDialog.jsx";
+import { cx } from "@/shared/lib/cx.js";
+import { BrandLogo } from "@/shared/ui/BrandLogo.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { DropdownMenu } from "@/shared/ui/DropdownMenu.jsx";
+import { ChevronDownIcon, PlusIcon } from "@/shared/ui/icons.jsx";
 import styles from "./SiteHeader.module.css";
 
 export default function SiteHeader() {

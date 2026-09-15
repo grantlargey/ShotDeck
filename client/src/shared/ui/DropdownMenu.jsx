@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import { IconButton } from "./IconButton.jsx";
 import { MoreIcon } from "./icons.jsx";
 import styles from "./DropdownMenu.module.css";

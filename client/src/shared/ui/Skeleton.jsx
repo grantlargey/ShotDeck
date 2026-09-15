@@ -1,4 +1,4 @@
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import styles from "./Skeleton.module.css";
 
 /** Shimmering placeholder block; size it with a className. Hidden from assistive tech. */

@@ -1,5 +1,6 @@
-import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time";
-import { Field, Input } from "@/shared/ui";
+import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time.js";
+import { Field } from "@/shared/ui/Field.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
 import { MOVIE_CREDITS } from "../model/movieCredits.js";
 import styles from "./MovieDetailsFields.module.css";
 

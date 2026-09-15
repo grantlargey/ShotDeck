@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { compareWordFidelity, screenplayToPlainText } from "@/shared/lib/screenplay";
-import { ScreenplayView, SegmentedControl } from "@/shared/ui";
+import { compareWordFidelity } from "@/shared/lib/screenplay/fidelity.js";
+import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
+import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import {
   SceneDetailModal,
   SceneModalActions,
   SceneModalButton,
   SceneModalPaper,
-} from "@/widgets/scene-detail-modal";
+} from "@/widgets/scene-detail-modal/ui/SceneDetailModal.jsx";
 import { elementShortcutLabel } from "../lib/platform.js";
 import { ScreenplayEditor } from "./ScreenplayEditor.jsx";
 import styles from "./DraftEditorModal.module.css";
