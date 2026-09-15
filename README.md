@@ -15,13 +15,12 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 - `client/src/shared/` - API operations by backend domain, generic UI primitives, and reusable libraries.
 - `server/` - Node.js backend package.
 - `server/src/index.js` - Small server entrypoint that imports the app and listens on `PORT`.
-- `server/src/app.js` - Express composition root: middleware, CORS, route mounting, and error middleware.
-- `server/src/routes/` - Public API route declarations.
-- `server/src/controllers/` - Express request/response handlers.
-- `server/src/services/` - Business rules, transactions, and orchestration.
-- `server/src/repositories/` - SQL queries and database persistence boundaries.
-- `server/src/serializers/` - API response shaping, including signed S3 view URLs.
-- `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code.
+- `server/src/app.js` - Express composition root: middleware, CORS, the health check, router mounting, and error middleware.
+- `server/src/routes/` - One router per API domain, holding the domain's paths, sign-in guards, and HTTP handlers.
+- `server/src/services/` - The domain module behind each router: validation, rules, SQL, and response shaping. `thumbnails.service.js` makes still thumbnails in the background.
+- `server/src/repositories/` - Persistence files private to one domain module: admin accounts and sessions, and captured scenes.
+- `server/src/db.js`, `server/src/s3.js` - The shared Postgres pool; S3 object keys, uploads, and signed URLs.
+- `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code: CORS, the sign-in guards, the Origin check, the error handler, and small helpers.
 - `server/sql/schema.sql` - Postgres schema.
 - `package.json` - Root development and database commands.
 - `.nvmrc` - Pinned local Node.js version, matching the server Docker image.
@@ -30,26 +29,22 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 
 ## Backend Architecture
 
-The backend follows a route/controller/service/repository structure:
+Each API domain has one router, with one domain module behind it:
 
 ```text
 HTTP request
-  -> route
-  -> controller
-  -> service
-  -> repository
-  -> Postgres
+  -> app.js: compression, CORS, the Origin check, JSON body parsing
+  -> router (routes/<domain>.routes.js): sign-in guard and HTTP handler
+  -> domain module (services/<domain>.service.js): validation, rules, SQL, and response shape
+  -> Postgres and S3
 ```
 
-The layers have separate responsibilities:
+The domains are auth, movies, scripts, captured scenes, stills, uploads, and the AI formatter.
 
-- Routes define URL paths and HTTP methods.
-- Controllers translate Express `req`/`res` into service calls and HTTP responses.
-- Services own application rules, such as validation decisions, overlap checks, transactions, and S3 orchestration.
-- Repositories own application queries. Services issue transaction commands, and the migration runner owns schema/data migration SQL.
-- Serializers convert database rows into API response shapes expected by the frontend.
-
-This keeps `index.js` readable and makes the backend easier to change without hunting through one large file.
+- A router declares its paths with their guards: `requireAdmin` on every route that changes data, and `requireOwner` on account management. Its handlers read the request's parameters, query, and body, call the domain module, and choose the response status. The AI formatter's router parses its own larger JSON body, so `app.js` mounts it before the app-wide parser.
+- A domain module is its domain's only interface. It validates one JSON shape for each write, runs the domain's SQL, and shapes responses, including signed S3 view URLs. It reports failures as `HttpError`, which the single error handler in `middleware/error-handler.js` turns into responses. A module that needs another domain's rule imports that domain's module, as scripts and stills do for the movie-existence check in `movies.service.js`.
+- When a domain's persistence is large enough for its own file, the file sits in `repositories/` and only its domain module imports it. The admin CLI (`src/admin.js`) goes through the auth module too.
+- The migration runner (`src/migrate.js`) owns schema and data migration SQL.
 
 ## Frontend Architecture
 
