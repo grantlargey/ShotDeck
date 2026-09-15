@@ -1,3 +1,4 @@
+import { momentSeconds } from "./filmTiming.js";
 import { scenePageRange } from "./scriptLocation.js";
 
 /*
@@ -27,12 +28,6 @@ export function displayScriptSceneText(item) {
   return item?.selected_text || "";
 }
 
-function storedNumber(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
 /** Ascending, with missing values last, as Postgres sorts `ASC`. */
 function compareNullsLast(left, right) {
   if (left === null || right === null) return (left === null) - (right === null);
@@ -55,7 +50,7 @@ export function sortScriptScenes(rows) {
   return [...(Array.isArray(rows) ? rows : [])].sort(
     (a, b) =>
       compareNullsLast(scenePageRange(a)?.pageStart ?? null, scenePageRange(b)?.pageStart ?? null) ||
-      compareNullsLast(storedNumber(a.start_time_seconds), storedNumber(b.start_time_seconds)) ||
+      compareNullsLast(momentSeconds(a.start_time_seconds), momentSeconds(b.start_time_seconds)) ||
       compareText(a.created_at, b.created_at)
   );
 }
