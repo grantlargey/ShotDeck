@@ -57,9 +57,10 @@ function deferred() {
 
 async function renderCollection(rows = []) {
   listScriptScenes.mockResolvedValue(rows);
-  const view = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1" }));
+  const onLoadError = vi.fn();
+  const view = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1", onLoadError }));
   await waitFor(() => expect(view.result.current.loading).toBe(false));
-  return view;
+  return { ...view, onLoadError };
 }
 
 beforeEach(() => {
@@ -74,7 +75,8 @@ describe("useSceneCollection", () => {
         sceneRow("unplaced", { start_time_seconds: 10 }),
         sceneRow("p1", { page_start: 1 }),
       ]);
-      const { result } = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1" }));
+      const onLoadError = vi.fn();
+      const { result } = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1", onLoadError }));
 
       expect(result.current.loading).toBe(true);
       expect(result.current.list).toEqual([]);
@@ -82,7 +84,7 @@ describe("useSceneCollection", () => {
       await waitFor(() => expect(result.current.loading).toBe(false));
       expect(listScriptScenes).toHaveBeenCalledWith("m1", "s1");
       expect(ids(result.current.list)).toEqual(["p1", "p5", "unplaced"]);
-      expect(result.current.loadError).toBeNull();
+      expect(onLoadError).not.toHaveBeenCalled();
       expect(result.current.saving).toBe(false);
       expect(result.current.deletingSceneId).toBe("");
     });
@@ -90,17 +92,18 @@ describe("useSceneCollection", () => {
     it("reports a failed load and keeps the list empty", async () => {
       const error = new Error("GET scene-annotations failed: 500");
       listScriptScenes.mockRejectedValue(error);
-      const { result } = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1" }));
+      const onLoadError = vi.fn();
+      const { result } = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1", onLoadError }));
 
       await waitFor(() => expect(result.current.loading).toBe(false));
-      expect(result.current.loadError).toBe(error);
+      expect(onLoadError).toHaveBeenCalledWith(error);
       expect(result.current.list).toEqual([]);
     });
 
     it("treats a response that isn't a list as no captured scenes", async () => {
-      const { result } = await renderCollection(null);
+      const { result, onLoadError } = await renderCollection(null);
       expect(result.current.list).toEqual([]);
-      expect(result.current.loadError).toBeNull();
+      expect(onLoadError).not.toHaveBeenCalled();
     });
   });
 

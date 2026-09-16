@@ -32,31 +32,31 @@ import {
  * |---|---|
  * | `list` | The captured scenes in the API's list order. Its identity changes only when the scenes do. |
  * | `loading` | True until the first load settles. |
- * | `loadError` | The error the first load failed with, else null. |
  * | `saving` | True while a create or update request runs. |
  * | `deletingSceneId` | The id being deleted, else `""`. |
+ *
+ * A failed load leaves the list empty and reaches `onLoadError(error)`, which
+ * must keep one identity for the life of the page.
  *
  * `save` and `remove` resolve with `{ ok: true }` (save also carries the saved
  * `scene`) or `{ ok: false, error }`. A failed request leaves the list as it
  * was and calls neither draft callback.
  */
-export function useSceneCollection({ movieId, scriptId }) {
+export function useSceneCollection({ movieId, scriptId, onLoadError }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deletingSceneId, setDeletingSceneId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setLoadError(null);
     listScriptScenes(movieId, scriptId)
       .then((rows) => {
         if (!cancelled) setList(sortScriptScenes(Array.isArray(rows) ? rows : []));
       })
       .catch((error) => {
-        if (!cancelled) setLoadError(error);
+        if (!cancelled) onLoadError(error);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -64,12 +64,11 @@ export function useSceneCollection({ movieId, scriptId }) {
     return () => {
       cancelled = true;
     };
-  }, [movieId, scriptId]);
+  }, [movieId, scriptId, onLoadError]);
 
   return {
     list,
     loading,
-    loadError,
     saving,
     deletingSceneId,
 
