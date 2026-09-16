@@ -127,7 +127,10 @@ against. This record holds the decisions and why the alternatives lost.
   `client/vite.config.js` gains an alias and the Vite **dev server** needs `server.fs.allow` to
   serve them. `vite build` and `vitest` need only the alias. The backend build context and
   `server/Dockerfile` do not change, and the cutover proves that by running the conversion's
-  no-op path inside the built image before the maintenance window opens.
+  read-only `--check` mode inside the built image, against live production, before writers
+  are stopped. It has to be `--check`: production's pre-cutover state is precisely the state
+  the conversion treats as convertible, so the plain command would convert and commit there,
+  ahead of the snapshot.
 - Because the conversion rejoins words hyphenated across the PDF's line breaks ("grease-" plus
   "paint"), its word-fidelity check compares an ordered stream of letters and digits rather than
   a sequence of whitespace-delimited words. It still catches dropped, invented, reordered and
