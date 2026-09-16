@@ -287,8 +287,13 @@ function LocationProbe() {
 /**
  * Renders the viewer route for movie m1 / script s1 and waits until the PDF
  * pages have mounted. Scenes, stills and the session are set before loading.
+ * Pass `awaitPages: false` when the load is meant to render no pages at all,
+ * such as a failed one; the test then waits for what it expects instead.
  */
-export async function renderViewer(ScriptViewerRoute, { scenes = [], stills = [], numPages = 3, sceneId = "", admin = true } = {}) {
+export async function renderViewer(
+  ScriptViewerRoute,
+  { scenes = [], stills = [], numPages = 3, sceneId = "", admin = true, awaitPages = true } = {}
+) {
   scenario.scenes = scenes;
   scenario.stills = stills;
   session.isAdmin = admin;
@@ -308,7 +313,7 @@ export async function renderViewer(ScriptViewerRoute, { scenes = [], stills = []
       )
     )
   );
-  await waitFor(() => expect(frameProps(numPages)).not.toBeNull());
+  if (awaitPages) await waitFor(() => expect(frameProps(numPages)).not.toBeNull());
 }
 
 export function currentLocation() {

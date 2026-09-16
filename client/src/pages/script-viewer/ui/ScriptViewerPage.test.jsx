@@ -25,6 +25,7 @@ import {
   renderSelectionSnapshots,
   renderViewer,
   resetHarness,
+  savedScenesGrid,
   sceneCard,
   settle,
   timeInput,
@@ -1810,5 +1811,36 @@ describe("P21 scrolling to a scene", () => {
     expect(frameProps(3).activeSceneId).toBe(unplacedScene.id);
     expect(windowingDouble.scrollToPage).toHaveBeenCalledTimes(1);
     expect(errors).toEqual([]);
+  });
+});
+
+// ---------- P22: a failed load ----------
+
+describe("P22 a failed load", () => {
+  it("fails the whole page when the captured scenes can't be loaded, and never shows the script without them", async () => {
+    fakeApi.listScriptScenes.mockRejectedValue(
+      new ApiError("GET scene-annotations failed: 500", { status: 500, body: { error: "Internal error" } })
+    );
+
+    await renderViewer(ScriptViewerRoute, { awaitPages: false });
+    await waitFor(() => expect(toast("Failed to load the script viewer.")).toBeTruthy());
+
+    // The project and script answered, but a script without its scenes is never
+    // shown: the scenes decide where a capture may go and which bars the pages get.
+    expect(fakeApi.getMovie).toHaveBeenCalledTimes(1);
+    expect(fakeApi.getScript).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Script");
+    expect(screen.getByText("This script has no PDF file.")).toBeTruthy();
+    expect(screen.queryByTestId("pdf-document")).toBeNull();
+    expect(frameProps(1)).toBeNull();
+    expect(within(savedScenesGrid()).getByText("No scenes yet")).toBeTruthy();
+
+    // The admin keeps the panel, but with no script there is nothing to capture,
+    // so no scene can be saved against the scenes that failed to load.
+    typeTime("Start", "00:10:00");
+    typeTime("End", "00:11:00");
+    click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(toast("Place start and end anchors in the script to capture the scene text.")).toBeTruthy();
+    expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
   });
 });

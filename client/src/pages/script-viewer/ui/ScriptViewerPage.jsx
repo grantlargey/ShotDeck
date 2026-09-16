@@ -86,8 +86,10 @@ function ScriptViewerPage() {
   // Visitors read the script and open scenes; only admins capture and edit.
   const { ready: sessionReady, isAdmin: canEdit } = useSession();
 
-  const [movie, setMovie] = useState(null);
-  const [script, setScript] = useState(null);
+  const [loadedMovie, setLoadedMovie] = useState(null);
+  const [loadedScript, setLoadedScript] = useState(null);
+  // The captured scenes are part of the page's load, so their failure fails it.
+  const [sceneLoadFailed, setSceneLoadFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState(null);
   const [pdfDocument, setPdfDocument] = useState(null);
@@ -113,11 +115,15 @@ function ScriptViewerPage() {
   // Callback refs, taken once: JSX may not read a ref off an object during render.
   const { wrapRef, sentinelRef } = windowing;
   const textIndex = useScriptTextIndex(pdfDocument);
-  // The captured scenes load on their own, and a failure reads like the rest of the load.
-  const reportSceneLoadError = useCallback(
-    (error) => setNotice({ tone: "error", text: getErrorMessage(error, "Failed to load the script viewer.") }),
-    []
-  );
+  // The captured scenes load in their own request, but they are still part of
+  // loading the page: a failure reports the same notice and leaves the page
+  // without a project or a script, so the viewer never shows a script whose
+  // scenes are missing. This stands for the life of the page, which is safe
+  // because ScriptViewerRoute keys it by scriptId.
+  const reportSceneLoadError = useCallback((error) => {
+    setSceneLoadFailed(true);
+    setNotice({ tone: "error", text: getErrorMessage(error, "Failed to load the script viewer.") });
+  }, []);
   // The script's captured scenes, their order and their requests live in useSceneCollection.
   const scenes = useSceneCollection({ movieId, scriptId, onLoadError: reportSceneLoadError });
   // What the draft's text and script location are, and what saving stores, lives in useSceneDraft.
@@ -129,8 +135,8 @@ function ScriptViewerPage() {
     Promise.all([getMovie(movieId), getScript(movieId, scriptId)])
       .then(([movieData, scriptData]) => {
         if (cancelled) return;
-        setMovie(movieData);
-        setScript(scriptData);
+        setLoadedMovie(movieData);
+        setLoadedScript(scriptData);
       })
       .catch((error) => {
         if (!cancelled) setNotice({ tone: "error", text: getErrorMessage(error, "Failed to load the script viewer.") });
@@ -142,6 +148,12 @@ function ScriptViewerPage() {
       cancelled = true;
     };
   }, [movieId, scriptId]);
+
+  // Any part of the load failing leaves the whole page unloaded, whichever
+  // request it was: the title falls back, no PDF is offered, and no scenes are
+  // listed. A response that arrives after another request failed doesn't undo it.
+  const movie = sceneLoadFailed ? null : loadedMovie;
+  const script = sceneLoadFailed ? null : loadedScript;
 
   // ---------- Page views of the draft ----------
 

@@ -35,8 +35,8 @@ import {
  * | `saving` | True while a create or update request runs. |
  * | `deletingSceneId` | The id being deleted, else `""`. |
  *
- * A failed load leaves the list empty and reaches `onLoadError(error)`, which
- * must keep one identity for the life of the page.
+ * A failed load reaches `onLoadError(error)`, which must keep one identity for
+ * the life of the page. The page treats it as the whole page's load failing.
  *
  * `save` and `remove` resolve with `{ ok: true }` (save also carries the saved
  * `scene`) or `{ ok: false, error }`. A failed request leaves the list as it
@@ -56,6 +56,8 @@ export function useSceneCollection({ movieId, scriptId, onLoadError }) {
         if (!cancelled) setList(sortScriptScenes(Array.isArray(rows) ? rows : []));
       })
       .catch((error) => {
+        // `list` is left as it was rather than emptied, so a failed reload keeps
+        // the scenes already on screen. On a first load there are none.
         if (!cancelled) onLoadError(error);
       })
       .finally(() => {
@@ -66,6 +68,11 @@ export function useSceneCollection({ movieId, scriptId, onLoadError }) {
     };
   }, [movieId, scriptId, onLoadError]);
 
+  // The requests below need no cancellation guard, unlike the load above:
+  // `ScriptViewerRoute` keys the page by `scriptId`, so another script is another
+  // page with its own collection, and `movieId` can't change without the script
+  // changing. A route that dropped that key would have to add one, or a late
+  // response could land in a collection that has moved to another script.
   return {
     list,
     loading,
