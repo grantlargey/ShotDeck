@@ -1,6 +1,6 @@
 # Canonical captured-scene storage
 
-Status: proposed (decided at gate G2 of the codebase overhaul)
+Status: accepted (2026-09-16, at gate G2 of the codebase overhaul)
 
 Captured scenes are stored across two tables with a one-to-one relationship, three text
 columns for two concepts, a superseded `script_annotations` table that the deploy-time
@@ -31,13 +31,15 @@ against. This record holds the decisions and why the alternatives lost.
   `inventory-20260916T172941Z`) confirms it: 1 captured scene, with a valid anchor pair, and no
   overlapping pairs. So this is a conversion of well-formed data, not a rescue of unrecoverable
   records.
+- The same inventory found no production row without stored formatted text and no unknown tag.
+  Locally, every row that has either belongs to a scene that aborts for lack of anchors.
 - Only one deployment exists, one admin writes to it, and the release is a coordinated
   maintenance cutover (E2), so migrations do not have to stay compatible with the running API.
-- The tag taxonomy and the screenplay grammar live in `client/`, but the production image is
-  built from a context holding `server/` alone (`infra/deploy-prod.sh` rsyncs `$ROOT_DIR/server/`;
-  `server/Dockerfile` copies that context). `server/src/tools/inventory.js` already imports the
-  taxonomy across that boundary, which is why issue 03 had to bundle the inventory command with
-  esbuild to run it in production at all.
+- The tag taxonomy lives in `client/`, but the production image is built from a context holding
+  `server/` alone (`infra/deploy-prod.sh` rsyncs `$ROOT_DIR/server/`; `server/Dockerfile` copies
+  that context). `server/src/tools/inventory.js` already imports the taxonomy across that
+  boundary, which is why issue 03 had to bundle the inventory command with esbuild to run it in
+  production at all.
 
 ## Decision
 
@@ -60,16 +62,21 @@ against. This record holds the decisions and why the alternatives lost.
    and non-blank, named for the glossary. No fallback chain survives anywhere.
 5. **A numbered migration history replaces the replayed runner.** `schema_migrations` plus a
    runner over `server/sql/migrations/NNNN_*.sql`; migration `0001` is the canonical schema, so
-   a fresh install creates only that. The existing database is brought to the same state by a
+   a fresh install creates only that. The production database is brought to the same state by a
    one-use conversion command, which converts and stamps version 1 in one transaction, and is
-   deleted after the cutover (issue 18).
+   deleted after the cutover (issue 18). The local database is dropped and recreated instead.
 6. **Code that the API, its commands and the client all need lives under `server/`.** `server/`
    is the only tree the image ships, and it ships alone, while the client is built from a full
    checkout and can always see `server/`. So the dependency points from the client into
-   `server/`, never the other way. The tag taxonomy (the write-time rule of decision 4's sibling,
-   §4 of the Contract) and the screenplay grammar (which the conversion needs to turn legacy text
-   into canonical scene text) both move under `server/src/domain/`, and the client imports them
-   through a Vite alias. One copy, nothing generated, and no change to the build context.
+   `server/`, never the other way. The tag taxonomy, which the write-time rule (§4 of the
+   Contract) and the conversion both check, moves to `server/src/domain/script-tags.js`, and the
+   client imports it through a Vite alias. One copy, nothing generated, and no change to the build
+   context. The screenplay grammar stays in the client, because no server code parses scene text
+   (decision 7).
+7. **The conversion copies what is stored and never generates or guesses.** Scene text and raw
+   text are copied verbatim, and a row whose stored text is blank aborts. Every tag must already be
+   a taxonomy value, and any other value aborts: there is no mapping table. Issue 14 deletes the
+   legacy plain-text parser from the client grammar outright.
 
 ## Alternatives considered
 
@@ -82,17 +89,29 @@ against. This record holds the decisions and why the alternatives lost.
   that hand-written validation does today, and they read back directly as the viewer's
   `{page, line, top, bottom, text}`.
 - **Drop the advisory lock and rely on the constraints alone.** Rejected while zero-length
-  timings are legal (the client accepts `end == start` today). A constraint violation also
-  arrives as SQLSTATE 23P01 naming a constraint, not a scene, so the server would have to
+  timings are legal (the client accepts `end == start`, and G2 kept it). A constraint violation
+  also arrives as SQLSTATE 23P01 naming a constraint, not a scene, so the server would have to
   re-query in a fresh transaction to keep the 409 detail the API contract promises.
 - **Keep the constraints out and leave the lock alone.** Rejected: the lock only binds code that
   remembers to take it. The constraints make an overlapping pair unrepresentable for the
   conversion command, the admin CLI and any hand-written SQL, and they turn a future missed
   check into a rejected write instead of corrupt data.
-- **Convert with SQL only.** Rejected: rows whose formatted text is null hold hard-wrapped text
-  from before screenplay markdown existed, and turning it into canonical scene text needs the
-  screenplay grammar and the legacy parser that issue 14 moves into the command. The conversion
-  is therefore a Node command, not a `.sql` migration.
+- **Convert with SQL only.** Rejected: the conversion reads each anchor pair strictly out of a
+  JSON geometry array (each kind's last strictly valid entry), checks tags against the taxonomy
+  module, and collects every failure with its ids before writing anything. That is a Node
+  command, not a `.sql` migration.
+- **Generate scene text for rows without formatted text**, by moving the legacy parser into the
+  conversion and checking word fidelity over a stream of letters and digits. Rejected at G2: no
+  convertible row needs it. Production has no row without formatted text, and the 2 local ones
+  belong to scenes that abort for lack of anchors.
+- **Check that stored markdown parses back the same way**, which would move the screenplay
+  grammar under `server/` for the conversion alone. Rejected at G2: it covers exactly one
+  production scene, which a person opens in the viewer before and after the cutover instead, and
+  once the one-use command is deleted the grammar would sit in `server/` with only client
+  consumers.
+- **A mapping table that maps or drops each unknown tag.** Rejected at G2: production has no
+  unknown tags, and all 12 local values sit on scenes that abort for lack of anchors, so the
+  table would map no convertible row.
 - **A repo-level `shared/` module included in both builds** (instead of decision 6). Rejected: it
   ships only if the deploy script rsyncs a second path *and* the build context reproduces the
   repository's layout, because otherwise the relative depth of the import differs between the
@@ -118,27 +137,20 @@ against. This record holds the decisions and why the alternatives lost.
   scenes, are now unrepresentable: they must be resolved by a person before the cutover.
 - The page range is no longer stored. `page_start`/`page_end` are derived from the anchors, so
   scene ordering, page labels and scene links read the anchor pair instead.
-- Zero-length film timings are still possible and are policed only by the advisory lock. If the
-  user later forbids them, the film-timing constraint loses its `WHERE` clause and becomes total.
+- Zero-length film timings stay possible and are policed only by the advisory lock. If they are
+  ever forbidden, the film-timing constraint loses its `WHERE` clause and becomes total.
 - Free-form tags stop being a second tag system: writes accept only taxonomy values, and the
-  conversion maps or drops each existing unknown value under an approved table, aborting on any
-  value the table doesn't cover.
+  conversion aborts on any existing value outside the taxonomy.
 - After the cutover, `node src/migrate.js` is the only way a database changes shape, and it
   refuses to run against a database that still holds the legacy tables.
-- The client imports the taxonomy and the grammar from outside its own project root, so
-  `client/vite.config.js` gains an alias and the Vite **dev server** needs `server.fs.allow` to
-  serve them. `vite build` and `vitest` need only the alias. The backend build context and
-  `server/Dockerfile` do not change, and the cutover proves that by running the conversion's
-  read-only `--check` mode inside the built image, against live production, before writers
-  are stopped. It has to be `--check`: production's pre-cutover state is precisely the state
-  the conversion treats as convertible, so the plain command would convert and commit there,
-  ahead of the snapshot.
-- Because the conversion rejoins words hyphenated across the PDF's line breaks ("grease-" plus
-  "paint"), its word-fidelity check compares an ordered stream of letters and digits rather than
-  a sequence of whitespace-delimited words. It still catches dropped, invented, reordered and
-  misspelled words; it no longer sees differences that are only whitespace, hyphenation or
-  punctuation.
-- No convertible row, in production (G1) or in the local database (issue 03), takes the
-  legacy-parse path, so G2 chooses between this design and dropping the legacy parse and word
-  check, with or without the parse-back check and the grammar's move to `server/` (Contract §11,
-  "What the production figures change", F1).
+- The client imports the taxonomy from outside its own project root, so `client/vite.config.js`
+  gains an alias and the Vite **dev server** needs `server.fs.allow` to serve it. `vite build` and
+  `vitest` need only the alias. The backend build context and `server/Dockerfile` do not change,
+  and the cutover proves that by running the conversion's read-only `--check` mode inside the
+  built image, against live production, before writers are stopped. It has to be `--check`:
+  production's pre-cutover state is precisely the state the conversion treats as convertible, so
+  the plain command would convert and commit there, ahead of the snapshot.
+- The dry run doesn't prove that stored scene text is readable by the canonical parser. The one
+  production captured scene is opened in the viewer before and after the cutover instead.
+- The conversion's tests run against a dump of the local legacy database taken at G2, restored
+  into throwaway databases, because the local database itself is dropped rather than converted.
