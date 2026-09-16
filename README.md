@@ -18,7 +18,7 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 - `server/src/app.js` - Express composition root: middleware, CORS, the health check, router mounting, and error middleware.
 - `server/src/routes/` - One router per API domain, holding the domain's paths, sign-in guards, and HTTP handlers.
 - `server/src/services/` - The domain module behind each router: validation, rules, SQL, and response shaping. `thumbnails.service.js` makes still thumbnails in the background.
-- `server/src/repositories/` - Persistence files private to one domain module: admin accounts and sessions, and captured scenes.
+- `server/src/repositories/` - Persistence files private to one domain module: admin accounts and sessions.
 - `server/src/db.js`, `server/src/s3.js` - The shared Postgres pool; S3 object keys, uploads, and signed URLs.
 - `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code: CORS, the sign-in guards, the Origin check, the error handler, and small helpers.
 - `server/sql/schema.sql` - Postgres schema.
