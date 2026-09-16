@@ -8,8 +8,7 @@ import { HttpError } from "../utils/http-error.js";
  */
 
 const INVALID_BODY_MESSAGE =
-    "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) writer:string, (optional) cinematographer:string, (optional) cover_image_key:string, (optional) links:string[] }";
-const INVALID_LINKS_MESSAGE = "Invalid body. 'links' must be an array of strings.";
+    "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) writer:string, (optional) cinematographer:string, (optional) cover_image_key:string }";
 
 /** A crew credit is trimmed, and a blank one is stored as null. */
 function readCredit(value) {
@@ -23,24 +22,14 @@ function readCoverImageKey(value) {
     throw new HttpError(400, INVALID_BODY_MESSAGE);
 }
 
-/** Links are trimmed with blanks dropped, and null clears them. */
-function readLinks(value) {
-    if (value === undefined) return undefined;
-    if (value === null) return [];
-    if (!Array.isArray(value) || !value.every((link) => typeof link === "string")) {
-        throw new HttpError(400, INVALID_LINKS_MESSAGE);
-    }
-    return value.map((link) => link.trim()).filter(Boolean);
-}
-
 /**
  * Reads a movie write, which has one JSON shape for create and update. Title,
  * director, year and runtime are required. An optional field is undefined when
  * the body leaves it out, so an update keeps its saved value, while null clears
- * it. Links are read last, so any other invalid field reports the general message.
+ * it.
  */
 function readMovieBody(body) {
-    const { title, director, year, runtime_minutes, writer, cinematographer, cover_image_key, links } = body ?? {};
+    const { title, director, year, runtime_minutes, writer, cinematographer, cover_image_key } = body ?? {};
     if (
         typeof title !== "string" ||
         typeof director !== "string" ||
@@ -58,7 +47,6 @@ function readMovieBody(body) {
         writer: readCredit(writer),
         cinematographer: readCredit(cinematographer),
         coverImageKey: readCoverImageKey(cover_image_key),
-        links: readLinks(links),
     };
 }
 
@@ -91,8 +79,8 @@ export async function createMovie(db, body) {
     const movie = readMovieBody(body);
     const result = await db.query(
         `
-        INSERT INTO movies (id, title, director, writer, cinematographer, year, runtime_minutes, cover_image_key, links)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+        INSERT INTO movies (id, title, director, writer, cinematographer, year, runtime_minutes, cover_image_key)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
       `,
         [
@@ -104,7 +92,6 @@ export async function createMovie(db, body) {
             movie.year,
             movie.runtimeMinutes,
             movie.coverImageKey ?? null,
-            JSON.stringify(movie.links ?? []),
         ]
     );
     return toMovieResponse(result.rows[0]);
@@ -134,8 +121,7 @@ export async function updateMovie(db, id, body) {
             cinematographer = $5,
             year = $6,
             runtime_minutes = $7,
-            cover_image_key = $8,
-            links = $9::jsonb
+            cover_image_key = $8
         WHERE id = $1
         RETURNING *
       `,
@@ -148,7 +134,6 @@ export async function updateMovie(db, id, body) {
             movie.year,
             movie.runtimeMinutes,
             keepSaved(movie.coverImageKey, saved.cover_image_key),
-            JSON.stringify(keepSaved(movie.links, saved.links)),
         ]
     );
     if (!result.rows[0]) throw new HttpError(404, "Movie not found");

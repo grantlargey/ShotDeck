@@ -21,9 +21,7 @@ const api = await startApi();
 const { cookie } = await signInOwner(api);
 
 const INVALID_MOVIE =
-    "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) writer:string, (optional) cinematographer:string, (optional) cover_image_key:string, (optional) links:string[] }";
-// changes in 11: movie links are removed (A8)
-const INVALID_LINKS = "Invalid body. 'links' must be an array of strings.";
+    "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) writer:string, (optional) cinematographer:string, (optional) cover_image_key:string }";
 
 // changes in 11: no links (A8)
 const MOVIE_FIELDS = [
@@ -33,7 +31,6 @@ const MOVIE_FIELDS = [
     "created_at",
     "director",
     "id",
-    "links",
     "runtime_minutes",
     "title",
     "writer",
@@ -53,7 +50,7 @@ function without(body, ...fields) {
 }
 
 describe("creating a movie", () => {
-    test("returns 201 with the movie, no cover URL and empty links", async () => {
+    test("returns 201 with the movie and no cover URL", async () => {
         const body = movieBody();
         const response = await api.post("/movies", { cookie, body });
         assert.equal(response.status, 201, response.text);
@@ -62,8 +59,7 @@ describe("creating a movie", () => {
         assert.match(movie.id, /^[0-9a-f-]{36}$/);
         assert.deepEqual(
             { ...movie, id: undefined, created_at: undefined },
-            // changes in 11: no links (A8)
-            { ...body, id: undefined, created_at: undefined, cover_image_key: null, cover_image_url: null, links: [] }
+            { ...body, id: undefined, created_at: undefined, cover_image_key: null, cover_image_url: null }
         );
         assert.ok(!Number.isNaN(Date.parse(movie.created_at)));
     });
@@ -126,23 +122,11 @@ describe("creating a movie", () => {
         assert.equal(missing.body.cinematographer, null);
     });
 
-    // changes in 11: movie links are removed (A8)
-    describe("links", () => {
-        test("are trimmed with blanks dropped; null is an empty list", async () => {
-            assert.deepEqual((await createMovie(api, cookie, { links: [" https://a.example ", ""] })).links, ["https://a.example"]);
-            assert.deepEqual((await createMovie(api, cookie, { links: null })).links, []);
-        });
-
-        test("that aren't a list of strings are a 400, reported after the other fields", async () => {
-            for (const links of [5, "https://a.example\nhttps://b.example", ["https://a.example", 5]]) {
-                await expectError(api.post("/movies", { cookie, body: movieBody({ links }) }), 400, INVALID_LINKS);
-            }
-            await expectError(
-                api.post("/movies", { cookie, body: movieBody({ links: 5, title: null }) }),
-                400,
-                INVALID_MOVIE
-            );
-        });
+    test("ignores the removed links field", async () => {
+        const movie = await createMovie(api, cookie, { links: ["https://a.example"] });
+        assert.ok(!("links" in movie));
+        const stored = await api.get(`/movies/${movie.id}`);
+        assert.ok(!("links" in stored.body));
     });
 });
 
@@ -170,7 +154,7 @@ describe("updating a movie", () => {
     const COVER = `covers/${randomUUID()}/cover.webp`;
 
     async function savedMovie() {
-        return createMovie(api, cookie, { cover_image_key: COVER, links: ["https://a.example"] });
+        return createMovie(api, cookie, { cover_image_key: COVER });
     }
 
     test("returns 200 with the movie after replacing the fields it is sent", async () => {
@@ -183,8 +167,6 @@ describe("updating a movie", () => {
             year: 1999,
             runtime_minutes: 90,
             cover_image_key: `covers/${movie.id}/new.jpg`,
-            // changes in 11: movie links are removed (A8)
-            links: ["https://b.example"],
         });
         const response = await api.put(`/movies/${movie.id}`, { cookie, body });
         assert.equal(response.status, 200, response.text);
@@ -195,8 +177,7 @@ describe("updating a movie", () => {
         assert.match(response.body.cover_image_url, signedUrlPattern(body.cover_image_key));
     });
 
-    // changes in 11: movie links are removed (A8)
-    test("keeps the saved cover, writer, cinematographer and links when they are left out", async () => {
+    test("keeps the saved cover, writer and cinematographer when they are left out", async () => {
         const movie = await savedMovie();
         const body = without(movieBody({ title: "Renamed" }), "writer", "cinematographer");
         const response = await api.put(`/movies/${movie.id}`, { cookie, body });
@@ -204,17 +185,15 @@ describe("updating a movie", () => {
         assertSameRecords(response.body, { ...movie, title: "Renamed" });
     });
 
-    test("clears the cover and credits when they are null, and links when null", async () => {
+    test("clears the cover and credits when they are null", async () => {
         const movie = await savedMovie();
-        const body = movieBody({ cover_image_key: null, writer: null, cinematographer: "  ", links: null });
+        const body = movieBody({ cover_image_key: null, writer: null, cinematographer: "  " });
         const response = await api.put(`/movies/${movie.id}`, { cookie, body });
         assert.equal(response.status, 200, response.text);
         assert.equal(response.body.cover_image_key, null);
         assert.equal(response.body.cover_image_url, null);
         assert.equal(response.body.writer, null);
         assert.equal(response.body.cinematographer, null);
-        // changes in 11: movie links are removed (A8)
-        assert.deepEqual(response.body.links, []);
     });
 
     test("still requires title, director, year and runtime, checked before the movie is looked up", async () => {
@@ -234,12 +213,10 @@ describe("updating a movie", () => {
         await expectError(api.put(`/movies/${movie.id}`, { cookie }), 400, INVALID_MOVIE);
     });
 
-    test("requires a string or null cover image key and a list of links, checked before the movie is looked up", async () => {
+    test("requires a string or null cover image key, checked before the movie is looked up", async () => {
         const movie = await savedMovie();
         await expectError(api.put(`/movies/${movie.id}`, { cookie, body: movieBody({ cover_image_key: 5 }) }), 400, INVALID_MOVIE);
         await expectError(api.put(`/movies/${randomUUID()}`, { cookie, body: movieBody({ cover_image_key: 5 }) }), 400, INVALID_MOVIE);
-        // changes in 11: movie links are removed (A8)
-        await expectError(api.put(`/movies/${movie.id}`, { cookie, body: movieBody({ links: "https://b.example" }) }), 400, INVALID_LINKS);
         assertSameRecords((await api.get(`/movies/${movie.id}`)).body, movie);
     });
 });
@@ -257,8 +234,7 @@ describe("deleting a movie", () => {
         assert.equal(response.text, "");
 
         await expectError(api.get(`/movies/${movie.id}`), 404, "Movie not found");
-        // changes in 11: the movie's script read returns null (C7)
-        assert.deepEqual((await api.get(`/movies/${movie.id}/scripts`)).body, []);
+        await expectError(api.get(`/movies/${movie.id}/scripts`), 404, "Movie not found");
         assert.deepEqual((await api.get(`/movies/${movie.id}/annotations`)).body, []);
         assert.deepEqual((await api.get(`/movies/${movie.id}/scripts/${script.id}/scene-annotations`)).body, []);
     });

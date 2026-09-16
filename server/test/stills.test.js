@@ -36,12 +36,6 @@ async function createStill(movie, body) {
     return response.body;
 }
 
-// changes in 11: still title and body are removed (A7)
-async function storedTitleAndBody(still) {
-    const result = await pool.query("SELECT title, body FROM annotations WHERE id = $1", [still.id]);
-    return result.rows[0];
-}
-
 describe("creating a still", () => {
     test("returns 201 with the still and a signed image URL, and no title or body", async () => {
         const movie = await createMovie(api, cookie);
@@ -67,14 +61,11 @@ describe("creating a still", () => {
         }
     });
 
-    // changes in 11: still title and body are removed (A7)
-    test("stores a trimmed title and body without returning them, and accepts any title type", async () => {
+    test("ignores removed title and body fields", async () => {
         const movie = await createMovie(api, cookie);
-        const titled = await createStill(movie, { time_seconds: 1, title: "  Diner  ", body: "  Night.  " });
-        assert.deepEqual(await storedTitleAndBody(titled), { title: "Diner", body: "Night." });
-
-        const untitled = await createStill(movie, { time_seconds: 2, title: 5, body: "   " });
-        assert.deepEqual(await storedTitleAndBody(untitled), { title: "", body: null });
+        const still = await createStill(movie, { time_seconds: 1, title: 5, body: { legacy: true } });
+        assert.ok(!("title" in still));
+        assert.ok(!("body" in still));
     });
 
     test("requires a non-negative number of seconds and a string image key, checked before the movie is looked up", async () => {
@@ -166,19 +157,15 @@ describe("updating a still", () => {
         assert.equal(cleared.body.image_url, null);
     });
 
-    // changes in 11: still title and body are removed (A7)
-    test("always overwrites the stored title and body, blank when left out, and requires them to be strings or null", async () => {
+    test("ignores removed title and body fields on update", async () => {
         const { movie, still } = await stillWithThumbnail();
         const path = `${stillsPath(movie)}/${still.id}`;
-
-        await api.put(path, { cookie, body: { time_seconds: 5, title: " New ", body: " New body " } });
-        assert.deepEqual(await storedTitleAndBody(still), { title: "New", body: "New body" });
-
-        await api.put(path, { cookie, body: { time_seconds: 5 } });
-        assert.deepEqual(await storedTitleAndBody(still), { title: "", body: null });
-
-        await expectError(api.put(path, { cookie, body: { time_seconds: 5, title: 5 } }), 400, INVALID_STILL);
-        await expectError(api.put(path, { cookie, body: { time_seconds: 5, body: {} } }), 400, INVALID_STILL);
+        const response = await api.put(path, {
+            cookie,
+            body: { time_seconds: 6, title: 5, body: { legacy: true } },
+        });
+        assert.equal(response.status, 200, response.text);
+        assert.equal(response.body.time_seconds, 6);
     });
 
     test("requires time_seconds, even with no body at all, and answers 404 for a missing still or one in another movie after validating", async () => {

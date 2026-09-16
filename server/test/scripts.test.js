@@ -78,16 +78,15 @@ describe("saving a movie's script", () => {
 });
 
 describe("reading scripts", () => {
-    // changes in 11: the movie's script read returns the script or null (C7)
-    test("GET /movies/:id/scripts is public and lists the movie's one script, or none", async () => {
+    test("GET /movies/:id/scripts is public and returns the movie's script or null", async () => {
         const { movie, script } = await createMovieWithScript(api, cookie);
         const response = await api.get(`/movies/${movie.id}/scripts`);
         assert.equal(response.status, 200);
-        assertSameRecords(response.body, [script]);
+        assertSameRecords(response.body, script);
 
         const withoutScript = await createMovie(api, cookie);
-        assert.deepEqual((await api.get(`/movies/${withoutScript.id}/scripts`)).body, []);
-        assert.deepEqual((await api.get(`/movies/${randomUUID()}/scripts`)).body, []);
+        assert.equal((await api.get(`/movies/${withoutScript.id}/scripts`)).body, null);
+        await expectError(api.get(`/movies/${randomUUID()}/scripts`), 404, "Movie not found");
     });
 
     test("GET /movies/:movieId/scripts/:scriptId is public and answers 404 unless the script is the movie's", async () => {

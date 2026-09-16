@@ -31,11 +31,11 @@ A captured scene whose script location has no usable pair of scene anchors, such
 _Avoid_: Old scene, unanchored scene
 
 **Scene text**:
-The screenplay-formatted text shown for a captured scene. A captured scene without it currently shows its raw text or older stored text instead.
+The screenplay-formatted text shown for a captured scene.
 _Avoid_: Formatted text, selected text, markdown
 
 **Raw text**:
-Plain text stored alongside the scene text. It is usually the words of the captured text. Without captured text from the current anchors, saving keeps the captured scene's existing raw text when it has some, and otherwise derives it from the scene text.
+Plain text stored alongside the scene text. It is usually the words of the captured text.
 _Avoid_: Verbatim text, PDF text, original text
 
 ### Capturing a scene

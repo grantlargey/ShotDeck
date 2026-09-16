@@ -7,7 +7,7 @@ const port = process.env.PORT || 4000;
 
 app.listen(port, () => {
     console.log("ShotDeck API running on port", port);
-    // Stills saved before thumbnails existed, or by the direct-database importer, get theirs in the background.
+    // Stills saved before thumbnails existed get theirs in the background.
     queueMissingThumbnails(pool).catch((err) => {
         console.error("Failed to queue missing still thumbnails:", err.message);
     });

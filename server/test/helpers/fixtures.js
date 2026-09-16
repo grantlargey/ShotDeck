@@ -79,34 +79,28 @@ export async function createMovieWithScript(api, cookie) {
 
 /** A version-2 scene anchor pair, as the script viewer saves it. */
 export function anchorPair({ startPage = 1, startLine = 0, endPage = startPage, endLine = startLine + 4 } = {}) {
-    return [
-        {
-            kind: "start",
-            version: 2,
-            unit: "pt",
+    return {
+        start: {
             page: startPage,
             line: startLine,
             top: 100 + startLine * 12,
             bottom: 112 + startLine * 12,
             text: "INT. NIGHT DINER - NIGHT",
         },
-        {
-            kind: "end",
-            version: 2,
-            unit: "pt",
+        end: {
             page: endPage,
             line: endLine,
             top: 100 + endLine * 12,
             bottom: 112 + endLine * 12,
             text: "Mara pours the coffee.",
         },
-    ];
+    };
 }
 
 const SCENE_TEXT = "## INT. NIGHT DINER - NIGHT\n\nMara pours the coffee.";
 
 // Each body gets its own lines, so scenes in one script share a line only when a
-// test passes the same anchor_geometry on purpose.
+// test passes the same script_location on purpose.
 let nextStartLine = 0;
 
 /** A captured-scene body shaped like the script viewer's save payload. */
@@ -116,16 +110,9 @@ export function sceneBody(overrides = {}) {
     return {
         start_time_seconds: 60,
         end_time_seconds: 120,
-        selected_text: SCENE_TEXT,
-        raw_selected_text: "INT. NIGHT DINER - NIGHT\nMara pours the coffee.",
-        formatted_selected_text: SCENE_TEXT,
-        page_start: 1,
-        page_end: 1,
-        start_offset: 10,
-        end_offset: 58,
-        context_prefix: "FADE IN:",
-        context_suffix: "She sits.",
-        anchor_geometry: anchorPair({ startLine }),
+        script_location: anchorPair({ startLine }),
+        scene_text: SCENE_TEXT,
+        raw_text: "INT. NIGHT DINER - NIGHT\nMara pours the coffee.",
         tags: [TAGS.protagonist],
         ...overrides,
     };

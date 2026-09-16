@@ -85,6 +85,35 @@ describe("the AI formatter", () => {
         }
     });
 
+    test("always sends and reports gpt-5-nano without a temperature", async (t) => {
+        const previousKey = process.env.OPENAI_API_KEY;
+        const previousModel = process.env.OPENAI_SCREENPLAY_MODEL;
+        process.env.OPENAI_API_KEY = "test-only-key";
+        process.env.OPENAI_SCREENPLAY_MODEL = "gpt-4-legacy-value-that-must-be-ignored";
+        let sent;
+        const requestFetch = globalThis.fetch;
+        t.mock.method(globalThis, "fetch", async (url, init) => {
+            if (!String(url).includes("api.openai.com")) return requestFetch(url, init);
+            sent = JSON.parse(init.body);
+            return new Response(
+                JSON.stringify({ output: [{ content: [{ type: "output_text", text: "## INT. DINER - NIGHT" }] }] }),
+                { status: 200, headers: { "content-type": "application/json" } }
+            );
+        });
+        try {
+            const response = await format({ capturedText: "INT. DINER - NIGHT" });
+            assert.equal(response.status, 200, response.text);
+            assert.deepEqual(response.body, { markdown: "## INT. DINER - NIGHT", model: "gpt-5-nano" });
+            assert.equal(sent.model, "gpt-5-nano");
+            assert.ok(!("temperature" in sent));
+        } finally {
+            if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
+            else process.env.OPENAI_API_KEY = previousKey;
+            if (previousModel === undefined) delete process.env.OPENAI_SCREENPLAY_MODEL;
+            else process.env.OPENAI_SCREENPLAY_MODEL = previousModel;
+        }
+    });
+
     test("parses its own body up to 12mb, above the app-wide 2mb limit", async (t) => {
         t.mock.method(console, "error", () => {});
         t.mock.method(console, "warn", () => {});
