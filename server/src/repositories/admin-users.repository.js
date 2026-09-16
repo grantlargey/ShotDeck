@@ -1,6 +1,7 @@
 /**
- * Admin account persistence. Rows include password_hash; the serializer is the
- * only place that shapes them for API responses.
+ * Admin account persistence, private to the auth domain. Rows include
+ * password_hash; routes/auth.routes.js shapes them for API responses through
+ * an explicit field allowlist.
  */
 export async function createAdminUser(db, { id, email, passwordHash, role, mustChangePassword }) {
     const result = await db.query(

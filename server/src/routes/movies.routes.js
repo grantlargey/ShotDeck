@@ -1,19 +1,30 @@
 import { Router } from "express";
-import * as moviesController from "../controllers/movies.controller.js";
+import { pool } from "../db.js";
 import { requireAdmin } from "../middleware/require-admin.js";
+import * as moviesService from "../services/movies.service.js";
 
-/**
- * Movie catalog routes.
- *
- * This file intentionally contains no SQL or validation details; it is the
- * backend's public menu for movie resources.
- */
+/** Movie routes. Validation, SQL and response shaping live in services/movies.service.js. */
 const router = Router();
 
-router.post("/movies", requireAdmin, moviesController.createMovie);
-router.get("/movies", moviesController.listMovies);
-router.get("/movies/:id", moviesController.getMovie);
-router.put("/movies/:id", requireAdmin, moviesController.updateMovie);
-router.delete("/movies/:id", requireAdmin, moviesController.deleteMovie);
+router.post("/movies", requireAdmin, async (req, res) => {
+    res.status(201).json(await moviesService.createMovie(pool, req.body));
+});
+
+router.get("/movies", async (req, res) => {
+    res.json(await moviesService.listMovies(pool));
+});
+
+router.get("/movies/:id", async (req, res) => {
+    res.json(await moviesService.getMovie(pool, req.params.id));
+});
+
+router.put("/movies/:id", requireAdmin, async (req, res) => {
+    res.json(await moviesService.updateMovie(pool, req.params.id, req.body));
+});
+
+router.delete("/movies/:id", requireAdmin, async (req, res) => {
+    await moviesService.deleteMovie(pool, req.params.id);
+    res.status(204).send();
+});
 
 export default router;

@@ -1,6 +1,5 @@
 import path from "path";
 import sharp from "sharp";
-import * as annotationsRepository from "../repositories/annotations.repository.js";
 import { getObjectBytes, putObjectToS3 } from "../s3.js";
 
 /**
@@ -27,7 +26,7 @@ const failedAt = new Map();
 let draining = false;
 
 /** A thumbnail lives in a `thumbs/` folder beside its image, under the same key prefix. */
-export function getThumbnailKey(imageKey) {
+function getThumbnailKey(imageKey) {
     const { dir, base } = path.posix.parse(imageKey);
     return path.posix.join(dir, "thumbs", `${base}.webp`);
 }
@@ -47,7 +46,16 @@ async function createThumbnail(db, imageKey) {
         body: thumbnail,
         cacheControl: "max-age=86400",
     });
-    await annotationsRepository.setThumbnailKeyForImage(db, { imageKey, thumbKey });
+    // Only stills still showing this image take the thumbnail, so a replaced image never gets a stale one.
+    await db.query(
+        `
+        UPDATE annotations
+        SET thumb_key = $2
+        WHERE image_key = $1
+          AND thumb_key IS DISTINCT FROM $2
+      `,
+        [imageKey, thumbKey]
+    );
 }
 
 async function drain(db) {
@@ -67,7 +75,7 @@ async function drain(db) {
 }
 
 /** Queues thumbnails for these images and returns right away. */
-export function queueThumbnails(db, imageKeys) {
+function queueThumbnails(db, imageKeys) {
     const now = Date.now();
     for (const imageKey of imageKeys) {
         if (!imageKey || pendingImageKeys.has(imageKey)) continue;
@@ -78,7 +86,7 @@ export function queueThumbnails(db, imageKeys) {
     if (!draining && pendingImageKeys.size > 0) drain(db);
 }
 
-/** Queues thumbnails for annotation rows whose image doesn't have one yet. */
+/** Queues thumbnails for still rows whose image doesn't have one yet. */
 export function queueThumbnailsForRows(db, rows) {
     // thumb_key is undefined, not null, until the migration that adds it has run.
     const imageKeys = rows.filter((row) => row?.image_key && row.thumb_key === null).map((row) => row.image_key);
@@ -87,7 +95,15 @@ export function queueThumbnailsForRows(db, rows) {
 
 /** Queues thumbnails for every still that doesn't have one. */
 export async function queueMissingThumbnails(db) {
-    const imageKeys = await annotationsRepository.listImageKeysWithoutThumbnails(db);
+    const result = await db.query(
+        `
+        SELECT DISTINCT image_key
+        FROM annotations
+        WHERE COALESCE(image_key, '') <> ''
+          AND thumb_key IS NULL
+      `
+    );
+    const imageKeys = result.rows.map((row) => row.image_key);
     if (imageKeys.length > 0) console.log(`Queued ${imageKeys.length} still images for thumbnails`);
     queueThumbnails(db, imageKeys);
 }

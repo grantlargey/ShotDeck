@@ -2,7 +2,7 @@ import { HttpError } from "../utils/http-error.js";
 
 /**
  * The API's single error boundary. Express 5 forwards errors thrown or rejected
- * by async controllers here, so controllers don't catch them themselves.
+ * by async route handlers here, so handlers don't catch them themselves.
  *
  * Response contract (the client's getErrorMessage() relies on it):
  * - HttpError: its status and `{ error: message, ...details }`.

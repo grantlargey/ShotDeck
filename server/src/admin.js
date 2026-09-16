@@ -1,7 +1,6 @@
 import "./env.js";
 import { pool } from "./db.js";
-import { createOwner, resetPasswordByEmail } from "./services/auth.service.js";
-import { listAdminUsers } from "./repositories/admin-users.repository.js";
+import { createOwner, listAdmins, resetPasswordByEmail } from "./services/auth.service.js";
 import { hashPassword, passwordProblem } from "./utils/passwords.js";
 
 /*
@@ -122,7 +121,7 @@ async function main() {
             return;
         }
         case "list": {
-            const rows = await listAdminUsers(pool);
+            const rows = await listAdmins(pool);
             if (rows.length === 0) {
                 console.log("No admin accounts yet.");
                 return;

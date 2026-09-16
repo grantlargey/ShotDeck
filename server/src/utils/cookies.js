@@ -3,10 +3,10 @@
  * SameSite=Lax (not sent on cross-site POSTs), and Secure whenever the request
  * arrived over HTTPS, which the load balancer reports through X-Forwarded-Proto.
  */
-export const SESSION_COOKIE = "sd_admin";
+const SESSION_COOKIE = "sd_admin";
 export const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
-export function parseCookies(header) {
+function parseCookies(header) {
     const cookies = {};
     if (typeof header !== "string" || !header) return cookies;
 

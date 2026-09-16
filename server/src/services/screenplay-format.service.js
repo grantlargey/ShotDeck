@@ -10,6 +10,51 @@ import { HttpError } from "../utils/http-error.js";
  * client/src/shared/lib/screenplay/grammar.js; keep them in sync.
  */
 
+const MAX_TEXT_LENGTH = 60000;
+const MAX_PAGE_IMAGES = 6;
+const MAX_IMAGE_DATA_URL_LENGTH = 3_000_000;
+const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+
+function optionalPage(value) {
+    return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/** Reads a format request body: non-blank captured text, lengths within limits, and well-formed page images. */
+function readFormatRequest(body) {
+    const { capturedText, draftMarkdown, pageStart, pageEnd, pageImages, omittedPageCount } = body || {};
+
+    if (typeof capturedText !== "string" || !capturedText.trim()) {
+        throw new HttpError(400, "Invalid body. Expected capturedText to be a non-empty string.");
+    }
+    if (capturedText.length > MAX_TEXT_LENGTH || (typeof draftMarkdown === "string" && draftMarkdown.length > MAX_TEXT_LENGTH)) {
+        throw new HttpError(413, "The selection is too long to format. Capture a shorter range.");
+    }
+
+    const images = Array.isArray(pageImages) ? pageImages : [];
+    if (images.length > MAX_PAGE_IMAGES) {
+        throw new HttpError(400, `At most ${MAX_PAGE_IMAGES} page images can be sent.`);
+    }
+    for (const image of images) {
+        if (
+            !Number.isInteger(image?.page) ||
+            typeof image?.dataUrl !== "string" ||
+            image.dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH ||
+            !IMAGE_DATA_URL.test(image.dataUrl)
+        ) {
+            throw new HttpError(400, "Invalid page image. Expected { page:int, dataUrl:base64 image }.");
+        }
+    }
+
+    return {
+        capturedText,
+        draftMarkdown: typeof draftMarkdown === "string" ? draftMarkdown : "",
+        pageStart: optionalPage(pageStart),
+        pageEnd: optionalPage(pageEnd),
+        pageImages: images.map((image) => ({ page: image.page, dataUrl: image.dataUrl })),
+        omittedPageCount: Number.isInteger(omittedPageCount) && omittedPageCount > 0 ? omittedPageCount : 0,
+    };
+}
+
 const EXAMPLE = `<p align="right">FADE IN:</p>
 
 ## INT. DEPT. OF HEALTH, OFFICE - MORNING
@@ -57,7 +102,6 @@ const SYSTEM_PROMPT = [
 
 function extractResponseOutputText(payload) {
     if (!payload || typeof payload !== "object") return "";
-    if (typeof payload.output_text === "string") return payload.output_text;
 
     const parts = [];
     for (const block of Array.isArray(payload.output) ? payload.output : []) {
@@ -107,14 +151,16 @@ function buildUserContent({ capturedText, draftMarkdown, pageStart, pageEnd, pag
     return content;
 }
 
-export async function formatScreenplaySelection(input) {
+/** Reads a format request, then asks OpenAI for an AI proposal. Resolves to `{ markdown, model }`. */
+export async function formatScreenplaySelection(body) {
+    const input = readFormatRequest(body);
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
         console.error("Screenplay formatting is disabled: OPENAI_API_KEY is not set.");
         throw new HttpError(503, "AI formatting isn't available right now.");
     }
 
-    const model = process.env.OPENAI_SCREENPLAY_MODEL || process.env.OPENAI_FORMAT_MODEL || "gpt-5-nano";
+    const model = process.env.OPENAI_SCREENPLAY_MODEL || "gpt-5-nano";
     const timeoutMs = Number(process.env.OPENAI_SCREENPLAY_TIMEOUT_MS || 90000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);

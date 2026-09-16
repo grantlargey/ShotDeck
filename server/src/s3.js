@@ -12,7 +12,7 @@ if (!region || !bucket) {
   console.warn("Missing AWS_REGION or S3_BUCKET in server/.env");
 }
 
-export const s3 = new S3Client({ region });
+const s3 = new S3Client({ region });
 
 // View URLs are signed from the start of a fixed window, so a key keeps the same
 // URL for the whole window: browsers reuse cached images and the API skips
@@ -75,7 +75,7 @@ function sanitizeFileName(fileName) {
   return `${safeName}${safeExt}`;
 }
 
-export function buildObjectKey({ movieId, type, filename, namespace = "" }) {
+export function buildObjectKey({ movieId, type, filename }) {
   if (!movieId) throw new Error("movieId is required");
   if (!filename) throw new Error("filename is required");
 
@@ -95,12 +95,7 @@ export function buildObjectKey({ movieId, type, filename, namespace = "" }) {
   const movieSegment = sanitizePathSegment(movieId);
   if (!movieSegment) throw new Error("movieId is invalid");
 
-  const namespaceSegments = String(namespace || "")
-    .split("/")
-    .map(sanitizePathSegment)
-    .filter(Boolean);
-
-  return [root, movieSegment, ...namespaceSegments, sanitizeFileName(filename)].join("/");
+  return [root, movieSegment, sanitizeFileName(filename)].join("/");
 }
 
 export async function createPresignedPutUrl({ key, contentType }) {

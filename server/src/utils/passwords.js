@@ -15,8 +15,8 @@ const KEY_LENGTH = 64;
 const SALT_LENGTH = 16;
 const HASH_PATTERN = /^scrypt\$(\d+)\$(\d+)\$(\d+)\$([A-Za-z0-9_-]+)\$([A-Za-z0-9_-]+)$/;
 
-export const MIN_PASSWORD_LENGTH = 12;
-export const MAX_PASSWORD_LENGTH = 200;
+const MIN_PASSWORD_LENGTH = 12;
+const MAX_PASSWORD_LENGTH = 200;
 
 /** Why a password can't be used, written for the person choosing it, or null when it's fine. */
 export function passwordProblem(password) {

@@ -23,7 +23,7 @@ const { cookie } = await signInOwner(api);
 const INVALID_MOVIE =
     "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) writer:string, (optional) cinematographer:string, (optional) cover_image_key:string, (optional) links:string[] }";
 // changes in 11: movie links are removed (A8)
-const INVALID_LINKS = "Invalid body. 'links' must be an array of strings (or a newline-separated string).";
+const INVALID_LINKS = "Invalid body. 'links' must be an array of strings.";
 
 // changes in 11: no links (A8)
 const MOVIE_FIELDS = [
@@ -106,17 +106,14 @@ describe("creating a movie", () => {
         }
     });
 
-    // changes in 05: expected to become a 400 (B9)
-    test("a signed-in create with no body at all is a 500", async (t) => {
-        t.mock.method(console, "error", () => {});
-        await expectError(api.post("/movies", { cookie }), 500, "Something went wrong on the server.");
+    test("a signed-in create with no body at all is a 400", async () => {
+        await expectError(api.post("/movies", { cookie }), 400, INVALID_MOVIE);
     });
 
-    // changes in 05: the cover image key must be a string (B9)
-    test("stores a cover image key that isn't a string as text", async () => {
-        const movie = await createMovie(api, cookie, { cover_image_key: 5 });
-        assert.equal(movie.cover_image_key, "5");
-        assert.match(movie.cover_image_url, signedUrlPattern("5"));
+    test("requires the cover image key to be a string or null", async () => {
+        for (const cover_image_key of [5, ["covers/a.jpg"], {}]) {
+            await expectError(api.post("/movies", { cookie, body: movieBody({ cover_image_key }) }), 400, INVALID_MOVIE);
+        }
     });
 
     test("trims writer and cinematographer, storing blank, null or missing values as null", async () => {
@@ -131,23 +128,15 @@ describe("creating a movie", () => {
 
     // changes in 11: movie links are removed (A8)
     describe("links", () => {
-        // changes in 05: non-string links are rejected (B9)
-        test("are trimmed, blanks dropped and values turned into strings; null is an empty list", async () => {
-            assert.deepEqual((await createMovie(api, cookie, { links: [" https://a.example ", "", 5] })).links, [
-                "https://a.example",
-                "5",
-            ]);
+        test("are trimmed with blanks dropped; null is an empty list", async () => {
+            assert.deepEqual((await createMovie(api, cookie, { links: [" https://a.example ", ""] })).links, ["https://a.example"]);
             assert.deepEqual((await createMovie(api, cookie, { links: null })).links, []);
         });
 
-        // changes in 05: string links are rejected (B9)
-        test("accept a newline-separated string", async () => {
-            const movie = await createMovie(api, cookie, { links: "https://a.example\r\n\n https://b.example " });
-            assert.deepEqual(movie.links, ["https://a.example", "https://b.example"]);
-        });
-
-        test("that are neither a list nor a string are a 400, reported after the other fields", async () => {
-            await expectError(api.post("/movies", { cookie, body: movieBody({ links: 5 }) }), 400, INVALID_LINKS);
+        test("that aren't a list of strings are a 400, reported after the other fields", async () => {
+            for (const links of [5, "https://a.example\nhttps://b.example", ["https://a.example", 5]]) {
+                await expectError(api.post("/movies", { cookie, body: movieBody({ links }) }), 400, INVALID_LINKS);
+            }
             await expectError(
                 api.post("/movies", { cookie, body: movieBody({ links: 5, title: null }) }),
                 400,
@@ -240,11 +229,18 @@ describe("updating a movie", () => {
         await expectError(api.put(`/movies/${movie.id}`, { body: movieBody() }), 401, "Sign in to make changes.");
     });
 
-    // changes in 05: expected to become a 400 (B9)
-    test("a signed-in update with no body at all is a 500", async (t) => {
-        t.mock.method(console, "error", () => {});
+    test("a signed-in update with no body at all is a 400", async () => {
         const movie = await savedMovie();
-        await expectError(api.put(`/movies/${movie.id}`, { cookie }), 500, "Something went wrong on the server.");
+        await expectError(api.put(`/movies/${movie.id}`, { cookie }), 400, INVALID_MOVIE);
+    });
+
+    test("requires a string or null cover image key and a list of links, checked before the movie is looked up", async () => {
+        const movie = await savedMovie();
+        await expectError(api.put(`/movies/${movie.id}`, { cookie, body: movieBody({ cover_image_key: 5 }) }), 400, INVALID_MOVIE);
+        await expectError(api.put(`/movies/${randomUUID()}`, { cookie, body: movieBody({ cover_image_key: 5 }) }), 400, INVALID_MOVIE);
+        // changes in 11: movie links are removed (A8)
+        await expectError(api.put(`/movies/${movie.id}`, { cookie, body: movieBody({ links: "https://b.example" }) }), 400, INVALID_LINKS);
+        assertSameRecords((await api.get(`/movies/${movie.id}`)).body, movie);
     });
 });
 
