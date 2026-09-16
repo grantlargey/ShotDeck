@@ -218,12 +218,75 @@ Stored rows are canonical, so the overlap implementation does not filter unsuppo
 | Tags | `tags` | `tags` |
 | AI proposal | private token/provenance plus public status | never persisted until accepted as scene text |
 
+## Where to change behavior
+
+| Change | Primary owner | Related seam |
+|---|---|---|
+| Canonical request fields and validation order | `buildSavePayload` in `model/sceneDraft.js` | `saveScene` in `ui/ScriptViewerPage.jsx` sends the result and owns notices/prompts. |
+| Capture-unavailable messages | `captureUnavailableReason` in `model/captureRange.js` | `CAPTURE_UNAVAILABLE_ERRORS` in `model/sceneDraft.js` maps reasons to user text. |
+| Film timing validation, display and overlap | `entities/script-scene/model/filmTiming.js` | `buildSavePayload` chooses its place in save validation. |
+| Script-location validity, page labels, scrolling and overlap | `entities/script-scene/model/scriptLocation.js` | Keep every consumer on `isValidScriptLocation`; do not grow another validity rule. |
+| Stored scene text, order and links | `entities/script-scene/model/capturedScene.js` | Search, cards, scene detail and the viewer all consume it. |
+| Anchor placement, swapping, resolution and margin lanes | `model/anchors.js` | `PdfPageFrame` renders the resulting draft markers and stored segments. |
+| PDF line construction and pointer snapping | `shared/lib/pdf-text/pageTextLines.js` | `useScriptTextIndex` owns background publication. |
+| Screenplay layout classification | `shared/lib/screenplay/layoutClassifier.js` | `captureRange.js` supplies positioned line segments and the estimated action margin. |
+| Text origin, stale state, dirty state and re-capture | `useSceneDraft` reducer and derived view | `AnnotatorPanel` and `DraftEditorModal` present, but do not reproduce, those rules. |
+| Editor replacement, focus and caret handoff | `editorKey` in `useSceneDraft`; `ScreenplayEditor` in `ui/ScreenplayEditor.jsx` | Index publication is the important race boundary. |
+| AI request payload and selection snapshots | `startProposal` in `useSceneDraft`; `requestAiFormat` in `ScriptViewerPage` | `DraftEditorModal` compares the proposal with the request-time baseline. |
+| Save/delete response reconciliation | `useSceneDraft` completion callbacks | `model/sceneCollection.js` owns network state and list replacement. |
+| Confirmation wording and navigation guards | `ui/ScriptViewerPage.jsx` | The draft exposes `dirty`, `confirmStaleText` and `recaptureReplacesEdits`. |
+| Keyboard anchors and undo exclusions | `ui/ScriptViewerPage.jsx` | Inputs, editors, modifier chords and the open anchor menu must keep their keys. |
+| Visitor scene selection and Show in script | `ui/ScriptViewerPage.jsx` | `SceneViewerModal` presents the scene; `sceneScrollTarget` supplies the exact target. |
+| Test indexes and API rows | `test/textIndexFixtures.js`, `test/pageHarness.js` | These must mirror `useScriptTextIndex` snapshots and the canonical serializer shape. |
+
 ## Regression coverage
 
-- `entities/script-scene/model/scriptLocation.test.js` pins page derivation, scrolling, strict bounds, inclusive overlap, adjacency, cross-page ranges, containment, one-line scenes, and own-row exclusion.
-- `entities/script-scene/model/capturedScene.test.js` pins canonical text, ordering, and links.
-- `model/sceneDraft.test.jsx` tests the draft interface: exact payload keys, incomplete and malformed locations, indexing, undo, editor identity, stale Saved/Edited/AI text, proposals, save/delete races, previews, and overlap refusal.
-- `model/sceneCollection.test.js` tests ordered loading and save/delete request reconciliation.
-- `ui/ScriptViewerPage.test.jsx` exercises the composed page through real draft, capture, panel, and editor modules. Its named save/reload test is **“saves the exact canonical payload, applies the API-shaped response, and reopens the scene intact.”** It also pins clearing/undo, incremental indexing, stale confirmation, AI acceptance, focus/caret handoff, request races, canonical scrolling, and exact margin segments.
+Run all client checks from the repository root:
 
-The page suite doubles only external seams: HTTP operation modules, session state, `react-pdf`, the background index store, page windowing, page-frame rendering, AI page snapshots, and `window.confirm`.
+```bash
+npm test --prefix client -- --run
+npm run lint --prefix client
+npm run build --prefix client
+```
+
+Vitest uses jsdom. The page suite doubles only external seams: HTTP operation modules, session state, `react-pdf`, the background index store, page windowing, page-frame rendering, AI page snapshots, and `window.confirm`. The draft, capture, screenplay classifier, panel, editor and dialogs are real.
+
+### Shared entity and collection rules
+
+- `entities/script-scene/model/scriptLocation.test.js` pins the one strict predicate, page/line caps, malformed and reversed locations, page derivation, scrolling, inclusive overlap, adjacent lines, cross-page containment, one-line scenes and own-row exclusion. Stored rows are canonical fixtures; only draft inputs are invalid.
+- `entities/script-scene/model/capturedScene.test.js` pins `scene_text`, start-page/start-line/id ordering and links derived from the start anchor.
+- `model/sceneCollection.test.js` pins sorted loading, create/update/delete list reconciliation, busy state, completion callbacks and failures that leave the list unchanged.
+
+### Draft interface
+
+`model/sceneDraft.test.jsx` exercises the hook without duplicating reducer internals:
+
+- **Committed view:** several actions in one React batch read the preceding committed snapshot, and actions never see a render React abandoned. Action, anchor, preview and public proposal identities stay stable while their inputs do.
+- **Capture work and indexing:** timing, tags, editing and proposal transitions do not recapture. Anchor or index changes do. Stable publications preserve the editor; layout reclassification replaces untouched Captured text. Edits that commit before or in the same batch as publication survive, as do accepted AI text and a pending proposal's request-time baseline.
+- **Location requirements:** incomplete, malformed, out-of-bounds and reversed anchors; unfinished ranges; completed indexes missing a required page; empty anchor pages; and captures reduced to blank raw text all refuse locally. The exact six-field payload test uses a real taxonomy value.
+- **Text provenance:** stale Saved, Edited and AI text require confirmation; moving back to the original pair clears it. The re-capture table pins `none`, `revert` and `recapture`, whether edits would be replaced, editor-key revisions, and a 50-entry undo cap.
+- **Proposal provenance:** StrictMode token allocation, superseded/discarded/previous-draft responses, anchor changes while pending or ready, clearing anchors, and a canonical saved scene requested before its pages are indexed.
+- **Persistence:** unchanged responses establish a baseline; newer edits survive; create responses attach their id; reset/load/reopen generations reject old responses; delete completion clears unchanged work, detaches changed work and invalidates an older pending save. Same-batch cases are explicit.
+- **Overlap:** film timing and script-location rules are checked in the documented order, with the draft's own row excluded.
+
+### Composed page behavior
+
+`ui/ScriptViewerPage.test.jsx` is the user-visible matrix:
+
+- **Canonical round trip:** **“saves the exact canonical payload, applies the API-shaped response, and reopens the scene intact”** asserts the six exact keys, distinct scene/raw text, timing, tags and anchors; applies the fake Contract response; starts a new draft; reopens the created row; then updates it with the same payload.
+- **Anchors and keys:** clear makes a loaded scene unsaveable; undo restores it. Keyboard placement and undo ignore editor/input focus, modifiers and an open anchor menu.
+- **Index/editor races:** unfinished ranges refuse; stable publishes keep focus/caret; reclassification hands them to an untouched replacement; manual edits before and in the same batch as reclassification stay in the same editor. Page-frame handler identity and capture locality are pinned.
+- **Text and AI:** re-capture asks before replacing edits; Saved, Edited and AI stale-save paths keep separate confirmations; an edit during a confirmed AI save requires a new decision. AI results remain inert until accepted, keep the request-time baseline across anchor movement, report/dismiss failures, and do nothing when no capture or draft text exists.
+- **Persistence races:** a response does not replace a different, reset or left-and-reopened draft. A create response binds newer edits to the new id. Delete completion handles unchanged, changed and different open drafts separately.
+- **Overlap and navigation:** film ranges that overlap refuse while touching saves; shared boundary lines refuse while adjacent lines save. Admin and visitor deep links, visitor scene-bar selection, Show in script, exact margin segments, canonical DOM order and API load failure are covered.
+
+### Browser verification history and limitations
+
+The entries below are historical evidence from 2026-09-14. They exercised the same editor state machine before the canonical storage cutover, so their interaction/race findings still matter; their old request-field and storage-shape observations are **not** evidence for the current HTTP contract. The current canonical contract is verified automatically by the named save/response/reopen test above, not by a post-cutover browser run yet.
+
+- Chromium, the real Express routes and serializers, and a disposable PostgreSQL database passed login/session, capture/save, reload/reopen, update and delete with synthetic records. A delayed save response preserved a newer time edit and the next save targeted the same row. PDF delivery alone used a local fixture and all external traffic was blocked.
+- The stale-text flow was exercised with object-storage sends forced to fail: a fresh capture saved without a prompt; canceling a moved-anchor prompt sent nothing; confirming stored the retained text with the new location and raw capture; reloading cleared the prompt; and an edit during a confirmed request survived and required another decision. Those semantics remain current, but the historical requests used the pre-canonical field names.
+- The indexing/focus flow ran in Chromium 151 against the Vite development app in `StrictMode`, with real pdf.js indexing a synthetic 17-page PDF. A gate injected into the locally served indexer published pages on cue; page 17 moved the estimated action margin. Unrelated publications preserved focus/caret, reclassification replaced untouched text and handed off focus, real keystrokes around a publication survived, and Script/Markdown/reopened views agreed. Markdown mode moved the caret to the end in Chromium. The same-batch boundary was observable only in automated hook/page tests.
+- Historical harness files live in the ignored `.scratch/architecture-followups/c3-browser/` directory and use a locally cached Playwright.
+
+Neither the historical browser work nor jsdom verifies object-storage credentials/CORS, real AI output, browser layout and pointer snapping across engines, concurrent database exclusion constraints, the production deployment, or the issue-11/issue-14 integration result. After those branches merge, rerun the full client suite/build and perform one real-browser canonical create/reopen/update/delete smoke check before release.

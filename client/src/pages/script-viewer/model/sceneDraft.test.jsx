@@ -1,4 +1,5 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, render, renderHook } from "@testing-library/react";
+import { Component, StrictMode, useLayoutEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   marginShiftPage,
@@ -8,6 +9,7 @@ import {
   page2,
   page3,
   positionedPage,
+  SAVED_RAW,
   SAVED_TEXT,
   savedScene,
   sceneRow,
@@ -32,13 +34,20 @@ const BELL = "A bell over the door rings. SAM steps in from the storm, shaking w
 const P1_SHORT_MARKDOWN = [`## ${DINER}`, RAIN, BELL].join("\n\n");
 const P1_SHORT_PLAIN = [DINER, RAIN, BELL].join("\n\n");
 
-function renderDraft(index = FULL_INDEX) {
-  return renderHook(({ currentIndex }) => useSceneDraft(currentIndex), { initialProps: { currentIndex: index } });
+function renderDraft(index = FULL_INDEX, options = {}) {
+  return renderHook(({ currentIndex }) => useSceneDraft(currentIndex), {
+    initialProps: { currentIndex: index },
+    ...options,
+  });
 }
 
 function view(result) {
   const [draft, actions] = result.current;
   return { draft, actions };
+}
+
+function capturedEditorKey(revision, anchorPair) {
+  return expect.stringMatching(new RegExp(`^${revision}:${anchorPair}#[0-9a-z]+\\.[0-9a-z]+$`));
 }
 
 function run(result, callback) {
@@ -69,8 +78,120 @@ function acceptProposal(result, markdown) {
   return request;
 }
 
+function DraftProbe({ index, discard, onActions }) {
+  const [, actions] = useSceneDraft(index);
+  useLayoutEffect(() => onActions(actions));
+  if (discard) throw new Error("This render is discarded.");
+  return null;
+}
+
+class DiscardBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 beforeEach(() => {
   captureAnchoredRange.mockClear();
+});
+
+describe("committed view and stable interface", () => {
+  it("lets actions in one batch read only the view committed before the batch", () => {
+    const { result } = renderDraft();
+    place(result, "start", page1, 0);
+    place(result, "end", page1, 7);
+
+    let request;
+    act(() => {
+      const { actions } = view(result);
+      actions.setAnchorAtLine("end", 1, page1.lines[4]);
+      request = actions.startProposal();
+    });
+
+    expect(request.snapshotAnchors.end).toMatchObject({ page: 1, line: 7 });
+    expect(request.capturedText).toContain("Coffee is all I can do.");
+    expect(view(result).draft.anchors.end).toMatchObject({ page: 1, line: 4 });
+  });
+
+  it("builds from committed timing and normalizes only after the field commits", () => {
+    const { result } = renderDraft();
+    let pendingSave;
+    act(() => {
+      const { actions } = view(result);
+      actions.setTime("startTime", "1:05");
+      actions.normalizeTime("startTime");
+      pendingSave = actions.buildSave(NO_OTHER_SCENES);
+    });
+    expect(pendingSave).toEqual({ error: "Enter a start and an end time for this scene." });
+    expect(view(result).draft.startTime).toBe("1:05");
+    run(result, (actions) => actions.normalizeTime("startTime"));
+    expect(view(result).draft.startTime).toBe("00:01:05");
+  });
+
+  it("never exposes actions from an abandoned concurrent render", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    let actions;
+    const tree = (index, discard) => (
+      <DiscardBoundary>
+        <DraftProbe index={index} discard={discard} onActions={(next) => (actions = next)} />
+      </DiscardBoundary>
+    );
+    const rendered = render(tree(textIndexFrom([]), false));
+    act(() => actions.loadScene(savedScene));
+    rendered.rerender(tree(FULL_INDEX, true));
+
+    let request;
+    act(() => {
+      request = actions.startProposal();
+    });
+    expect(request.snapshotAnchors).toBeNull();
+    expect(request.capturedText).toBe("EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.");
+    consoleError.mockRestore();
+  });
+
+  it("keeps action, anchor, preview and proposal identities when their inputs do not change", () => {
+    const { result, rerender } = renderDraft();
+    const actions = view(result).actions;
+    place(result, "start", page1, 0);
+    place(result, "end", page1, 7);
+    run(result, (next) => next.editText("## EDITED\n\nText."));
+    const request = run(result, (next) => next.startProposal());
+    const before = view(result).draft;
+    rerender({ currentIndex: FULL_INDEX });
+    expect(view(result).actions).toBe(actions);
+    expect(view(result).draft.anchors).toBe(before.anchors);
+    expect(view(result).draft.previewScene).toBe(before.previewScene);
+    expect(view(result).draft.proposal).toBe(before.proposal);
+    expect(Object.keys(before.proposal).sort()).toEqual(["capturedPlainText", "error", "markdown", "status"]);
+    run(result, (next) => next.proposalReady(request.token, "## AI"));
+  });
+
+  it("does not recapture for unrelated draft edits but does for anchor and index changes", () => {
+    const { result, rerender } = renderDraft();
+    place(result, "start", page1, 0);
+    place(result, "end", page1, 7);
+    const calls = captureAnchoredRange.mock.calls.length;
+    run(result, (actions) => actions.setTime("startTime", "1:00"));
+    run(result, (actions) => actions.toggleTag("tone:dread"));
+    run(result, (actions) => actions.editText("## EDITED\n\nText."));
+    const request = run(result, (actions) => actions.startProposal());
+    run(result, (actions) => actions.proposalFailed(request.token, "failed"));
+    expect(captureAnchoredRange.mock.calls.length).toBe(calls);
+    place(result, "end", page1, 4);
+    expect(captureAnchoredRange.mock.calls.length).toBeGreaterThan(calls);
+    const afterAnchor = captureAnchoredRange.mock.calls.length;
+    rerender({ currentIndex: textIndexFrom([page1]) });
+    expect(captureAnchoredRange.mock.calls.length).toBeGreaterThan(afterAnchor);
+  });
 });
 
 describe("capture and canonical save contract", () => {
@@ -79,7 +200,7 @@ describe("capture and canonical save contract", () => {
     place(result, "start", page1, 0);
     place(result, "end", page1, 4);
     setTiming(result);
-    run(result, (actions) => actions.toggleTag("mood:tense"));
+    run(result, (actions) => actions.toggleTag("tone:dread"));
 
     const { payload, confirmStaleText } = save(result);
     expect(payload).toEqual({
@@ -88,7 +209,7 @@ describe("capture and canonical save contract", () => {
       script_location: scriptLocation(page1, 0, page1, 4),
       scene_text: P1_SHORT_MARKDOWN,
       raw_text: P1_SHORT_PLAIN,
-      tags: ["mood:tense"],
+      tags: ["tone:dread"],
     });
     expect(confirmStaleText).toBe(false);
     expect(Object.keys(payload).sort()).toEqual([
@@ -118,6 +239,42 @@ describe("capture and canonical save contract", () => {
     setTiming(third.result);
     // No indexed line can be placed, so the draft remains incomplete.
     expect(save(third.result)).toEqual({ error: "Place a start anchor in the script before saving." });
+  });
+
+  it("reports unreadable after indexing finishes without a required range page", () => {
+    const { result } = renderDraft(textIndexFrom([page1], { complete: true }));
+    run(result, (actions) =>
+      actions.loadScene(
+        sceneRow({
+          id: "missing-page",
+          script_location: scriptLocation(page1, 0, page2, 3),
+          scene_text: "## SAVED\n\nText.",
+          raw_text: "SAVED\n\nText.",
+        })
+      )
+    );
+    expect(save(result)).toEqual({
+      error: "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.",
+    });
+  });
+
+  it("reports unreadable when an indexed anchor page has no resolvable lines", () => {
+    const emptyPage = positionedPage(5, []);
+    const emptyAnchor = { page: 5, line: 0, top: 90, bottom: 102, text: "missing" };
+    const { result } = renderDraft(textIndexFrom([emptyPage], { complete: true }));
+    run(result, (actions) =>
+      actions.loadScene(
+        sceneRow({
+          id: "empty-page",
+          script_location: { start: emptyAnchor, end: emptyAnchor },
+          scene_text: "## SAVED\n\nText.",
+          raw_text: "SAVED\n\nText.",
+        })
+      )
+    );
+    expect(save(result)).toEqual({
+      error: "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.",
+    });
   });
 
   it.each([
@@ -242,6 +399,116 @@ describe("anchors, indexing and editor identity", () => {
   });
 });
 
+describe("index publication and proposal races", () => {
+  const PARTIAL = textIndexFrom([page1, page2]);
+  const SHIFTED = textIndexFrom([page1, page2, page3, marginShiftPage]);
+  const AI_TEXT = "## AI HEADING\n\nWords from the formatter.";
+
+  function anchorAcrossPages(result) {
+    place(result, "start", page1, 0);
+    place(result, "end", page2, 3);
+    setTiming(result);
+  }
+
+  it.each([
+    ["after the first edit commits", false],
+    ["in the same React batch as the first edit", true],
+  ])("keeps edited text when capture reclassification publishes %s", (_, sameBatch) => {
+    const { result, rerender } = renderDraft(PARTIAL);
+    anchorAcrossPages(result);
+    const before = view(result).draft;
+    const edited = before.text.replace(`## ${DINER}`, "## INT. DINER - LATE NIGHT");
+
+    if (sameBatch) {
+      act(() => {
+        view(result).actions.editText(edited);
+        rerender({ currentIndex: SHIFTED });
+      });
+    } else {
+      run(result, (actions) => actions.editText(edited));
+      rerender({ currentIndex: SHIFTED });
+    }
+
+    expect(view(result).draft).toMatchObject({
+      text: edited,
+      textOrigin: "edited",
+      textStale: false,
+      editorKey: before.editorKey,
+      recaptureOption: "revert",
+    });
+    expect(save(result)).toMatchObject({
+      confirmStaleText: false,
+      payload: { scene_text: edited, raw_text: view(result).draft.capturedPlainText },
+    });
+    run(result, (actions) => actions.recapture());
+    expect(view(result).draft).toMatchObject({
+      textOrigin: "capture",
+      recaptureOption: "none",
+      editorKey: capturedEditorKey(1, "1:0-2:3"),
+    });
+  });
+
+  it("keeps accepted AI text and a pending request's capture baseline during reclassification", () => {
+    const { result, rerender } = renderDraft(PARTIAL);
+    anchorAcrossPages(result);
+    const requestedPlainText = view(result).draft.capturedPlainText;
+    acceptProposal(result, AI_TEXT);
+    const editorKey = view(result).draft.editorKey;
+    const request = run(result, (actions) => actions.startProposal());
+
+    rerender({ currentIndex: SHIFTED });
+    expect(view(result).draft).toMatchObject({ text: AI_TEXT, textOrigin: "ai", textStale: false, editorKey });
+    expect(view(result).draft.capturedPlainText).not.toBe(requestedPlainText);
+    expect(view(result).draft.proposal.capturedPlainText).toBe(requestedPlainText);
+
+    run(result, (actions) => actions.proposalReady(request.token, "## SECOND AI\n\nMore words."));
+    run(result, (actions) => actions.acceptProposal());
+    expect(save(result)).toMatchObject({
+      confirmStaleText: false,
+      payload: { scene_text: "## SECOND AI\n\nMore words.", raw_text: view(result).draft.capturedPlainText },
+    });
+  });
+
+  it("allocates proposal tokens once under StrictMode and ignores superseded, discarded and previous-draft results", () => {
+    const { result } = renderDraft(FULL_INDEX, { wrapper: ({ children }) => <StrictMode>{children}</StrictMode> });
+    expect(run(result, (actions) => actions.startProposal())).toBeNull();
+    place(result, "start", page1, 0);
+    place(result, "end", page1, 7);
+    const first = run(result, (actions) => actions.startProposal());
+    const second = run(result, (actions) => actions.startProposal());
+    expect([first.token, second.token]).toEqual([1, 2]);
+    run(result, (actions) => actions.proposalReady(first.token, "## OLD"));
+    expect(view(result).draft.proposal.status).toBe("loading");
+    run(result, (actions) => actions.proposalReady(second.token, "## NEW"));
+    expect(view(result).draft.proposal).toMatchObject({ status: "ready", markdown: "## NEW" });
+    run(result, (actions) => actions.discardProposal());
+    run(result, (actions) => actions.proposalReady(second.token, "## AFTER DISCARD"));
+    expect(view(result).draft.proposal).toBeNull();
+    const third = run(result, (actions) => actions.startProposal());
+    run(result, (actions) => actions.loadScene(savedScene));
+    run(result, (actions) => actions.proposalFailed(third.token, "too late"));
+    expect(view(result).draft.proposal).toBeNull();
+  });
+
+  it("keeps canonical saved-scene proposal provenance when indexing appears after the request", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([]));
+    run(result, (actions) => actions.loadScene(savedScene));
+    const request = run(result, (actions) => actions.startProposal());
+    expect(request).toMatchObject({
+      capturedText: SAVED_RAW,
+      draftMarkdown: SAVED_TEXT,
+      pageStart: 3,
+      pageEnd: 3,
+      snapshotAnchors: null,
+    });
+    run(result, (actions) => actions.proposalReady(request.token, AI_TEXT));
+    rerender({ currentIndex: FULL_INDEX });
+    expect(view(result).draft.proposal.capturedPlainText).toBe("");
+    run(result, (actions) => actions.acceptProposal());
+    expect(view(result).draft).toMatchObject({ textOrigin: "ai", textStale: false, recaptureOption: "revert" });
+  });
+});
+
 describe("stale text", () => {
   it.each([
     ["saved", () => {}],
@@ -276,6 +543,76 @@ describe("stale text", () => {
     run(result, (actions) => actions.recapture());
     expect(view(result).draft).toMatchObject({ textOrigin: "capture", textStale: false, recaptureOption: "none" });
     expect(save(result).confirmStaleText).toBe(false);
+  });
+});
+
+describe("re-capture, editor identity and anchor history", () => {
+  it.each([
+    ["fresh edited", "edited", false, "revert", true],
+    ["stale edited", "edited", true, "recapture", true],
+    ["fresh AI", "ai", false, "revert", true],
+    ["stale AI", "ai", true, "recapture", true],
+    ["stale saved", "saved", true, "recapture", false],
+  ])("derives the re-capture contract for %s text", (_, origin, stale, option, replaces) => {
+    const { result } = renderDraft();
+    if (origin === "saved") {
+      run(result, (actions) => actions.loadScene(savedScene));
+    } else {
+      place(result, "start", page1, 0);
+      place(result, "end", page1, 7);
+      if (origin === "edited") run(result, (actions) => actions.editText("## EDITED\n\nText."));
+      else acceptProposal(result, "## AI\n\nText.");
+    }
+    if (stale) {
+      if (origin === "saved") place(result, "end", page3, 4);
+      else place(result, "end", page1, 4);
+    }
+
+    const before = view(result).draft;
+    expect(before).toMatchObject({
+      textOrigin: origin,
+      textStale: stale,
+      recaptureOption: option,
+      recaptureReplacesEdits: replaces,
+    });
+    run(result, (actions) => actions.recapture());
+    expect(view(result).draft).toMatchObject({ textOrigin: "capture", textStale: false, recaptureOption: "none" });
+    expect(view(result).draft.editorKey).not.toBe(before.editorKey);
+  });
+
+  it("keeps an editor key through edits and anchor movement, then replaces it for re-capture, AI, load and reset", () => {
+    const { result } = renderDraft();
+    place(result, "start", page1, 0);
+    place(result, "end", page1, 7);
+    const captured = view(result).draft.editorKey;
+    expect(captured).toEqual(capturedEditorKey(0, "1:0-1:7"));
+    run(result, (actions) => actions.editText("## EDITED\n\nText."));
+    place(result, "end", page1, 4);
+    expect(view(result).draft.editorKey).toBe(captured);
+    run(result, (actions) => actions.recapture());
+    expect(view(result).draft.editorKey).toEqual(capturedEditorKey(1, "1:0-1:4"));
+    acceptProposal(result, "## AI\n\nText.");
+    expect(view(result).draft.editorKey).toBe("2:1:0-1:4");
+    run(result, (actions) => actions.loadScene(savedScene));
+    expect(view(result).draft.editorKey).toBe("3:3:0-3:3");
+    run(result, (actions) => actions.reset());
+    expect(view(result).draft.editorKey).toBe("4:");
+  });
+
+  it("caps undo history at 50 distinct anchor states and ignores same-line placement", () => {
+    const { result } = renderDraft();
+    for (let placement = 1; placement <= 60; placement += 1) {
+      place(result, "start", page1, placement % 2);
+    }
+    for (let undo = 1; undo <= 50; undo += 1) run(result, (actions) => actions.undoAnchors());
+    expect(view(result).draft.canUndoAnchors).toBe(false);
+    expect(view(result).draft.anchors.start).toMatchObject({ page: 1, line: 0 });
+
+    const second = renderDraft();
+    place(second.result, "start", page1, 0);
+    place(second.result, "start", page1, 0);
+    run(second.result, (actions) => actions.undoAnchors());
+    expect(view(second.result).draft).toMatchObject({ anchors: { start: null, end: null }, canUndoAnchors: false });
   });
 });
 
@@ -354,6 +691,29 @@ describe("persistence races", () => {
     expect(save(result).payload.scene_text).toBe("## NEWER\n\nNot in the response.");
   });
 
+  it("preserves an edit queued before the save response in the same React batch", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const pending = save(result);
+    const response = sceneRow({ ...savedScene, ...pending.payload });
+    act(() => {
+      view(result).actions.setTime("endTime", "00:11:30");
+      pending.applySaved(response);
+    });
+    expect(view(result).draft).toMatchObject({ savedScene: response, endTime: "00:11:30", dirty: true });
+  });
+
+  it("ignores a save response after reset even when both are queued in the same React batch", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const pending = save(result);
+    act(() => {
+      view(result).actions.reset();
+      pending.applySaved(sceneRow({ ...savedScene, ...pending.payload }));
+    });
+    expect(view(result).draft).toMatchObject({ savedScene: null, text: "", dirty: false });
+  });
+
   it("ignores a save response after another scene loads", () => {
     const { result } = renderDraft();
     run(result, (actions) => actions.loadScene(savedScene));
@@ -372,6 +732,24 @@ describe("persistence races", () => {
     act(() => complete());
 
     expect(view(result).draft).toMatchObject({ savedScene: null, textOrigin: "edited", text: "## KEEP\n\nThis work.", dirty: true });
+  });
+
+  it("deletion detaches newer edits and invalidates an older pending save in the same batch", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const pendingSave = save(result);
+    const completeDelete = run(result, (actions) => actions.prepareDelete(savedScene.id));
+    act(() => {
+      view(result).actions.editText("## UNSAVED\n\nKeep this text.");
+      completeDelete();
+      pendingSave.applySaved(sceneRow({ ...savedScene, ...pendingSave.payload }));
+    });
+    expect(view(result).draft).toMatchObject({
+      savedScene: null,
+      textOrigin: "edited",
+      text: "## UNSAVED\n\nKeep this text.",
+      dirty: true,
+    });
   });
 
   it("leaves a different draft alone when an earlier delete completes", () => {
