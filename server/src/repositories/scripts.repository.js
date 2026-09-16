@@ -6,20 +6,6 @@ export async function findScriptForMovie(db, { movieId, scriptId }) {
     return result.rows[0] || null;
 }
 
-export async function findLatestScriptForMovie(db, movieId) {
-    const result = await db.query(
-        `
-        SELECT *
-        FROM scripts
-        WHERE movie_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-        [movieId]
-    );
-    return result.rows[0] || null;
-}
-
 export async function listScriptsForMovie(db, movieId) {
     const result = await db.query(
         `

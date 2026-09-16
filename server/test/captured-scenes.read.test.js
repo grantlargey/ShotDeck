@@ -7,7 +7,6 @@ import {
     createScene,
     sceneBody,
     scenesPath,
-    signedUrlPattern,
     TAGS,
 } from "./helpers/fixtures.js";
 import { pool } from "../src/db.js";
@@ -75,22 +74,16 @@ describe("listing a script's captured scenes", () => {
         }
     });
 
-    // changes in 04: the scoped list's tag filter has no caller (B5)
-    test("filters by tags, matching all of them unless match=any", async () => {
+    test("ignores tags and match in the query: it has no tag filter", async () => {
         const place = await createMovieWithScript(api, cookie);
-        const both = await createScene(api, cookie, place, { tags: [TAGS.protagonist, TAGS.revelation], start_time_seconds: 0, end_time_seconds: 10 });
-        const one = await createScene(api, cookie, place, { tags: [TAGS.protagonist], start_time_seconds: 20, end_time_seconds: 30 });
-        const other = await createScene(api, cookie, place, { tags: [TAGS.selfConflict], start_time_seconds: 40, end_time_seconds: 50 });
-        const list = async (params) => ids((await api.get(`${scenesPath(place)}?${params}`)).body);
+        const tagged = await createScene(api, cookie, place, { tags: [TAGS.protagonist], start_time_seconds: 0, end_time_seconds: 10 });
+        const other = await createScene(api, cookie, place, { tags: [TAGS.selfConflict], start_time_seconds: 20, end_time_seconds: 30 });
 
-        assert.deepEqual(await list(query({ tags: `${TAGS.protagonist},${TAGS.revelation}` })), [both.id]);
-        assert.deepEqual(await list(query({ tags: `${TAGS.protagonist},${TAGS.revelation}`, match: "sideways" })), [both.id]);
-        assert.deepEqual(await list(query({ tags: `${TAGS.protagonist},${TAGS.revelation}`, match: "any" })), [both.id, one.id]);
-        assert.deepEqual(
-            await list(`${query({ tags: TAGS.revelation })}&${query({ tags: TAGS.selfConflict })}&match=any`),
-            [both.id, other.id]
-        );
-        assert.deepEqual(await list("tags="), [both.id, one.id, other.id]);
+        for (const params of [query({ tags: TAGS.protagonist }), query({ tags: TAGS.protagonist, match: "any" }), "tags="]) {
+            const response = await api.get(`${scenesPath(place)}?${params}`);
+            assert.equal(response.status, 200);
+            assert.deepEqual(ids(response.body), [tagged.id, other.id]);
+        }
     });
 
     test("gives each scene the earliest still with an image inside its film timing, edges included", async () => {
@@ -125,7 +118,7 @@ describe("listing a script's captured scenes", () => {
 });
 
 describe("searching captured scenes", () => {
-    test("is public and returns scenes from every movie, most recently updated first, with the movie title and a signed script URL", async () => {
+    test("is public and returns scenes from every movie, most recently updated first, with the movie title", async () => {
         const first = await createMovieWithScript(api, cookie);
         const second = await createMovieWithScript(api, cookie);
         const older = await createScene(api, cookie, first);
@@ -141,11 +134,9 @@ describe("searching captured scenes", () => {
         assert.deepEqual(onlyMine(response.body, [older, newer]), [older.id, newer.id]);
 
         const result = response.body.find((scene) => scene.id === older.id);
-        const { movie_title: movieTitle, script_url: scriptUrl, ...scene } = result;
+        const { movie_title: movieTitle, ...scene } = result;
         assert.deepEqual(scene, touched.body);
         assert.equal(movieTitle, first.movie.title);
-        // changes in 04: search results no longer sign script URLs (B3)
-        assert.match(scriptUrl, signedUrlPattern(first.script.s3_key));
     });
 
     test("filters by tags, matching all of them unless match=any", async () => {
@@ -164,43 +155,37 @@ describe("searching captured scenes", () => {
         assert.deepEqual((await search(`${query({ tags: TAGS.revelation })}&${query({ tags: TAGS.selfConflict })}&match=any`)).sort(), [both.id, one.id, other.id].sort());
     });
 
-    // changes in 04: the movie_id, script_id and q filters and the request's limit are removed (B5)
-    test("filters by movie_id, script_id and text, and takes a limit between 1 and 1000", async () => {
+    test("ignores movie_id, script_id, q and limit in the query", async () => {
         const place = await createMovieWithScript(api, cookie);
         const other = await createMovieWithScript(api, cookie);
-        const inSelected = await createScene(api, cookie, place, {
-            selected_text: "A ZEBRA crosses.",
-            formatted_selected_text: "Plain.",
-            raw_selected_text: "Plain.",
-            start_time_seconds: 0,
-            end_time_seconds: 10,
-        });
-        const inFormatted = await createScene(api, cookie, place, {
-            selected_text: "Plain.",
-            formatted_selected_text: "The zebra waits.",
-            raw_selected_text: "Plain.",
-            start_time_seconds: 20,
-            end_time_seconds: 30,
-        });
-        const inRaw = await createScene(api, cookie, place, {
-            selected_text: "Plain.",
-            formatted_selected_text: "Plain.",
-            raw_selected_text: "zebras",
-            start_time_seconds: 40,
-            end_time_seconds: 50,
-        });
-        const elsewhere = await createScene(api, cookie, other, { raw_selected_text: "zebra elsewhere" });
-        const search = async (params) => (await api.get(`/script-scenes?${query(params)}`)).body;
+        const zebra = await createScene(api, cookie, place, { raw_selected_text: "A zebra crosses." });
+        const plain = await createScene(api, cookie, other, { raw_selected_text: "Plain." });
+        const mine = [zebra, plain];
+        const search = async (params) => onlyMine((await api.get(`/script-scenes?${query(params)}`)).body, mine);
 
-        const byMovie = await search({ movie_id: place.movie.id });
-        assert.deepEqual(ids(byMovie), [inRaw.id, inFormatted.id, inSelected.id]);
-        assert.deepEqual(ids(await search({ script_id: other.script.id })), [elsewhere.id]);
-        assert.deepEqual(ids(await search({ movie_id: place.movie.id, q: "  zebra " })), [inRaw.id, inFormatted.id, inSelected.id]);
-        assert.deepEqual(ids(await search({ movie_id: place.movie.id, q: "WAITS" })), [inFormatted.id]);
+        for (const params of [{ movie_id: place.movie.id }, { script_id: other.script.id }, { q: "zebra" }, { limit: "1" }]) {
+            assert.deepEqual(await search(params), [plain.id, zebra.id]);
+        }
+    });
 
-        assert.deepEqual(ids(await search({ movie_id: place.movie.id, limit: "1" })), [inRaw.id]);
-        assert.deepEqual(ids(await search({ movie_id: place.movie.id, limit: "0" })), [inRaw.id]);
-        assert.equal((await search({ movie_id: place.movie.id, limit: "many" })).length, 3);
-        assert.equal((await search({ movie_id: place.movie.id, limit: "5000" })).length, 3);
+    test("returns at most 500 scenes, whatever limit the query asks for", async () => {
+        const place = await createMovieWithScript(api, cookie);
+        // Stored directly: 501 scenes through the API would make this test slow.
+        await pool.query(
+            `WITH anchors AS (
+               INSERT INTO script_scene_anchors (id, movie_id, script_id, selected_text, raw_selected_text)
+               SELECT gen_random_uuid(), $1, $2, 'Text', 'Text' FROM generate_series(1, 501)
+               RETURNING id
+             )
+             INSERT INTO script_scene_annotations (id, anchor_id, movie_id, script_id, start_time_seconds, end_time_seconds)
+             SELECT gen_random_uuid(), id, $1, $2, 0, 0 FROM anchors`,
+            [place.movie.id, place.script.id]
+        );
+
+        for (const path of ["/script-scenes", "/script-scenes?limit=1000"]) {
+            const response = await api.get(path);
+            assert.equal(response.status, 200);
+            assert.equal(response.body.length, 500);
+        }
     });
 });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { signInOwner, startApi } from "./helpers/api.js";
 import {
     anchorPair,
@@ -23,32 +24,25 @@ const api = await startApi();
 const { cookie } = await signInOwner(api);
 
 const MESSAGES = {
-    createTiming:
+    filmTiming:
         "Invalid body. start_time_seconds and end_time_seconds must be integers where end >= start and start >= 0.",
-    createPages: "Invalid body. page_start/page_end must be positive integers and page_end >= page_start.",
-    createContext: "Invalid body. context_prefix/context_suffix must be strings when provided.",
-    createOffsets: "Invalid body. start_offset/end_offset must be integers where end_offset >= start_offset >= 0.",
-    createRaw: "Invalid body. raw_selected_text must be a non-empty string.",
-    // changes in 04: string tags are rejected, so this message changes (B9)
-    tags: "Invalid body. tags must be an array of strings or comma-separated string.",
+    pages: "Invalid body. page_start/page_end must be positive integers and page_end >= page_start.",
+    context: "Invalid body. context_prefix/context_suffix must be strings when provided.",
+    offsets: "Invalid body. start_offset/end_offset must be integers where end_offset >= start_offset >= 0.",
+    rawText: "Invalid body. raw_selected_text must be a non-empty string.",
+    tags: "Invalid body. tags must be an array of strings.",
     geometry: "Invalid body. anchor_geometry must be a JSON array when provided.",
-    updateTimingType: "start_time_seconds/end_time_seconds must be integers when provided.",
-    updateTimingRange: "Invalid time range. end_time_seconds must be >= start_time_seconds >= 0.",
-    updatePagesType: "page_start/page_end must be integers when provided.",
-    updatePagesRange: "Invalid page range. page_start/page_end must be positive and page_end >= page_start.",
-    updateOffsetsType: "start_offset/end_offset must be integers when provided.",
-    updateOffsetsRange: "Invalid offsets. start_offset/end_offset must be >= 0 and end_offset >= start_offset.",
-    updateTextTypes: "Invalid body. Text fields must be strings when provided (or null where supported).",
-    updateRaw: "raw_selected_text must remain a non-empty string.",
+    sceneAnchor:
+        "Invalid body. A version-2 anchor_geometry entry needs kind start or end, version 2, unit pt, a whole page >= 1, a whole line >= 0, finite top and bottom, and text.",
+    reversedPair: "Invalid body. The start anchor must come before or on the same line as the end anchor.",
     sceneNotFound: "Script scene annotation not found",
     scriptNotFound: "Script not found",
-    // changes in 04: the message follows the new rule, and a conflict_kind detail is added
-    overlap: "Scene time range overlaps an existing scene in this script.",
+    filmTimingOverlap: "This scene's film timing overlaps another scene in this script.",
+    scriptLocationOverlap: "This scene's script location shares lines with another scene in this script.",
 };
 
-// changes in 04: no nested `anchor` (B4); changes in 11: anchor_id, the text fields, offsets and context
+// changes in 11: anchor_id, the text fields, offsets and context
 const SCENE_FIELDS = [
-    "anchor",
     "anchor_geometry",
     "anchor_id",
     "context_prefix",
@@ -92,13 +86,6 @@ function without(body, ...fields) {
     return copy;
 }
 
-// changes in 04: there is no nested anchor to strip (B4)
-function withoutUpdatedAt(scene) {
-    const { updated_at: _updatedAt, anchor, ...rest } = scene;
-    const { updated_at: _anchorUpdatedAt, ...anchorRest } = anchor;
-    return { ...rest, anchor: anchorRest };
-}
-
 async function newPlace() {
     return createMovieWithScript(api, cookie);
 }
@@ -117,6 +104,44 @@ async function expectError(responsePromise, status, error) {
     assert.deepEqual(response.body, { error });
 }
 
+/** Takes the script's captured-scene lock, with the same key the module uses. */
+const LOCK_SCRIPT_SCENES_SQL = "SELECT pg_advisory_xact_lock(hashtextextended('captured-scenes:' || $1::uuid::text, 0))";
+
+/** Waits until at least `count` sessions wait on a lock, of the `waitEvent` kind ("advisory", say) when given. */
+async function waitForLockWaiters(count, waitEvent = null) {
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+        const { rows } = await pool.query(
+            `SELECT count(*)::int AS waiting FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND ($1::text IS NULL OR wait_event = $1)`,
+            [waitEvent]
+        );
+        if (rows[0].waiting >= count) return;
+        await delay(10);
+    }
+    assert.fail(`${count} requests never waited on a${waitEvent ? `n ${waitEvent}` : ""} lock`);
+}
+
+/**
+ * Sends a body with every field invalid, then repairs one field at a time, and
+ * checks that each 400 names the next field in the fixed order.
+ */
+async function expectFieldOrder(send) {
+    const order = [
+        ["start_time_seconds", -1, MESSAGES.filmTiming],
+        ["page_start", 0, MESSAGES.pages],
+        ["context_prefix", 1, MESSAGES.context],
+        ["start_offset", -1, MESSAGES.offsets],
+        ["raw_selected_text", "", MESSAGES.rawText],
+        ["tags", 5, MESSAGES.tags],
+        ["anchor_geometry", 5, MESSAGES.geometry],
+    ];
+    let body = sceneBody(Object.fromEntries(order.map(([field, value]) => [field, value])));
+    for (const [field, , message] of order) {
+        await expectError(send(body), 400, message);
+        body = { ...body, [field]: sceneBody()[field] };
+    }
+}
+
 /** Creates a scene from `body` in a fresh script and returns the saved scene. */
 async function saveInNewPlace(body) {
     const response = await postScene(await newPlace(), body);
@@ -125,7 +150,7 @@ async function saveInNewPlace(body) {
 }
 
 describe("creating a captured scene", () => {
-    test("returns 201 with the scene, its script location flat and again under `anchor`", async () => {
+    test("returns 201 with the scene and its script location, with no nested `anchor` object", async () => {
         const place = await newPlace();
         const body = sceneBody();
         const response = await postScene(place, body);
@@ -145,15 +170,6 @@ describe("creating a captured scene", () => {
         assert.equal(scene.first_image_annotation, null);
         assert.ok(!Number.isNaN(Date.parse(scene.created_at)));
         assert.ok(!Number.isNaN(Date.parse(scene.updated_at)));
-
-        // changes in 04: the nested anchor object is removed (B4)
-        assert.deepEqual(scene.anchor, {
-            id: scene.anchor_id,
-            ...Object.fromEntries(LOCATION_FIELDS.map((field) => [field, body[field]])),
-            created_at: scene.anchor.created_at,
-            updated_at: scene.anchor.updated_at,
-        });
-        assert.ok(!Number.isNaN(Date.parse(scene.anchor.created_at)));
     });
 
     test("requires the sign-in cookie", async () => {
@@ -163,7 +179,7 @@ describe("creating a captured scene", () => {
 
     test("with no body at all is a 400 about film timing", async () => {
         const place = await newPlace();
-        await expectError(api.post(scenesPath(place), { cookie }), 400, MESSAGES.createTiming);
+        await expectError(api.post(scenesPath(place), { cookie }), 400, MESSAGES.filmTiming);
     });
 
     test("answers 404 when the script isn't the movie's, but only after the body is valid", async () => {
@@ -174,7 +190,7 @@ describe("creating a captured scene", () => {
 
         await expectError(postScene(wrongScript, sceneBody()), 404, MESSAGES.scriptNotFound);
         await expectError(postScene(missingScript, sceneBody()), 404, MESSAGES.scriptNotFound);
-        await expectError(postScene(missingScript, without(sceneBody(), "start_time_seconds")), 400, MESSAGES.createTiming);
+        await expectError(postScene(missingScript, without(sceneBody(), "start_time_seconds")), 400, MESSAGES.filmTiming);
     });
 
     describe("film timing", () => {
@@ -190,22 +206,20 @@ describe("creating a captured scene", () => {
                 sceneBody({ end_time_seconds: {} }),
             ];
             for (const body of invalid) {
-                await expectError(postScene(place, body), 400, MESSAGES.createTiming);
+                await expectError(postScene(place, body), 400, MESSAGES.filmTiming);
             }
         });
 
-        // changes in 04: values are no longer coerced to numbers (B9)
-        test("coerces numeric strings, and null or an empty string counts as 0", async () => {
-            const fromStrings = await saveInNewPlace(sceneBody({ start_time_seconds: "15", end_time_seconds: "30" }));
-            assert.equal(fromStrings.start_time_seconds, 15);
-            assert.equal(fromStrings.end_time_seconds, 30);
-
-            const fromNull = await saveInNewPlace(sceneBody({ start_time_seconds: null, end_time_seconds: 5 }));
-            assert.equal(fromNull.start_time_seconds, 0);
-
-            const fromEmpty = await saveInNewPlace(sceneBody({ start_time_seconds: "", end_time_seconds: "" }));
-            assert.equal(fromEmpty.start_time_seconds, 0);
-            assert.equal(fromEmpty.end_time_seconds, 0);
+        test("must be JSON numbers: numeric strings, null and empty strings are a 400", async () => {
+            const place = await newPlace();
+            const invalid = [
+                sceneBody({ start_time_seconds: "15", end_time_seconds: "30" }),
+                sceneBody({ start_time_seconds: null, end_time_seconds: 5 }),
+                sceneBody({ start_time_seconds: "", end_time_seconds: "" }),
+            ];
+            for (const body of invalid) {
+                await expectError(postScene(place, body), 400, MESSAGES.filmTiming);
+            }
         });
     });
 
@@ -220,11 +234,11 @@ describe("creating a captured scene", () => {
                 sceneBody({ page_start: 3, page_end: 2 }),
             ];
             for (const body of invalid) {
-                await expectError(postScene(place, body), 400, MESSAGES.createPages);
+                await expectError(postScene(place, body), 400, MESSAGES.pages);
             }
         });
 
-        test("are stored as null when missing, null or empty strings", async () => {
+        test("are stored as null when missing or null", async () => {
             const missing = await saveInNewPlace(without(sceneBody(), "page_start", "page_end"));
             assert.equal(missing.page_start, null);
             assert.equal(missing.page_end, null);
@@ -232,18 +246,13 @@ describe("creating a captured scene", () => {
             const nulls = await saveInNewPlace(sceneBody({ page_start: null, page_end: 4 }));
             assert.equal(nulls.page_start, null);
             assert.equal(nulls.page_end, 4);
-
-            // changes in 04: empty strings are rejected (B9)
-            const empty = await saveInNewPlace(sceneBody({ page_start: "", page_end: "" }));
-            assert.equal(empty.page_start, null);
-            assert.equal(empty.page_end, null);
         });
 
-        // changes in 04: values are no longer coerced to numbers (B9)
-        test("coerce numeric strings", async () => {
-            const scene = await saveInNewPlace(sceneBody({ page_start: "2", page_end: "3" }));
-            assert.equal(scene.page_start, 2);
-            assert.equal(scene.page_end, 3);
+        test("must be JSON numbers: numeric and empty strings are a 400", async () => {
+            const place = await newPlace();
+            for (const body of [sceneBody({ page_start: "2", page_end: "3" }), sceneBody({ page_start: "", page_end: "" })]) {
+                await expectError(postScene(place, body), 400, MESSAGES.pages);
+            }
         });
     });
 
@@ -258,29 +267,29 @@ describe("creating a captured scene", () => {
                 sceneBody({ start_offset: 10, end_offset: 5 }),
             ];
             for (const body of invalid) {
-                await expectError(postScene(place, body), 400, MESSAGES.createOffsets);
+                await expectError(postScene(place, body), 400, MESSAGES.offsets);
             }
         });
 
-        // changes in 04: numeric and empty strings are rejected (B9)
-        test("offsets are null when missing, null or empty, and numeric strings are coerced", async () => {
+        test("offsets are null when missing or null, and numeric or empty strings are a 400", async () => {
             const missing = await saveInNewPlace(without(sceneBody(), "start_offset", "end_offset"));
             assert.equal(missing.start_offset, null);
             assert.equal(missing.end_offset, null);
 
-            const mixed = await saveInNewPlace(sceneBody({ start_offset: null, end_offset: "" }));
-            assert.equal(mixed.start_offset, null);
-            assert.equal(mixed.end_offset, null);
+            const nulls = await saveInNewPlace(sceneBody({ start_offset: null, end_offset: null }));
+            assert.equal(nulls.start_offset, null);
+            assert.equal(nulls.end_offset, null);
 
-            const strings = await saveInNewPlace(sceneBody({ start_offset: "5", end_offset: "9" }));
-            assert.equal(strings.start_offset, 5);
-            assert.equal(strings.end_offset, 9);
+            const place = await newPlace();
+            for (const body of [sceneBody({ start_offset: "5", end_offset: "9" }), sceneBody({ start_offset: null, end_offset: "" })]) {
+                await expectError(postScene(place, body), 400, MESSAGES.offsets);
+            }
         });
 
         test("context must be a string or null", async () => {
             const place = await newPlace();
             for (const body of [sceneBody({ context_prefix: 5 }), sceneBody({ context_suffix: {} })]) {
-                await expectError(postScene(place, body), 400, MESSAGES.createContext);
+                await expectError(postScene(place, body), 400, MESSAGES.context);
             }
         });
 
@@ -306,7 +315,7 @@ describe("creating a captured scene", () => {
                 sceneBody({ raw_selected_text: null, selected_text: null }),
             ];
             for (const body of invalid) {
-                await expectError(postScene(place, body), 400, MESSAGES.createRaw);
+                await expectError(postScene(place, body), 400, MESSAGES.rawText);
             }
 
             const missing = await saveInNewPlace(without(sceneBody({ selected_text: "Selected" }), "raw_selected_text"));
@@ -361,22 +370,16 @@ describe("creating a captured scene", () => {
             assert.deepEqual(scene.tags, [TAGS.revelation, TAGS.protagonist, TAGS.revelation]);
         });
 
-        // changes in 11: only taxonomy tags are accepted (A9); changes in 04: non-string tags are rejected (B9)
-        test("accept values outside the tag taxonomy, and turn numbers into strings", async () => {
-            const scene = await saveInNewPlace(sceneBody({ tags: ["Diner", 7] }));
-            assert.deepEqual(scene.tags, ["Diner", "7"]);
+        // changes in 11: only taxonomy tags are accepted (A9)
+        test("accept values outside the tag taxonomy", async () => {
+            const scene = await saveInNewPlace(sceneBody({ tags: ["Diner", TAGS.protagonist] }));
+            assert.deepEqual(scene.tags, ["Diner", TAGS.protagonist]);
         });
 
-        // changes in 04: string tags are rejected (B9)
-        test("accept a comma- or newline-separated string, and an empty string as no tags", async () => {
-            const scene = await saveInNewPlace(sceneBody({ tags: `${TAGS.protagonist}, ${TAGS.revelation}\n${TAGS.selfConflict}` }));
-            assert.deepEqual(scene.tags, [TAGS.protagonist, TAGS.revelation, TAGS.selfConflict]);
-            assert.deepEqual((await saveInNewPlace(sceneBody({ tags: "" }))).tags, []);
-        });
-
-        test("that are neither a list nor a string are a 400", async () => {
+        test("that aren't a list of strings are a 400, including a comma-separated string", async () => {
             const place = await newPlace();
-            for (const tags of [5, { tag: TAGS.protagonist }, true]) {
+            const invalid = [`${TAGS.protagonist}, ${TAGS.revelation}`, "", ["Diner", 7], [null], 5, { tag: TAGS.protagonist }, true];
+            for (const tags of invalid) {
                 await expectError(postScene(place, sceneBody({ tags })), 400, MESSAGES.tags);
             }
         });
@@ -388,24 +391,53 @@ describe("creating a captured scene", () => {
             assert.deepEqual((await saveInNewPlace(sceneBody({ anchor_geometry: null }))).anchor_geometry, []);
         });
 
-        // changes in 04: stringified geometry is rejected (B9)
-        test("accepts a JSON string holding a list, and treats a blank string as an empty list", async () => {
-            const parsed = await saveInNewPlace(sceneBody({ anchor_geometry: JSON.stringify(anchorPair()) }));
-            assert.deepEqual(parsed.anchor_geometry, anchorPair());
-            assert.deepEqual((await saveInNewPlace(sceneBody({ anchor_geometry: "  " }))).anchor_geometry, []);
-        });
-
-        test("that isn't a list, or a string holding one, is a 400", async () => {
+        test("that isn't a list is a 400, including a JSON string holding one", async () => {
             const place = await newPlace();
-            for (const anchorGeometry of ["not json", '{"page":1}', { page: 1 }, 5]) {
+            for (const anchorGeometry of [JSON.stringify(anchorPair()), "  ", "", "not json", '{"page":1}', { page: 1 }, 5]) {
                 await expectError(postScene(place, sceneBody({ anchor_geometry: anchorGeometry })), 400, MESSAGES.geometry);
             }
         });
 
-        // changes in 04: version-2 entries are validated strictly
-        test("stores malformed version-2 entries unchanged", async () => {
-            const malformed = [{ kind: "middle", version: 2, unit: "px", page: 0, line: -1, top: "a", bottom: null }];
-            assert.deepEqual((await saveInNewPlace(sceneBody({ anchor_geometry: malformed }))).anchor_geometry, malformed);
+        test("with a malformed version-2 scene anchor is a 400", async () => {
+            const place = await newPlace();
+            const [start, end] = anchorPair();
+            const malformed = [
+                { ...start, kind: "middle" },
+                without(start, "kind"),
+                { ...start, version: 3 },
+                { ...start, version: "2" },
+                without(start, "version"),
+                { ...start, unit: "px" },
+                { ...start, page: 0 },
+                { ...start, page: 1.5 },
+                { ...start, page: "1" },
+                { ...start, line: -1 },
+                { ...start, line: "0" },
+                { ...start, top: "100" },
+                { ...start, bottom: null },
+                { ...start, text: 5 },
+                without(start, "text"),
+            ];
+            for (const entry of malformed) {
+                await expectError(postScene(place, sceneBody({ anchor_geometry: [entry, end] })), 400, MESSAGES.sceneAnchor);
+            }
+            await expectError(postScene(place, sceneBody({ anchor_geometry: [start, { ...end, kind: "End" }] })), 400, MESSAGES.sceneAnchor);
+        });
+
+        test("with a start anchor after its end anchor is a 400, and both on one line is fine", async () => {
+            const place = await newPlace();
+            const reversed = [
+                anchorPair({ startPage: 1, startLine: 9, endLine: 3 }),
+                anchorPair({ startPage: 3, startLine: 0, endPage: 2, endLine: 40 }),
+                // A repeated kind's last valid entry is the one that counts.
+                [...anchorPair({ startPage: 1, startLine: 0, endLine: 4 }), anchorPair({ startPage: 1, startLine: 8 })[0]],
+            ];
+            for (const anchorGeometry of reversed) {
+                await expectError(postScene(place, sceneBody({ anchor_geometry: anchorGeometry })), 400, MESSAGES.reversedPair);
+            }
+
+            const oneLine = await postScene(place, sceneBody({ anchor_geometry: anchorPair({ startPage: 1, startLine: 7, endLine: 7 }) }));
+            assert.equal(oneLine.status, 201, oneLine.text);
         });
 
         // changes in 11: every scene needs a valid version-2 anchor pair (A2)
@@ -417,46 +449,21 @@ describe("creating a captured scene", () => {
 
     test("reports the first invalid field in a fixed order", async () => {
         const place = await newPlace();
-        const everythingWrong = {
-            start_time_seconds: -1,
-            page_start: 0,
-            context_prefix: 1,
-            start_offset: -1,
-            raw_selected_text: "",
-            tags: 5,
-            anchor_geometry: 5,
-        };
-        const order = [
-            ["start_time_seconds", MESSAGES.createTiming],
-            ["page_start", MESSAGES.createPages],
-            ["context_prefix", MESSAGES.createContext],
-            ["start_offset", MESSAGES.createOffsets],
-            ["raw_selected_text", MESSAGES.createRaw],
-            ["tags", MESSAGES.tags],
-            ["anchor_geometry", MESSAGES.geometry],
-        ];
-        let body = sceneBody(everythingWrong);
-        for (const [field, message] of order) {
-            await expectError(postScene(place, body), 400, message);
-            body = { ...body, [field]: sceneBody()[field] };
-        }
+        await expectFieldOrder((body) => postScene(place, body));
     });
 });
 
 describe("overlapping film timing", () => {
-    function conflict(scene) {
-        return {
-            error: MESSAGES.overlap,
-            conflict_scene_id: scene.id,
-            conflict_start_time_seconds: scene.start_time_seconds,
-            conflict_end_time_seconds: scene.end_time_seconds,
-        };
-    }
-
     async function expectConflict(responsePromise, scene) {
         const response = await responsePromise;
         assert.equal(response.status, 409, response.text);
-        assert.deepEqual(response.body, conflict(scene));
+        assert.deepEqual(response.body, {
+            error: MESSAGES.filmTimingOverlap,
+            conflict_kind: "film_timing",
+            conflict_scene_id: scene.id,
+            conflict_start_time_seconds: scene.start_time_seconds,
+            conflict_end_time_seconds: scene.end_time_seconds,
+        });
     }
 
     test("a new scene that overlaps or contains another is a 409 naming it, and nothing is stored", async () => {
@@ -481,27 +488,33 @@ describe("overlapping film timing", () => {
         await expectConflict(postScene(place, sceneBody({ start_time_seconds: 100, end_time_seconds: 210 })), earlier);
     });
 
-    // changes in 04: scenes that only touch are allowed
-    test("scenes that only touch conflict, on either side", async () => {
+    test("scenes that only touch save, in either order", async () => {
         const place = await newPlace();
-        const existing = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
+        await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
 
-        await expectConflict(postScene(place, sceneBody({ start_time_seconds: 120, end_time_seconds: 180 })), existing);
-        await expectConflict(postScene(place, sceneBody({ start_time_seconds: 0, end_time_seconds: 60 })), existing);
+        const after = await postScene(place, sceneBody({ start_time_seconds: 120, end_time_seconds: 180 }));
+        assert.equal(after.status, 201, after.text);
+        const before = await postScene(place, sceneBody({ start_time_seconds: 0, end_time_seconds: 60 }));
+        assert.equal(before.status, 201, before.text);
     });
 
-    test("a zero-length timing conflicts with a scene that contains it, including at its edges", async () => {
+    test("a zero-length timing overlaps only a scene that strictly contains it", async () => {
         const place = await newPlace();
         const existing = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
 
         await expectConflict(postScene(place, sceneBody({ start_time_seconds: 90, end_time_seconds: 90 })), existing);
-        // changes in 04: a zero-length timing at another scene's edge is allowed
-        await expectConflict(postScene(place, sceneBody({ start_time_seconds: 120, end_time_seconds: 120 })), existing);
+        for (const moment of [60, 120]) {
+            const atEdge = await postScene(place, sceneBody({ start_time_seconds: moment, end_time_seconds: moment }));
+            assert.equal(atEdge.status, 201, atEdge.text);
+        }
 
-        const elsewhere = await postScene(place, sceneBody({ start_time_seconds: 10, end_time_seconds: 10 }));
-        assert.equal(elsewhere.status, 201, elsewhere.text);
-        // changes in 04: two zero-length timings at the same moment don't overlap
-        await expectConflict(postScene(place, sceneBody({ start_time_seconds: 10, end_time_seconds: 10 })), elsewhere.body);
+        const other = await newPlace();
+        const moment = await createScene(api, cookie, other, { start_time_seconds: 10, end_time_seconds: 10 });
+        await expectConflict(postScene(other, sceneBody({ start_time_seconds: 5, end_time_seconds: 15 })), moment);
+        for (const [start, end] of [[10, 10], [0, 10], [10, 20]]) {
+            const touching = await postScene(other, sceneBody({ start_time_seconds: start, end_time_seconds: end }));
+            assert.equal(touching.status, 201, touching.text);
+        }
     });
 
     test("a scene in another movie's script never conflicts", async () => {
@@ -511,27 +524,13 @@ describe("overlapping film timing", () => {
         assert.equal(other.status, 201, other.text);
     });
 
-    // changes in 04: scenes whose script locations share a line are a 409
-    test("script locations aren't compared: scenes on the same lines save when their timing doesn't overlap", async () => {
-        const place = await newPlace();
-        await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120, anchor_geometry: anchorPair() });
-        const sameLines = await postScene(
-            place,
-            sceneBody({ start_time_seconds: 200, end_time_seconds: 260, anchor_geometry: anchorPair() })
-        );
-        assert.equal(sameLines.status, 201, sameLines.text);
-    });
-
     test("an update that overlaps another scene is a 409 naming it, and nothing is stored", async () => {
         const place = await newPlace();
         const first = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
         const second = await createScene(api, cookie, place, { start_time_seconds: 200, end_time_seconds: 260 });
 
         await expectConflict(putScene(place, second.id, sceneBody({ start_time_seconds: 100, end_time_seconds: 150 })), first);
-        // changes in 04: touching is allowed
-        await expectConflict(putScene(place, second.id, sceneBody({ start_time_seconds: 120, end_time_seconds: 180 })), first);
-        // changes in 04: a partial update is no longer accepted
-        await expectConflict(putScene(place, second.id, { start_time_seconds: 90 }), first);
+        await expectConflict(putScene(place, second.id, sceneBody({ start_time_seconds: 90, end_time_seconds: 260 })), first);
 
         const list = await api.get(scenesPath(place));
         assert.deepEqual(
@@ -543,6 +542,16 @@ describe("overlapping film timing", () => {
         );
     });
 
+    test("an update that only touches other scenes saves, on either side", async () => {
+        const place = await newPlace();
+        const scene = await createScene(api, cookie, place, { start_time_seconds: 200, end_time_seconds: 260 });
+        await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
+        await createScene(api, cookie, place, { start_time_seconds: 300, end_time_seconds: 360 });
+
+        const response = await putScene(place, scene.id, sceneBody({ start_time_seconds: 120, end_time_seconds: 300 }));
+        assert.equal(response.status, 200, response.text);
+    });
+
     test("an update never conflicts with the scene's own saved timing", async () => {
         const place = await newPlace();
         const scene = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
@@ -551,6 +560,159 @@ describe("overlapping film timing", () => {
         assert.equal(same.status, 200, same.text);
         const wider = await putScene(place, scene.id, sceneBody({ start_time_seconds: 50, end_time_seconds: 130 }));
         assert.equal(wider.status, 200, wider.text);
+    });
+});
+
+describe("overlapping script locations", () => {
+    async function expectConflict(responsePromise, scene) {
+        const response = await responsePromise;
+        assert.equal(response.status, 409, response.text);
+        assert.deepEqual(response.body, {
+            error: MESSAGES.scriptLocationOverlap,
+            conflict_kind: "script_location",
+            conflict_scene_id: scene.id,
+            conflict_start_time_seconds: scene.start_time_seconds,
+            conflict_end_time_seconds: scene.end_time_seconds,
+        });
+    }
+
+    // Each body gets its own film timing, so only script locations can conflict.
+    let nextMinute = 0;
+    function withGeometry(anchorGeometry) {
+        const start = nextMinute * 60;
+        nextMinute += 1;
+        return sceneBody({ start_time_seconds: start, end_time_seconds: start + 30, anchor_geometry: anchorGeometry });
+    }
+
+    function atLines(range) {
+        return withGeometry(anchorPair(range));
+    }
+
+    const PAGE_TWO = { startPage: 2, startLine: 10, endPage: 2, endLine: 20 };
+
+    test("a scene sharing a line with another is a 409 naming it, and nothing is stored", async () => {
+        const place = await newPlace();
+        const existing = await createScene(api, cookie, place, atLines(PAGE_TWO));
+        const sharing = [
+            { startPage: 2, startLine: 20, endPage: 2, endLine: 30 }, // its last line
+            { startPage: 2, startLine: 0, endPage: 2, endLine: 10 }, // its first line
+            { startPage: 2, startLine: 10, endPage: 2, endLine: 10 }, // only its first line
+            { startPage: 2, startLine: 12, endPage: 2, endLine: 15 }, // inside it
+            { startPage: 1, startLine: 40, endPage: 3, endLine: 2 }, // containing it, across pages
+            { startPage: 1, startLine: 30, endPage: 2, endLine: 10 }, // from an earlier page onto its first line
+            { startPage: 2, startLine: 15, endPage: 4, endLine: 0 }, // from inside it onto a later page
+        ];
+        for (const range of sharing) {
+            await expectConflict(postScene(place, atLines(range)), existing);
+        }
+
+        const list = await api.get(scenesPath(place));
+        assert.deepEqual(list.body.map((scene) => scene.id), [existing.id]);
+    });
+
+    test("scenes on adjacent lines save, including across a page break", async () => {
+        const place = await newPlace();
+        await createScene(api, cookie, place, atLines(PAGE_TWO));
+        const adjacent = [
+            { startPage: 2, startLine: 21, endPage: 2, endLine: 30 },
+            { startPage: 1, startLine: 50, endPage: 2, endLine: 9 },
+            { startPage: 3, startLine: 0, endPage: 3, endLine: 5 },
+        ];
+        for (const range of adjacent) {
+            const response = await postScene(place, atLines(range));
+            assert.equal(response.status, 201, response.text);
+        }
+    });
+
+    test("film timing is checked first", async () => {
+        const place = await newPlace();
+        const sameTiming = await createScene(api, cookie, place, atLines({ startPage: 1, startLine: 0, endLine: 4 }));
+        await createScene(api, cookie, place, atLines({ startPage: 5, startLine: 0, endLine: 4 }));
+
+        const response = await postScene(
+            place,
+            sceneBody({
+                start_time_seconds: sameTiming.start_time_seconds,
+                end_time_seconds: sameTiming.end_time_seconds,
+                anchor_geometry: anchorPair({ startPage: 5, startLine: 2, endLine: 8 }),
+            })
+        );
+        assert.equal(response.status, 409, response.text);
+        assert.equal(response.body.conflict_kind, "film_timing");
+        assert.equal(response.body.conflict_scene_id, sameTiming.id);
+    });
+
+    // changes in 11: every scene needs a valid version-2 anchor pair (A2)
+    test("scenes without a valid version-2 anchor pair are skipped, on either side", async () => {
+        const [start, end] = anchorPair(PAGE_TWO);
+        const legacy = [{ page: 2, x: 72, y: 140, width: 400, height: 14 }];
+
+        const place = await newPlace();
+        await createScene(api, cookie, place, atLines(PAGE_TWO));
+        for (const geometry of [legacy, [start], [end], []]) {
+            const response = await postScene(place, withGeometry(geometry));
+            assert.equal(response.status, 201, response.text);
+        }
+
+        const legacyPlace = await newPlace();
+        for (const geometry of [legacy, [start], [end]]) {
+            await createScene(api, cookie, legacyPlace, withGeometry(geometry));
+        }
+        const anchored = await postScene(legacyPlace, atLines(PAGE_TWO));
+        assert.equal(anchored.status, 201, anchored.text);
+    });
+
+    test("a start anchor after its end anchor is a 400 on write, and a stored one is skipped", async () => {
+        const place = await newPlace();
+        const reversedRange = { startPage: 3, startLine: 0, endPage: 2, endLine: 10 };
+        await expectError(postScene(place, atLines(reversedRange)), 400, MESSAGES.reversedPair);
+
+        // changes in 11: every scene needs a valid version-2 anchor pair (A2)
+        const stored = await createScene(api, cookie, place, atLines(PAGE_TWO));
+        await pool.query("UPDATE script_scene_anchors SET anchor_geometry = $1::jsonb WHERE id = $2", [
+            JSON.stringify(anchorPair(reversedRange)),
+            stored.anchor_id,
+        ]);
+        // One range shares the stored end anchor's line; the other lies between its anchors.
+        for (const range of [PAGE_TWO, { startPage: 2, startLine: 30, endPage: 2, endLine: 31 }]) {
+            const response = await postScene(place, atLines(range));
+            assert.equal(response.status, 201, response.text);
+        }
+    });
+
+    test("an update never conflicts with the scene's own saved lines", async () => {
+        const place = await newPlace();
+        const scene = await createScene(api, cookie, place, atLines(PAGE_TWO));
+
+        const same = await putScene(
+            place,
+            scene.id,
+            sceneBody({
+                start_time_seconds: scene.start_time_seconds,
+                end_time_seconds: scene.end_time_seconds,
+                anchor_geometry: scene.anchor_geometry,
+            })
+        );
+        assert.equal(same.status, 200, same.text);
+        const moved = await putScene(place, scene.id, atLines({ startPage: 2, startLine: 15, endPage: 2, endLine: 25 }));
+        assert.equal(moved.status, 200, moved.text);
+    });
+
+    test("an update onto another scene's lines is a 409, and nothing is stored", async () => {
+        const place = await newPlace();
+        const first = await createScene(api, cookie, place, atLines(PAGE_TWO));
+        const second = await createScene(api, cookie, place, atLines({ startPage: 3, startLine: 0, endPage: 3, endLine: 10 }));
+
+        await expectConflict(putScene(place, second.id, atLines({ startPage: 2, startLine: 20, endPage: 3, endLine: 10 })), first);
+
+        const list = await api.get(scenesPath(place));
+        assert.deepEqual(list.body.find((scene) => scene.id === second.id), second);
+    });
+
+    test("a scene on the same lines in another script never conflicts", async () => {
+        await createScene(api, cookie, await newPlace(), atLines(PAGE_TWO));
+        const other = await postScene(await newPlace(), atLines(PAGE_TWO));
+        assert.equal(other.status, 201, other.text);
     });
 });
 
@@ -591,23 +753,16 @@ describe("updating a captured scene", () => {
         assert.equal(updated.start_time_seconds, 300);
         assert.equal(updated.end_time_seconds, 360);
         assert.deepEqual(updated.tags, body.tags);
-        for (const field of LOCATION_FIELDS) {
-            assert.deepEqual(updated[field], body[field], field);
-            // changes in 04: no nested anchor (B4)
-            assert.deepEqual(updated.anchor[field], body[field], `anchor.${field}`);
-        }
-        // changes in 04: no nested anchor (B4)
-        assert.equal(updated.anchor.created_at, scene.anchor.created_at);
+        for (const field of LOCATION_FIELDS) assert.deepEqual(updated[field], body[field], field);
     });
 
-    test("answers 404 for a missing scene or one in another script, before validating the body", async () => {
+    test("answers 404 for a missing scene or one in another script, but only after the body is valid", async () => {
         const { place, scene } = await savedScene();
         const other = await newPlace();
 
         await expectError(putScene(place, randomUUID(), sceneBody()), 404, MESSAGES.sceneNotFound);
         await expectError(putScene(other, scene.id, sceneBody()), 404, MESSAGES.sceneNotFound);
-        // changes in 04: create and update share one write path, which validates the body before its 404
-        await expectError(putScene(place, randomUUID(), { start_time_seconds: "abc" }), 404, MESSAGES.sceneNotFound);
+        await expectError(putScene(place, randomUUID(), { start_time_seconds: "abc" }), 400, MESSAGES.filmTiming);
     });
 
     test("requires the sign-in cookie", async () => {
@@ -615,194 +770,101 @@ describe("updating a captured scene", () => {
         await expectError(api.put(`${scenesPath(place)}/${scene.id}`, { body: sceneBody() }), 401, "Sign in to make changes.");
     });
 
-    // changes in 04: an update replaces the whole scene and requires the same fields as create
-    describe("fields left out keep their saved values", () => {
-        test("a body with only tags changes only the tags", async () => {
+    describe("replaces the whole scene", () => {
+        test("a partial body, an empty body or no body at all is a 400, and the saved scene is unchanged", async () => {
             const { place, scene } = await savedScene();
-            const response = await putScene(place, scene.id, { tags: [TAGS.revelation] });
+            await expectError(putScene(place, scene.id, { tags: [TAGS.revelation] }), 400, MESSAGES.filmTiming);
+            await expectError(putScene(place, scene.id, { start_time_seconds: 60, end_time_seconds: 90 }), 400, MESSAGES.rawText);
+            await expectError(putScene(place, scene.id, {}), 400, MESSAGES.filmTiming);
+            await expectError(api.put(`${scenesPath(place)}/${scene.id}`, { cookie }), 400, MESSAGES.filmTiming);
+
+            assert.deepEqual((await api.get(scenesPath(place))).body, [scene]);
+        });
+
+        // changes in 11: offsets, context, the text fields and empty geometry change (A2, A4, A6)
+        test("fields left out are cleared, as they are on create", async () => {
+            const { place, scene } = await savedScene();
+            const cleared = ["page_start", "page_end", "start_offset", "end_offset", "context_prefix", "context_suffix", "formatted_selected_text"];
+            const response = await putScene(place, scene.id, without(sceneBody(), ...cleared, "tags", "anchor_geometry"));
+
             assert.equal(response.status, 200, response.text);
-            assert.deepEqual(withoutUpdatedAt(response.body), withoutUpdatedAt({ ...scene, tags: [TAGS.revelation] }));
-        });
-
-        test("an empty body, or no body at all, changes nothing", async () => {
-            const { place, scene } = await savedScene();
-            const empty = await putScene(place, scene.id, {});
-            assert.equal(empty.status, 200, empty.text);
-            assert.deepEqual(withoutUpdatedAt(empty.body), withoutUpdatedAt(scene));
-
-            const none = await api.put(`${scenesPath(place)}/${scene.id}`, { cookie });
-            assert.equal(none.status, 200, none.text);
-            assert.deepEqual(withoutUpdatedAt(none.body), withoutUpdatedAt(scene));
-        });
-
-        test("null or an empty string keeps the saved film timing", async () => {
-            const { place, scene } = await savedScene();
-            const response = await putScene(place, scene.id, { start_time_seconds: null, end_time_seconds: "" });
-            assert.equal(response.status, 200, response.text);
-            assert.equal(response.body.start_time_seconds, 60);
-            assert.equal(response.body.end_time_seconds, 120);
-        });
-
-        test("an empty string keeps saved pages and offsets, while null clears them", async () => {
-            const { place, scene } = await savedScene();
-            const kept = await putScene(place, scene.id, { page_start: "", page_end: "", start_offset: "", end_offset: "" });
-            assert.equal(kept.status, 200, kept.text);
-            assert.equal(kept.body.page_start, scene.page_start);
-            assert.equal(kept.body.page_end, scene.page_end);
-            assert.equal(kept.body.start_offset, scene.start_offset);
-            assert.equal(kept.body.end_offset, scene.end_offset);
-
-            const cleared = await putScene(place, scene.id, { page_start: null, page_end: null, start_offset: null, end_offset: null });
-            assert.equal(cleared.status, 200, cleared.text);
-            assert.equal(cleared.body.page_start, null);
-            assert.equal(cleared.body.page_end, null);
-            assert.equal(cleared.body.start_offset, null);
-            assert.equal(cleared.body.end_offset, null);
-        });
-
-        test("new film timing is checked against the saved value it is paired with", async () => {
-            const { place, scene } = await savedScene({ start_time_seconds: 60, end_time_seconds: 120 });
-            await expectError(putScene(place, scene.id, { start_time_seconds: 150 }), 400, MESSAGES.updateTimingRange);
-
-            const moved = await putScene(place, scene.id, { end_time_seconds: 90 });
-            assert.equal(moved.status, 200, moved.text);
-            assert.equal(moved.body.start_time_seconds, 60);
-            assert.equal(moved.body.end_time_seconds, 90);
-        });
-
-        test("new pages are checked against the saved value they are paired with", async () => {
-            const { place, scene } = await savedScene({ page_start: 1, page_end: 1 });
-            await expectError(putScene(place, scene.id, { page_start: 5 }), 400, MESSAGES.updatePagesRange);
+            for (const field of cleared) assert.equal(response.body[field], null, field);
+            assert.deepEqual(response.body.tags, []);
+            assert.deepEqual(response.body.anchor_geometry, []);
         });
 
         // changes in 11: selected_text is removed (A4)
-        test("saved selected text is kept when only the formatted or raw text changes", async () => {
+        test("selected text follows the body's text, not the saved scene's", async () => {
             const { place, scene } = await savedScene();
-            const response = await putScene(place, scene.id, {
-                formatted_selected_text: "New formatted",
-                raw_selected_text: "New raw",
-            });
+            const response = await putScene(
+                place,
+                scene.id,
+                without(sceneBody({ formatted_selected_text: "New formatted", raw_selected_text: "New raw" }), "selected_text")
+            );
             assert.equal(response.status, 200, response.text);
-            assert.equal(response.body.selected_text, scene.selected_text);
-            assert.equal(response.body.formatted_selected_text, "New formatted");
+            assert.notEqual(scene.selected_text, "New formatted");
+            assert.equal(response.body.selected_text, "New formatted");
             assert.equal(response.body.raw_selected_text, "New raw");
         });
     });
 
-    // changes in 04: an update is validated like a create, with create's required fields and messages
     describe("validation", () => {
-        test("film timing must be whole numbers, start >= 0 and end >= start", async () => {
+        test("follows the create rules, with the same messages, and stores nothing", async () => {
             const { place, scene } = await savedScene();
-            for (const body of [{ start_time_seconds: "abc" }, { end_time_seconds: 1.5 }, { start_time_seconds: {} }]) {
-                await expectError(putScene(place, scene.id, body), 400, MESSAGES.updateTimingType);
-            }
-            for (const body of [{ start_time_seconds: -5 }, { start_time_seconds: 50, end_time_seconds: 40 }]) {
-                await expectError(putScene(place, scene.id, body), 400, MESSAGES.updateTimingRange);
-            }
-        });
-
-        // changes in 04: values are no longer coerced to numbers (B9)
-        test("numeric strings are coerced", async () => {
-            const { place, scene } = await savedScene();
-            const response = await putScene(place, scene.id, { start_time_seconds: "30", end_time_seconds: "45", page_end: "2" });
-            assert.equal(response.status, 200, response.text);
-            assert.equal(response.body.start_time_seconds, 30);
-            assert.equal(response.body.end_time_seconds, 45);
-            assert.equal(response.body.page_end, 2);
-        });
-
-        test("pages must be positive whole numbers with page_end >= page_start", async () => {
-            const { place, scene } = await savedScene();
-            for (const body of [{ page_start: "abc" }, { page_end: 2.5 }]) {
-                await expectError(putScene(place, scene.id, body), 400, MESSAGES.updatePagesType);
-            }
-            for (const body of [{ page_start: 0 }, { page_start: 3, page_end: 2 }]) {
-                await expectError(putScene(place, scene.id, body), 400, MESSAGES.updatePagesRange);
-            }
-        });
-
-        // changes in 11: offsets are removed (A6)
-        test("offsets must be whole numbers with end_offset >= start_offset >= 0", async () => {
-            const { place, scene } = await savedScene();
-            for (const body of [{ start_offset: "x" }, { end_offset: 0.5 }]) {
-                await expectError(putScene(place, scene.id, body), 400, MESSAGES.updateOffsetsType);
-            }
-            for (const body of [{ start_offset: -1 }, { start_offset: 90, end_offset: 80 }]) {
-                await expectError(putScene(place, scene.id, body), 400, MESSAGES.updateOffsetsRange);
-            }
-        });
-
-        // changes in 11: the text fields are replaced and context is removed (A4, A6)
-        test("text and context fields must be strings or null", async () => {
-            const { place, scene } = await savedScene();
+            const [start, end] = anchorPair();
             const invalid = [
-                { selected_text: 5 },
-                { raw_selected_text: 5 },
-                { formatted_selected_text: [] },
-                { context_prefix: 5 },
-                { context_suffix: {} },
+                [{ start_time_seconds: "30" }, MESSAGES.filmTiming],
+                [{ end_time_seconds: null }, MESSAGES.filmTiming],
+                [{ start_time_seconds: 50, end_time_seconds: 40 }, MESSAGES.filmTiming],
+                [{ page_end: "2" }, MESSAGES.pages],
+                [{ page_start: 3, page_end: 2 }, MESSAGES.pages],
+                // changes in 11: context and offsets are removed (A6)
+                [{ context_prefix: 5 }, MESSAGES.context],
+                [{ start_offset: "" }, MESSAGES.offsets],
+                // changes in 11: one scene text field and one raw text field (A4)
+                [{ raw_selected_text: " ", selected_text: null }, MESSAGES.rawText],
+                [{ tags: `${TAGS.revelation},${TAGS.protagonist}` }, MESSAGES.tags],
+                [{ tags: "" }, MESSAGES.tags],
+                [{ anchor_geometry: JSON.stringify(anchorPair()) }, MESSAGES.geometry],
+                [{ anchor_geometry: "" }, MESSAGES.geometry],
+                [{ anchor_geometry: [{ ...start, unit: "px" }, end] }, MESSAGES.sceneAnchor],
+                [{ anchor_geometry: [{ ...end, kind: "start" }, { ...start, kind: "end" }] }, MESSAGES.reversedPair],
             ];
-            for (const body of invalid) {
-                await expectError(putScene(place, scene.id, body), 400, MESSAGES.updateTextTypes);
+            for (const [fields, message] of invalid) {
+                await expectError(putScene(place, scene.id, sceneBody(fields)), 400, message);
             }
+
+            assert.deepEqual((await api.get(scenesPath(place))).body, [scene]);
         });
 
-        test("raw text can't become null or blank", async () => {
+        test("reports the first invalid field in the same order as a create", async () => {
             const { place, scene } = await savedScene();
-            for (const body of [{ raw_selected_text: null }, { raw_selected_text: "" }, { raw_selected_text: "  " }]) {
-                await expectError(putScene(place, scene.id, body), 400, MESSAGES.updateRaw);
-            }
-        });
-
-        test("tags and geometry follow the create rules, with the same messages", async () => {
-            const { place, scene } = await savedScene();
-            await expectError(putScene(place, scene.id, { tags: 5 }), 400, MESSAGES.tags);
-            await expectError(putScene(place, scene.id, { anchor_geometry: "nope" }), 400, MESSAGES.geometry);
-        });
-
-        test("reports the first invalid field in a fixed order", async () => {
-            const { place, scene } = await savedScene();
-            const order = [
-                [{ start_time_seconds: "x" }, MESSAGES.updateTimingType],
-                [{ start_time_seconds: -1 }, MESSAGES.updateTimingRange],
-                [{ page_start: "x" }, MESSAGES.updatePagesType],
-                [{ page_start: 0 }, MESSAGES.updatePagesRange],
-                [{ start_offset: "x" }, MESSAGES.updateOffsetsType],
-                [{ start_offset: -1 }, MESSAGES.updateOffsetsRange],
-                [{ context_prefix: 1 }, MESSAGES.updateTextTypes],
-                [{ tags: 5 }, MESSAGES.tags],
-                [{ anchor_geometry: 5 }, MESSAGES.geometry],
-                [{ raw_selected_text: "" }, MESSAGES.updateRaw],
-            ];
-            for (let index = 0; index < order.length; index += 1) {
-                // Earlier entries are assigned last, so they win where two set the same field.
-                const body = Object.assign({}, ...order.slice(index).reverse().map(([fields]) => fields));
-                await expectError(putScene(place, scene.id, body), 400, order[index][1]);
-            }
+            await expectFieldOrder((body) => putScene(place, scene.id, body));
         });
     });
 
-    // changes in 04: an update replaces the whole scene and requires the same fields as create
     describe("null and empty values", () => {
         // changes in 11: the text fields are replaced (A4)
-        test("null formatted text clears it, and null or blank selected text falls back to formatted, then raw", async () => {
+        test("null formatted text is stored as null, and null or blank selected text falls back to formatted, then raw", async () => {
             const { place, scene } = await savedScene();
 
-            const nulledFormatted = await putScene(place, scene.id, { formatted_selected_text: null });
+            const nulledFormatted = await putScene(place, scene.id, sceneBody({ formatted_selected_text: null }));
+            assert.equal(nulledFormatted.status, 200, nulledFormatted.text);
             assert.equal(nulledFormatted.body.formatted_selected_text, null);
             assert.equal(nulledFormatted.body.selected_text, scene.selected_text);
 
-            const toRaw = await putScene(place, scene.id, { selected_text: null });
+            const toRaw = await putScene(place, scene.id, sceneBody({ selected_text: null, formatted_selected_text: null }));
             assert.equal(toRaw.body.selected_text, scene.raw_selected_text);
 
-            const toFormatted = await putScene(place, scene.id, { selected_text: " ", formatted_selected_text: "Formatted" });
+            const toFormatted = await putScene(place, scene.id, sceneBody({ selected_text: " ", formatted_selected_text: "Formatted" }));
             assert.equal(toFormatted.body.selected_text, "Formatted");
         });
 
         // changes in 11: context is removed (A6)
         test("null context clears it", async () => {
             const { place, scene } = await savedScene();
-            const response = await putScene(place, scene.id, { context_prefix: null, context_suffix: null });
+            const response = await putScene(place, scene.id, sceneBody({ context_prefix: null, context_suffix: null }));
+            assert.equal(response.status, 200, response.text);
             assert.equal(response.body.context_prefix, null);
             assert.equal(response.body.context_suffix, null);
         });
@@ -810,38 +872,20 @@ describe("updating a captured scene", () => {
         // changes in 11: every scene needs a valid version-2 anchor pair, so null geometry is invalid (A2)
         test("null tags and null geometry become empty lists", async () => {
             const { place, scene } = await savedScene();
-            const response = await putScene(place, scene.id, { tags: null, anchor_geometry: null });
+            const response = await putScene(place, scene.id, sceneBody({ tags: null, anchor_geometry: null }));
+            assert.equal(response.status, 200, response.text);
             assert.deepEqual(response.body.tags, []);
             assert.deepEqual(response.body.anchor_geometry, []);
         });
 
-        test("empty strings clear tags and geometry, and are stored as formatted text and context", async () => {
+        // changes in 11: the text fields are replaced and context is removed (A4, A6)
+        test("an empty string is stored as formatted text and as context", async () => {
             const { place, scene } = await savedScene();
-            const response = await putScene(place, scene.id, {
-                tags: "",
-                anchor_geometry: "",
-                formatted_selected_text: "",
-                context_prefix: "",
-            });
+            const response = await putScene(place, scene.id, sceneBody({ formatted_selected_text: "", context_prefix: "" }));
             assert.equal(response.status, 200, response.text);
-            // changes in 04: string tags and stringified geometry are rejected (B9)
-            assert.deepEqual(response.body.tags, []);
-            assert.deepEqual(response.body.anchor_geometry, []);
-            // changes in 11: the text fields are replaced and context is removed (A4, A6)
             assert.equal(response.body.formatted_selected_text, "");
             assert.equal(response.body.selected_text, scene.selected_text);
             assert.equal(response.body.context_prefix, "");
-        });
-
-        // changes in 04: string tags and stringified geometry are rejected (B9)
-        test("string tags are split and stringified geometry is parsed", async () => {
-            const { place, scene } = await savedScene();
-            const response = await putScene(place, scene.id, {
-                tags: `${TAGS.revelation},${TAGS.protagonist}`,
-                anchor_geometry: JSON.stringify(anchorPair({ startLine: 9 })),
-            });
-            assert.deepEqual(response.body.tags, [TAGS.revelation, TAGS.protagonist]);
-            assert.deepEqual(response.body.anchor_geometry, anchorPair({ startLine: 9 }));
         });
     });
 });
@@ -882,10 +926,93 @@ describe("deleting a captured scene", () => {
         await expectError(api.delete(`${scenesPath(place)}/${scene.id}`), 401, "Sign in to make changes.");
     });
 
+    test("waits for the script's lock, which saves hold until they commit, then answers 204", async () => {
+        const place = await newPlace();
+        const scene = await createScene(api, cookie, place);
+        const holder = await pool.connect();
+        try {
+            await holder.query("BEGIN");
+            // An uppercase spelling of the id names the same script, so it takes the same lock.
+            await holder.query(LOCK_SCRIPT_SCENES_SQL, [place.script.id.toUpperCase()]);
+            const deleting = api.delete(`${scenesPath(place)}/${scene.id}`, { cookie });
+            await waitForLockWaiters(1, "advisory");
+            await holder.query("COMMIT");
+
+            const response = await deleting;
+            assert.equal(response.status, 204, response.text);
+            assert.deepEqual((await api.get(scenesPath(place))).body, []);
+        } catch (err) {
+            await holder.query("ROLLBACK");
+            throw err;
+        } finally {
+            holder.release();
+        }
+    });
+
     test("a scene id that isn't a UUID is a 500, on update and delete", async (t) => {
         t.mock.method(console, "error", () => {});
         const place = await newPlace();
         await expectError(putScene(place, "not-a-uuid", sceneBody()), 500, "Something went wrong on the server.");
         await expectError(api.delete(`${scenesPath(place)}/not-a-uuid`, { cookie }), 500, "Something went wrong on the server.");
+    });
+});
+
+describe("concurrent saves to one script", () => {
+    /**
+     * Sends the saves at once while another transaction blocks inserts into
+     * script_scene_anchors, and releases that block only once both saves are
+     * waiting on a lock. Without the script's advisory lock, both saves pass the
+     * overlap check before either has written, and both are stored.
+     */
+    async function createAtOnce(requests) {
+        const blocker = await pool.connect();
+        try {
+            await blocker.query("BEGIN");
+            await blocker.query("LOCK TABLE script_scene_anchors IN EXCLUSIVE MODE");
+            const responses = requests.map(({ place, body }) => postScene(place, body));
+            await waitForLockWaiters(requests.length);
+            await blocker.query("COMMIT");
+            return await Promise.all(responses);
+        } catch (err) {
+            await blocker.query("ROLLBACK");
+            throw err;
+        } finally {
+            blocker.release();
+        }
+    }
+
+    async function expectOneStored(place, responses, conflictKind) {
+        assert.deepEqual(responses.map((response) => response.status).sort(), [201, 409]);
+        const stored = responses.find((response) => response.status === 201).body;
+        const refused = responses.find((response) => response.status === 409).body;
+        assert.equal(refused.conflict_kind, conflictKind);
+        assert.equal(refused.conflict_scene_id, stored.id);
+        assert.deepEqual((await api.get(scenesPath(place))).body.map((scene) => scene.id), [stored.id]);
+    }
+
+    test("of two scenes whose film timings overlap, exactly one is stored, however the script id is spelled", async () => {
+        const place = await newPlace();
+        // Postgres reads the uppercase id as the same script, so both saves must take the same lock.
+        const uppercase = { movie: place.movie, script: { id: place.script.id.toUpperCase() } };
+        const responses = await createAtOnce([
+            { place, body: sceneBody({ start_time_seconds: 60, end_time_seconds: 120 }) },
+            { place: uppercase, body: sceneBody({ start_time_seconds: 100, end_time_seconds: 160 }) },
+        ]);
+        await expectOneStored(place, responses, "film_timing");
+    });
+
+    test("of two scenes whose script locations share a line, exactly one is stored", async () => {
+        const place = await newPlace();
+        const responses = await createAtOnce([
+            {
+                place,
+                body: sceneBody({ start_time_seconds: 0, end_time_seconds: 50, anchor_geometry: anchorPair({ startPage: 2, startLine: 10, endLine: 20 }) }),
+            },
+            {
+                place,
+                body: sceneBody({ start_time_seconds: 100, end_time_seconds: 150, anchor_geometry: anchorPair({ startPage: 2, startLine: 20, endLine: 30 }) }),
+            },
+        ]);
+        await expectOneStored(place, responses, "script_location");
     });
 });
