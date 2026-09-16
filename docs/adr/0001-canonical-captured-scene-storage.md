@@ -27,8 +27,10 @@ against. This record holds the decisions and why the alternatives lost.
 - Scene anchors live in an `anchor_geometry` JSONB array of `{kind, version, unit, page, line,
   top, bottom, text}` entries. The server can't compare them in SQL, so overlap is enforced by
   reading every other scene of the script into Node under a per-script advisory lock (issue 04).
-- Production has no legacy scenes (spec Decision 4), so this is a conversion of well-formed
-  data, not a rescue of unrecoverable records.
+- Production has no legacy scenes (spec Decision 4), and the G1 production inventory (run
+  `inventory-20260916T172941Z`) confirms it: 1 captured scene, with a valid anchor pair, and no
+  overlapping pairs. So this is a conversion of well-formed data, not a rescue of unrecoverable
+  records.
 - Only one deployment exists, one admin writes to it, and the release is a coordinated
   maintenance cutover (E2), so migrations do not have to stay compatible with the running API.
 - The tag taxonomy and the screenplay grammar live in `client/`, but the production image is
@@ -136,3 +138,7 @@ against. This record holds the decisions and why the alternatives lost.
   a sequence of whitespace-delimited words. It still catches dropped, invented, reordered and
   misspelled words; it no longer sees differences that are only whitespace, hyphenation or
   punctuation.
+- No convertible row, in production (G1) or in the local database (issue 03), takes the
+  legacy-parse path, so G2 chooses between this design and dropping the legacy parse and word
+  check, with or without the parse-back check and the grammar's move to `server/` (Contract §11,
+  "What the production figures change", F1).
