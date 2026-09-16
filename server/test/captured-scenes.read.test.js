@@ -109,6 +109,25 @@ describe("searching captured scenes", () => {
         assert.equal(movieTitle, first.movie.title);
     });
 
+    test("includes movie_title when the allowed movie title is empty", async () => {
+        const place = await createMovieWithScript(api, cookie);
+        await api.put(`/movies/${place.movie.id}`, {
+            cookie,
+            body: {
+                title: "",
+                director: place.movie.director,
+                writer: place.movie.writer,
+                cinematographer: place.movie.cinematographer,
+                year: place.movie.year,
+                runtime_minutes: place.movie.runtime_minutes,
+            },
+        });
+        const scene = await createScene(api, cookie, place);
+        const result = (await api.get("/script-scenes")).body.find((candidate) => candidate.id === scene.id);
+        assert.ok(Object.hasOwn(result, "movie_title"));
+        assert.equal(result.movie_title, "");
+    });
+
     test("filters by every tag unless match=any", async () => {
         const place = await createMovieWithScript(api, cookie);
         const both = await createScene(api, cookie, place, {

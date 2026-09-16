@@ -99,10 +99,7 @@ export async function searchScriptScenes(db, { tags, match }) {
          LIMIT ${SEARCH_RESULT_LIMIT}`,
         values
     );
-    return result.rows.map((row) => ({
-        ...sceneFromRow(row),
-        ...(row.movie_title ? { movie_title: row.movie_title } : {}),
-    }));
+    return result.rows.map((row) => ({ ...sceneFromRow(row), movie_title: row.movie_title }));
 }
 
 function readSceneBody(body) {

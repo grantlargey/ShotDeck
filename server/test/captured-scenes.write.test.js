@@ -384,3 +384,48 @@ describe("database overlap constraints", () => {
         }
     });
 });
+
+describe("concurrent zero-length saves", () => {
+    test("the advisory lock lets one save win and makes the other a named 409", async () => {
+        const place = await newPlace();
+        const blocker = await pool.connect();
+        let pending = [];
+        try {
+            await blocker.query("BEGIN");
+            await blocker.query("LOCK TABLE captured_scenes IN EXCLUSIVE MODE");
+            pending = [
+                postScene(
+                    place,
+                    sceneBody({
+                        start_time_seconds: 15,
+                        end_time_seconds: 15,
+                        script_location: anchorPair({ startLine: 800 }),
+                    })
+                ),
+                postScene(
+                    place,
+                    sceneBody({
+                        start_time_seconds: 10,
+                        end_time_seconds: 20,
+                        script_location: anchorPair({ startLine: 900 }),
+                    })
+                ),
+            ];
+            await waitForLockWaiters(2);
+            await blocker.query("COMMIT");
+            const responses = await Promise.all(pending);
+            assert.deepEqual(responses.map((response) => response.status).sort(), [201, 409]);
+            const stored = responses.find((response) => response.status === 201).body;
+            const refused = responses.find((response) => response.status === 409).body;
+            assert.deepEqual(refused, {
+                error: MESSAGES.filmTimingOverlap,
+                ...expectedConflict("film_timing", stored),
+            });
+            assert.deepEqual((await api.get(scenesPath(place))).body.map((scene) => scene.id), [stored.id]);
+        } finally {
+            await blocker.query("ROLLBACK").catch(() => {});
+            blocker.release();
+            await Promise.allSettled(pending);
+        }
+    });
+});

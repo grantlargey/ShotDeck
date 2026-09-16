@@ -127,7 +127,9 @@ async function seedConvertibleDatabase(suffix, { tags = [TAGS.protagonist] } = {
 before(async () => {
     for (const suffix of databases) await createTestDatabase(suffix);
     await seedConvertibleDatabase("convert_ok");
-    await seedConvertibleDatabase("convert_abort", { tags: ["unknown:tag"] });
+    // JSON null satisfies the legacy column's SQL NOT NULL constraint but is
+    // not an array. It must abort rather than silently becoming no tags.
+    await seedConvertibleDatabase("convert_abort", { tags: null });
     if (DUMP_PATH) {
         await restoreDump("dump_unrepaired", DUMP_PATH);
         await restoreDump("dump_repaired", DUMP_PATH);
@@ -194,6 +196,24 @@ describe("conversion analysis", () => {
                 { tag: "unknown:two", ids: [IDS.scene] },
             ],
         });
+    });
+
+    test("rejects every non-array tag container without reporting its contents", () => {
+        for (const [tags, descriptor] of [
+            [null, "<non-array:null>"],
+            [TAGS.protagonist, "<non-array:string>"],
+            [{ password: "must-not-leak" }, "<non-array:object>"],
+            [7, "<non-array:number>"],
+        ]) {
+            const { report, converted } = analyzeLegacy(pureFixture({ scene: { tags } }));
+            assert.deepEqual(abort(report, "unmapped_tag"), {
+                reason: "unmapped_tag",
+                count: 1,
+                values: [{ tag: descriptor, ids: [IDS.scene] }],
+            });
+            assert.deepEqual(converted[0].tags, []);
+            assert.ok(!JSON.stringify(report).includes("must-not-leak"));
+        }
     });
 
     test("reports film timing and inclusive script-location overlaps only within one script", () => {
@@ -319,7 +339,7 @@ describe("the conversion command", () => {
         assert.equal(run.status, 3, run.stderr);
         const report = parseReport(run);
         assert.equal(report.status, "aborted");
-        assert.equal(abort(report, "unmapped_tag").values[0].tag, "unknown:tag");
+        assert.equal(abort(report, "unmapped_tag").values[0].tag, "<non-array:null>");
         const db = await connectDatabase("convert_abort");
         try {
             const state = await db.query(

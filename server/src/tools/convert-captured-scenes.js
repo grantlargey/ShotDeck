@@ -153,13 +153,18 @@ function inCanonicalBounds(scene, pair) {
 }
 
 function dedupeTags(tags) {
-    return [...new Set(Array.isArray(tags) ? tags : [])];
+    return Array.isArray(tags) ? [...new Set(tags)] : null;
 }
 
 function printableTag(tag) {
     if (typeof tag === "string") return tag;
     if (tag === null) return "<null>";
     return `<${Array.isArray(tag) ? "array" : typeof tag}>`;
+}
+
+function nonArrayTagDescriptor(value) {
+    if (value === null) return "<non-array:null>";
+    return `<non-array:${Array.isArray(value) ? "array" : typeof value}>`;
 }
 
 function pairwise(rows, predicate) {
@@ -244,13 +249,14 @@ export function analyzeLegacy({ scenes, anchors, scripts, scriptAnnotationCount,
         if (!inCanonicalBounds(scene, pair)) abortIds.location_out_of_range.push(scene.id);
 
         const tags = dedupeTags(scene.tags);
-        for (const tag of tags) {
-            if (typeof tag === "string" && TAXONOMY_TAGS.has(tag)) continue;
-            const shown = printableTag(tag);
+        const rejectedTags = tags ?? [nonArrayTagDescriptor(scene.tags)];
+        for (const tag of rejectedTags) {
+            if (tags && typeof tag === "string" && TAXONOMY_TAGS.has(tag)) continue;
+            const shown = tags ? printableTag(tag) : tag;
             if (!unknownTags.has(shown)) unknownTags.set(shown, []);
             unknownTags.get(shown).push(scene.id);
         }
-        report.tags.kept += tags.filter((tag) => typeof tag === "string" && TAXONOMY_TAGS.has(tag)).length;
+        report.tags.kept += (tags ?? []).filter((tag) => typeof tag === "string" && TAXONOMY_TAGS.has(tag)).length;
         if (isNonBlankString(anchor?.raw_selected_text)) report.raw_text.from_stored += 1;
         if (scene.start_time_seconds === scene.end_time_seconds) report.film_timing.zero_length += 1;
 
@@ -263,7 +269,7 @@ export function analyzeLegacy({ scenes, anchors, scripts, scriptAnnotationCount,
             end: pair?.end,
             scene_text: anchor?.formatted_selected_text,
             raw_text: anchor?.raw_selected_text,
-            tags,
+            tags: tags ?? [],
             created_at: scene.created_at,
             updated_at: scene.updated_at,
         });
