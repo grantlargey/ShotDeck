@@ -68,10 +68,6 @@ function toSingleLine(text) {
   return text.replace(/\s*\n\s*/g, " ").trim();
 }
 
-const GRAMMAR_MARKER = /^ {0,3}(?:#{1,6}[ \t]|>|<(?:p|div|h[1-6])\b[^>]*?\balign)/im;
-const LEGACY_HEADING = /^(?:INT|EXT|EST|I\/E)\b[.\s/-]/i;
-const LEGACY_TRANSITION = /^[A-Z0-9 .'-]+(?:TO|IN|OUT|BLACK):$/;
-
 /**
  * Joins a wrapped line onto the previous one, re-joining words hyphenated
  * across the line break ("grease-" + "paint") but not dashes ("hands--").
@@ -81,44 +77,6 @@ export function joinWrappedLine(previous, next) {
     return previous + next;
   }
   return `${previous} ${next}`;
-}
-
-/**
- * Text saved before screenplay markdown existed is hard-wrapped at the PDF's
- * line width. Wrapped prose is rejoined into paragraphs, while scene
- * headings, transitions, and short all-caps lines (likely character cues)
- * stay on their own lines.
- */
-function parseLegacyText(source) {
-  const elements = [];
-  let paragraph = null;
-  const flush = () => {
-    if (paragraph) elements.push(paragraph);
-    paragraph = null;
-  };
-
-  for (const rawLine of source.split("\n")) {
-    const line = rawLine.trim();
-    if (!line) {
-      flush();
-    } else if (line.length <= 80 && LEGACY_HEADING.test(line)) {
-      flush();
-      elements.push({ type: "heading", text: line });
-    } else if (LEGACY_TRANSITION.test(line)) {
-      flush();
-      elements.push({ type: "transition", text: line });
-    } else if (line.length <= 40 && /[A-Z]/.test(line) && line === line.toUpperCase()) {
-      flush();
-      elements.push({ type: "action", text: line });
-    } else if (paragraph) {
-      paragraph.text = joinWrappedLine(paragraph.text, line);
-    } else {
-      paragraph = { type: "action", text: line };
-    }
-  }
-
-  flush();
-  return elements;
 }
 
 function pushQuotedElements(elements, quotedLines) {
@@ -145,14 +103,12 @@ function pushQuotedElements(elements, quotedLines) {
 }
 
 /**
- * Parses screenplay markdown into `{ type, text }` elements. Text that uses
- * none of the grammar (selections saved before it existed) is reflowed by
- * parseLegacyText, so every saved scene renders and edits the same way.
+ * Parses screenplay markdown into `{ type, text }` elements. Text with no
+ * grammar markers is valid too: each paragraph, separated by a blank line, is
+ * one action element, and its line breaks are kept as written.
  */
 export function parseScreenplayMarkdown(source) {
   const normalized = String(source ?? "").replace(/\r\n?/g, "\n");
-  if (!GRAMMAR_MARKER.test(normalized)) return parseLegacyText(normalized);
-
   const lines = normalized.split("\n");
   const elements = [];
   let i = 0;
