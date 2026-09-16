@@ -4,7 +4,7 @@ The script viewer is the page where admins capture scenes from a film's script, 
 
 ## What will a scene draft save, and why?
 
-Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave({ runtimeSeconds, scenes })`, which takes the film's runtime and the script's captured scenes and returns either `{ error }` or `{ payload, applySaved, confirmStaleText }`. When `confirmStaleText` is true, the page asks the admin first and sends nothing if they cancel. The page sends `payload` to create or update the captured scene, then passes the returned scene to `applySaved`.
+Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave({ runtimeSeconds, scenes })`, which takes the film's runtime and the script's captured scenes and returns either `{ error }` or `{ payload, applySaved, confirmStaleText }`. When `confirmStaleText` is true, the page asks the admin first and sends nothing if they cancel. The collection module then sends `payload` to create or update the captured scene and passes the returned scene to `applySaved`.
 
 **Validation**, in order:
 
@@ -61,7 +61,7 @@ While the anchors in effect share a line with another scene, the panel shows the
 
 Before a deletion request, call `draftActions.prepareDelete(sceneId)` and retain its completion callback. Call it only after the request succeeds. It clears an unchanged deleted draft, leaves a different scene alone, and preserves newer changes to the deleted scene as a new unsaved draft. A legacy draft without explicit anchors may need a new capture before it can be saved as a new scene. Deletion also invalidates older saves for that draft.
 
-The page still updates the saved-scene collection and shows the request result. Networking stays in the page; whether a response can replace the draft belongs to the draft module. These rules fix the earlier I1/I2 response races.
+`useSceneCollection` sends each request, updates the script's captured scenes and calls these callbacks; the page shows the result. Networking for captured scenes lives in the collection module, and whether a response can replace the draft belongs to the draft module. These rules fix the earlier I1/I2 response races.
 
 ### AI proposals keep the selection they were requested for
 
@@ -150,16 +150,19 @@ Known limits:
 
 The route `/movies/:movieId/scripts/:scriptId` is declared in `client/src/app/App.jsx`, which lazy-loads `@/pages/script-viewer/ui/ScriptViewerPage.jsx`, whose default export is `ScriptViewerRoute`. It keys the page by `scriptId`, so switching scripts remounts the page and starts a fresh draft.
 
-| `useSceneDraft` (`model/sceneDraft.js`) | `ScriptViewerPage.jsx` |
-|---|---|
-| Draft state and every transition (a private pure reducer) | Loading the project, script and scenes; notices |
-| Anchors in effect: explicit, or suggested | PDF rendering, windowing, scrolling, deep links |
-| Capture memoization and captured text | Menus, dialogs, tabs, the marker toggle, the visitor's focused scene |
-| Text origin, stale text, legacy text, the editor source key | `window.confirm` prompts and all UI wording, including re-capture button labels |
-| The dirty check | Keyboard and pointer wiring |
-| Re-capture rules, the AI proposal lifecycle and request tokens | Network calls: AI formatting, scene create, update and delete |
-| Save validation, including overlapping scenes, the payload, and whether saving needs confirmation (`buildSave`) | AI page snapshots and error-message mapping |
-| | The overlap callout, scene bars in the margin, admin vs visitor behavior |
+The page composes two model modules, the scene draft and the script's captured scenes, and owns the rest of the screen.
+
+| `useSceneDraft` (`model/sceneDraft.js`) | `useSceneCollection` (`model/sceneCollection.js`) | `ScriptViewerPage.jsx` |
+|---|---|---|
+| Draft state and every transition (a private pure reducer) | The script's captured scenes and their order (`sortScriptScenes`) | Loading the project and script; notices and all UI wording |
+| Anchors in effect: explicit, or suggested | Their create, update and delete requests | PDF rendering, windowing, scrolling, deep links |
+| Capture memoization and captured text | Which request is running (`saving`, `deletingSceneId`) | Menus, dialogs, tabs, the marker toggle, the visitor's focused scene |
+| Text origin, stale text, legacy text, the editor source key | Handing each response to the draft's `applySaved` and `prepareDelete` | `window.confirm` prompts, including re-capture button labels |
+| The dirty check | | Keyboard and pointer wiring |
+| Re-capture rules, the AI proposal lifecycle and request tokens | | The AI formatting call, its page snapshots and error-message mapping |
+| Save validation, including overlapping scenes, the payload, and whether saving needs confirmation (`buildSave`) | | The overlap callout, scene bars in the margin, admin vs visitor behavior |
+
+`AnnotatorPanel` reads `draft` and `draftActions` itself, so the page relays no draft fields to it; the page passes only what it owns. A failed request resolves with the error it threw, and the page words it.
 
 ## Module map
 
@@ -167,14 +170,16 @@ All paths are under `client/src/pages/script-viewer/`.
 
 | File | Role |
 |---|---|
-| `ui/ScriptViewerPage.jsx` | The route module and page: data loading, PDF, dialogs, navigation, and wiring the draft to the UI. |
+| `ui/ScriptViewerPage.jsx` | The route module and page: it composes the draft and the collection, loads the project and script, and owns the PDF, dialogs, navigation, prompts and notices. |
 | `model/sceneDraft.js` | `useSceneDraft`, and `scriptLocationOverlapError`, the script location overlap message that `AnnotatorPanel`'s callout also shows. |
+| `model/sceneCollection.js` | `useSceneCollection({ movieId, scriptId, onLoadError })`: the script's captured scenes in the API's list order (`list`), `loading`, the `save` and `remove` requests, and which one is running (`saving`, `deletingSceneId`). Each request resolves with `{ ok: true }` (a save also carries the saved `scene`) or `{ ok: false, error }`, and a failed one leaves the list as it was. |
 | `model/anchors.js` | Pure helpers for scene anchors while capturing: placement and swapping, anchor keys, a stored anchor's current line (`resolveAnchorLine`), suggestions from saved text, and the saved scenes' bars in the margin (`buildSceneSegmentsByPage`). |
 | `model/captureRange.js` | `captureAnchoredRange(textIndex, anchors)`: captured text, key, pages, offsets and context. Expensive. `captureUnavailableReason(textIndex, anchors)` says why there is no capture. |
 | `model/useScriptTextIndex.js` | Indexes every page's text lines in the background on a separate pdf.js worker. Publishes a new index object every 8 pages and on completion. |
 | `model/usePdfPageWindowing.js` | Page sizing, mobile windowing and scrolling. |
 | `ui/PdfPageFrame.jsx` | One memoized page plus its overlay: markers, range, scene bars, hover line. |
-| `ui/AnnotatorPanel.jsx`, `ui/DraftEditorModal.jsx`, `ui/ScreenplayEditor.jsx`, `ui/AnchorContextMenu.jsx`, `ui/SavedScenesGrid.jsx`, `ui/ViewerTopBar.jsx` | Presentational components. `ScreenplayEditor` owns its blocks until its `sourceKey` (`draft.editorKey`) changes, then rebuilds them and keeps focus in the same block. |
+| `ui/AnnotatorPanel.jsx` | The annotator beside the PDF: the Capture and Tags tabs and the Save and Delete buttons. It takes `draft` and `draftActions`, and from the page the tab, the film's title and runtime, indexing progress, the overlapping scene, request state, and the handlers that prompt or send a request. It derives the header label and the Tags tab's gate from the draft. |
+| `ui/DraftEditorModal.jsx`, `ui/ScreenplayEditor.jsx`, `ui/AnchorContextMenu.jsx`, `ui/SavedScenesGrid.jsx`, `ui/ViewerTopBar.jsx` | Presentational components. `ScreenplayEditor` owns its blocks until its `sourceKey` (`draft.editorKey`) changes, then rebuilds them and keeps focus in the same block. |
 | `lib/pageSnapshots.js` | Renders cropped page images for the AI formatter. |
 | `lib/pdfViewport.js`, `lib/platform.js` | Scroll helpers, typing-target detection, shortcut labels. |
 
@@ -224,14 +229,14 @@ Timing rules:
 
 | Glossary term | Client | HTTP | Database |
 |---|---|---|---|
-| Captured scene | script scene: `scenes`, `draft.savedScene` | `/movies/:movieId/scripts/:scriptId/scene-annotations` (list, create, update, delete); `GET /script-scenes` (search) | `script_scene_annotations` joined to `script_scene_anchors` |
+| Captured scene | script scene: `scenes.list`, `draft.savedScene` | `/movies/:movieId/scripts/:scriptId/scene-annotations` (list, create, update, delete); `GET /script-scenes` (search) | `script_scene_annotations` joined to `script_scene_anchors` |
 | Script location | `page_start`/`page_end`, `start_offset`/`end_offset`, `context_prefix`/`context_suffix`, `anchor_geometry` | the same payload fields | `script_scene_anchors` columns |
 | Scene anchor | `draft.anchors.start` / `.end`; version-2 geometry entries `{ kind, version: 2, unit: "pt", page, line, top, bottom, text }`, read and written by `anchorsFromGeometry` / `anchorsToGeometry` (`@/entities/script-scene/model/scriptLocation.js`) | `anchor_geometry` | `script_scene_anchors.anchor_geometry` (JSONB) |
 | Suggested anchors | `draft.anchorsSuggested`; anchors carrying `suggested: true` | never sent | never stored |
-| Scene text | `draft.text` (panel and dialog prop `markdown`) | `formatted_selected_text`; `selected_text` mirrors it on save | `script_scene_anchors.formatted_selected_text`, `selected_text` |
+| Scene text | `draft.text` (the dialog's prop `markdown`; the panel reads the draft) | `formatted_selected_text`; `selected_text` mirrors it on save | `script_scene_anchors.formatted_selected_text`, `selected_text` |
 | Raw text | — | `raw_selected_text` | `script_scene_anchors.raw_selected_text` |
 | Text origin | `draft.textOrigin`: `"capture"`, `"edited"`, `"saved"`, `"ai"` (also the panel's badge keys) | — | — |
-| Stale text | `draft.textStale` (panel prop `captureStale`) | — | — |
+| Stale text | `draft.textStale` | — | — |
 | Legacy scene | a scene for which `anchorsFromGeometry(scene.anchor_geometry)` is null: geometry without a valid version-2 start and end pair; `draft.legacyText` for its saved text | `anchor_geometry` that isn't version-2 anchors | — |
 | AI proposal | `draft.proposal` | `POST /api/script-scenes/format` | — |
 | Film timing | `draft.startTime` / `endTime` as typed; `formatFilmTiming` labels a scene's range | `start_time_seconds` / `end_time_seconds` | `script_scene_annotations.start_time_seconds` / `end_time_seconds` |
@@ -241,6 +246,7 @@ Timing rules:
 | To change | Look in |
 |---|---|
 | What gets saved | `buildSave` in `model/sceneDraft.js` |
+| Sending a captured scene's create, update or delete request, and what the list does with the response | `useSceneCollection` in `model/sceneCollection.js`; the prompts, notices and their wording in `ui/ScriptViewerPage.jsx` |
 | Film timing validation, overlap, range labels and the single-moment check | `@/entities/script-scene/model/filmTiming.js` |
 | Script location overlap | `findOverlappingScriptLocation` in `@/entities/script-scene/model/scriptLocation.js`; the message in `scriptLocationOverlapError` (`model/sceneDraft.js`) |
 | Typed-time parsing, formatting and normalizing | `@/shared/lib/time.js` |
@@ -254,7 +260,7 @@ Timing rules:
 | Text origin, stale text, the editor key, the dirty check | `useSceneDraft` |
 | Focus when the editor's text is replaced from outside | `ScreenplayEditor` in `ui/ScreenplayEditor.jsx` |
 | Confirm wording and button labels | `ui/ScriptViewerPage.jsx` |
-| AI requests | `startProposal` (what is sent) and `requestAiFormat` in the page (snapshots and the network call) |
+| AI requests, which stay in the page | `startProposal` (what is sent) and `requestAiFormat` in the page (snapshots and the network call) |
 | AI proposal selection and word-check baseline | `startProposal` and the `proposalAccept` transition in `useSceneDraft`; the proposal check in `ui/DraftEditorModal.jsx` |
 | Indexing | `model/useScriptTextIndex.js` |
 
@@ -266,10 +272,11 @@ Run the client tests from the repository root:
 npm test --prefix client
 ```
 
-Vitest runs with jsdom (`client/vitest.config.js`, setup in `client/src/test/setup.js`). The script viewer has two suites:
+Vitest runs with jsdom (`client/vitest.config.js`, setup in `client/src/test/setup.js`). The script viewer has three suites:
 
 - **`ui/ScriptViewerPage.test.jsx`** characterizes the page end to end: capture, indexing, editing, re-capture, suggestions, saving, prompts, keys, AI proposals, visitors, page-frame prop identity, and scrolling to a scene (P21: a deep link with only a `sceneId` scrolls once scenes load, and a scene without a known page doesn't scroll from a deep link, its card or "Show in script"). It doubles only the edges: the API modules the page calls (`@/shared/api/*.js`), the session hook, `react-pdf`, the text indexer (a store the test publishes indexes to), page windowing, `PdfPageFrame` (which records the props of each render), AI page snapshots and `window.confirm`. Capture runs through a passthrough spy. The panel, dialogs, editor, anchors, capture and screenplay code are real.
 - **`model/sceneDraft.test.jsx`** tests the hook's interface directly: the committed-view rule, identities, capture work, request tokens under `StrictMode`, AI proposal provenance, re-capture options, editor keys, undo limits, and the exact save mapping.
+- **`model/sceneCollection.test.js`** tests the collection through its interface, doubling the captured-scene API owner (`@/shared/api/scriptScenes.js`): loading and ordering, a failed load, a create followed by an update of the id the create returned, the responses reaching `applySaved` and `prepareDelete`, busy state, and failed requests that leave the list unchanged.
 
 Where a stored scene sits is tested through the entity modules' exports, using stored-row shapes:
 
