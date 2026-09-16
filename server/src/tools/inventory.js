@@ -49,7 +49,7 @@
  *   A pair of scenes is [lower scene id, higher scene id].
  */
 import pg from "pg";
-import { SCRIPT_TAG_CATEGORIES } from "../../../client/src/entities/script-scene/model/scriptTagCategories.js";
+import { SCRIPT_TAG_CATEGORIES } from "../domain/script-tags.js";
 
 const STATEMENT_TIMEOUT = "30s";
 const TAXONOMY_TAGS = new Set(SCRIPT_TAG_CATEGORIES.flatMap((group) => group.tags.map((tag) => tag.value)));

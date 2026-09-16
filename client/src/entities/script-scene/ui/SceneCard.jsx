@@ -11,7 +11,7 @@ import {
 } from "../model/capturedScene.js";
 import { formatFilmTiming } from "../model/filmTiming.js";
 import { formatScenePages } from "../model/scriptLocation.js";
-import { getScriptTagLabel } from "../model/scriptTagCategories.js";
+import { getScriptTagLabel } from "@server/domain/script-tags.js";
 import styles from "./SceneCard.module.css";
 
 const MAX_CARD_TAGS = 3;
