@@ -11,12 +11,11 @@ const EMPTY_INDEX = {
   pages: new Map(),
   complete: false,
   actionMargin: null,
-  pageOffsets: null,
 };
 
 /**
  * Builds a line-level text index for every page of the loaded PDF in the
- * background. Anchor snapping, capture, and legacy re-anchoring all read from
+ * background. Anchor snapping and capture read from
  * it, so none of them depend on which pages are currently rendered.
  *
  * Extraction runs on its own pdf.js worker, fed the bytes the viewer already
@@ -39,21 +38,11 @@ export function useScriptTextIndex(pdfDocument) {
     const publish = (complete) => {
       if (cancelled) return;
       const snapshot = new Map(pages);
-      let pageOffsets = null;
-      if (complete) {
-        pageOffsets = new Map();
-        let running = 0;
-        for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
-          pageOffsets.set(pageNumber, running);
-          running += snapshot.get(pageNumber)?.textLength ?? 0;
-        }
-      }
       setIndex({
         doc: pdfDocument,
         pages: snapshot,
         complete,
         actionMargin: estimateActionMargin([...snapshot.values()]),
-        pageOffsets,
       });
     };
 

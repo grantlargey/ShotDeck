@@ -28,8 +28,10 @@ function sceneRow(id, fields = {}) {
     id,
     movie_id: "m1",
     script_id: "s1",
-    page_start: null,
-    page_end: null,
+    script_location: {
+      start: { page: 1, line: 0, top: 0, bottom: 10, text: "start" },
+      end: { page: 1, line: 1, top: 12, bottom: 22, text: "end" },
+    },
     start_time_seconds: 0,
     end_time_seconds: 60,
     created_at: "2026-09-01T00:00:00.000Z",
@@ -38,7 +40,16 @@ function sceneRow(id, fields = {}) {
 }
 
 /** What the draft's buildSave would hand over; the collection never reads it. */
-const PAYLOAD = { start_time_seconds: 600, end_time_seconds: 660, formatted_selected_text: "## INT. DINER" };
+const PAYLOAD = { start_time_seconds: 600, end_time_seconds: 660, scene_text: "## INT. DINER" };
+
+function at(page, line = 0) {
+  return {
+    script_location: {
+      start: { page, line, top: 0, bottom: 10, text: "start" },
+      end: { page, line: line + 1, top: 12, bottom: 22, text: "end" },
+    },
+  };
+}
 
 function ids(rows) {
   return rows.map((row) => row.id);
@@ -71,9 +82,9 @@ describe("useSceneCollection", () => {
   describe("loading", () => {
     it("loads the script's captured scenes and puts them in the API's list order", async () => {
       listScriptScenes.mockResolvedValue([
-        sceneRow("p5", { page_start: 5 }),
-        sceneRow("unplaced", { start_time_seconds: 10 }),
-        sceneRow("p1", { page_start: 1 }),
+        sceneRow("p5", at(5)),
+        sceneRow("p3", at(3)),
+        sceneRow("p1", at(1)),
       ]);
       const onLoadError = vi.fn();
       const { result } = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1", onLoadError }));
@@ -83,7 +94,7 @@ describe("useSceneCollection", () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false));
       expect(listScriptScenes).toHaveBeenCalledWith("m1", "s1");
-      expect(ids(result.current.list)).toEqual(["p1", "p5", "unplaced"]);
+      expect(ids(result.current.list)).toEqual(["p1", "p3", "p5"]);
       expect(onLoadError).not.toHaveBeenCalled();
       expect(result.current.saving).toBe(false);
       expect(result.current.deletingSceneId).toBe("");
@@ -109,8 +120,8 @@ describe("useSceneCollection", () => {
 
   describe("saving", () => {
     it("creates a scene, then updates the scene the create returned", async () => {
-      const { result } = await renderCollection([sceneRow("p1", { page_start: 1 })]);
-      const created = sceneRow("scene-new", { page_start: 3 });
+      const { result } = await renderCollection([sceneRow("p1", at(1))]);
+      const created = sceneRow("scene-new", at(3));
       createScriptScene.mockResolvedValue(created);
       const applySaved = vi.fn();
 
@@ -126,7 +137,7 @@ describe("useSceneCollection", () => {
       expect(ids(result.current.list)).toEqual(["p1", "scene-new"]);
 
       // The next save updates the created scene instead of adding another one.
-      const updated = sceneRow("scene-new", { page_start: 1, start_time_seconds: 5 });
+      const updated = sceneRow("scene-new", { ...at(1, 2), start_time_seconds: 5 });
       updateScriptScene.mockResolvedValue(updated);
       await act(async () => {
         await result.current.save({ sceneId: saved.scene.id, payload: PAYLOAD, applySaved });
@@ -136,14 +147,14 @@ describe("useSceneCollection", () => {
       expect(createScriptScene).toHaveBeenCalledTimes(1);
       expect(applySaved).toHaveBeenLastCalledWith(updated);
       // Replaced, not duplicated, and re-ordered by its new first page.
-      expect(result.current.list).toEqual([sceneRow("p1", { page_start: 1 }), updated]);
+      expect(result.current.list).toEqual([sceneRow("p1", at(1)), updated]);
     });
 
     it("is saving while the request runs", async () => {
       const { result } = await renderCollection();
       const request = deferred();
       createScriptScene.mockReturnValue(request.promise);
-      const scene = sceneRow("scene-new", { page_start: 1 });
+      const scene = sceneRow("scene-new", at(1));
 
       let pending;
       act(() => {
@@ -161,7 +172,7 @@ describe("useSceneCollection", () => {
     });
 
     it("leaves the list unchanged and reports the error when a save fails", async () => {
-      const rows = [sceneRow("p1", { page_start: 1 })];
+      const rows = [sceneRow("p1", at(1))];
       const { result } = await renderCollection(rows);
       const before = result.current.list;
       const error = new Error("POST scene-annotations failed: 409");
@@ -183,8 +194,8 @@ describe("useSceneCollection", () => {
   describe("deleting", () => {
     it("prepares the draft's deletion before the request and completes it once the scene is gone", async () => {
       const { result } = await renderCollection([
-        sceneRow("p1", { page_start: 1 }),
-        sceneRow("p2", { page_start: 2 }),
+        sceneRow("p1", at(1)),
+        sceneRow("p2", at(2)),
       ]);
       const request = deferred();
       deleteScriptScene.mockReturnValue(request.promise);
@@ -215,7 +226,7 @@ describe("useSceneCollection", () => {
     });
 
     it("keeps the scene and doesn't complete the draft's deletion when the request fails", async () => {
-      const { result } = await renderCollection([sceneRow("p1", { page_start: 1 })]);
+      const { result } = await renderCollection([sceneRow("p1", at(1))]);
       const before = result.current.list;
       const error = new Error("DELETE scene-annotations failed: 500");
       deleteScriptScene.mockRejectedValue(error);

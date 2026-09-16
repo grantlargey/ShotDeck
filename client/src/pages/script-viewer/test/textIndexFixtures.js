@@ -1,4 +1,3 @@
-import { anchorsToGeometry } from "@/entities/script-scene/model/scriptLocation.js";
 import { buildPageTextLines } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { estimateActionMargin } from "@/shared/lib/screenplay/layoutClassifier.js";
 import { createLineAnchor } from "../model/anchors.js";
@@ -40,26 +39,16 @@ export function positionedPage(pageNumber, lines) {
 
 /**
  * A published text index. This duplicates useScriptTextIndex's publish step
- * (a new pages Map, the estimated action margin, and page offsets once
- * complete), so it can drift from the hook if that logic changes.
+ * (a new pages Map and the estimated action margin), so it can drift from the
+ * hook if that logic changes.
  */
-export function textIndexFrom(pages, { total = pages.length, complete = false, doc = null } = {}) {
+export function textIndexFrom(pages, { complete = false, doc = null } = {}) {
   const map = new Map(pages.map((page) => [page.pageNumber, page]));
-  let pageOffsets = null;
-  if (complete) {
-    pageOffsets = new Map();
-    let running = 0;
-    for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
-      pageOffsets.set(pageNumber, running);
-      running += map.get(pageNumber)?.textLength ?? 0;
-    }
-  }
   return {
     doc,
     pages: map,
     complete,
     actionMargin: estimateActionMargin([...map.values()]),
-    pageOffsets,
   };
 }
 
@@ -114,106 +103,43 @@ export function lineAnchor(page, lineIndex) {
   return createLineAnchor(page, page.lines[lineIndex]);
 }
 
-export function v2Geometry(startPage, startLine, endPage, endLine) {
-  return anchorsToGeometry({ start: lineAnchor(startPage, startLine), end: lineAnchor(endPage, endLine) });
+export function scriptLocation(startPage, startLine, endPage, endLine) {
+  return { start: lineAnchor(startPage, startLine), end: lineAnchor(endPage, endLine) };
 }
 
 /** A captured scene row shaped like the API serializer's response. */
 export function sceneRow(fields) {
   const row = {
     id: "scene",
-    anchor_id: `anchor-${fields.id ?? "scene"}`,
     movie_id: "m1",
     script_id: "s1",
-    start_time_seconds: null,
-    end_time_seconds: null,
+    start_time_seconds: 0,
+    end_time_seconds: 0,
     tags: [],
     created_at: "2026-09-01T00:00:00.000Z",
     updated_at: "2026-09-01T00:00:00.000Z",
-    page_start: null,
-    page_end: null,
-    selected_text: "",
-    raw_selected_text: "",
-    formatted_selected_text: "",
-    context_prefix: null,
-    context_suffix: null,
-    start_offset: null,
-    end_offset: null,
-    anchor_geometry: [],
+    script_location: scriptLocation(page1, 0, page1, 0),
+    scene_text: "Action.",
+    raw_text: "Action.",
     first_image_annotation: null,
     ...fields,
-  };
-  row.anchor_geometry = Array.isArray(row.anchor_geometry) ? row.anchor_geometry : [];
-  row.anchor = {
-    id: row.anchor_id,
-    page_start: row.page_start,
-    page_end: row.page_end,
-    selected_text: row.selected_text,
-    raw_selected_text: row.raw_selected_text,
-    formatted_selected_text: row.formatted_selected_text,
-    context_prefix: row.context_prefix,
-    context_suffix: row.context_suffix,
-    start_offset: row.start_offset,
-    end_offset: row.end_offset,
-    anchor_geometry: row.anchor_geometry,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
   };
   return row;
 }
 
 // Scene text saved by hand, so it differs from what p3 captures today.
-export const SAVED_V2_TEXT = "## EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.";
-export const SAVED_V2_RAW = "EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.";
+export const SAVED_TEXT = "## EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.";
+export const SAVED_RAW = "EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.";
 
-/** A saved scene with version-2 anchors on p3 lines 1–4. */
-export const savedV2Scene = sceneRow({
+/** A saved scene anchored on p3 lines 1–4. */
+export const savedScene = sceneRow({
   id: "scene-v2",
   start_time_seconds: 600,
   end_time_seconds: 660,
   tags: ["character-focus:protagonist", "conflict-type:character-vs-self"],
-  page_start: 3,
-  page_end: 3,
-  selected_text: SAVED_V2_TEXT,
-  raw_selected_text: SAVED_V2_RAW,
-  formatted_selected_text: SAVED_V2_TEXT,
-  context_prefix: "stored prefix",
-  context_suffix: "stored suffix",
-  start_offset: 400,
-  end_offset: 610,
-  anchor_geometry: v2Geometry(page3, 0, page3, 3),
-});
-
-// Hard-wrapped plain text, as scenes were saved before screenplay formatting.
-export const LEGACY_RAW = [
-  "INT. DINER - NIGHT",
-  "Rain streaks the windows of an empty roadside diner at",
-  "midnight. MAYA, thirties, wipes the counter in slow circles.",
-  "A bell over the door rings. SAM steps in from the storm,",
-  "shaking water from a battered canvas coat and hat.",
-  "MAYA",
-  "Kitchen closed an hour ago.",
-  "Coffee is all I can do.",
-  "SAM",
-  "(quietly)",
-  "Then coffee. And the booth",
-  "by the window.",
-  "Maya pours two cups and slides one across the counter.",
-  "CUT TO:",
-].join("\n");
-
-/** A legacy scene: pages 1–2, no anchors, raw text only. */
-export const legacyScene = sceneRow({
-  id: "scene-legacy",
-  start_time_seconds: 120,
-  end_time_seconds: 180,
-  tags: [],
-  page_start: 1,
-  page_end: 2,
-  selected_text: LEGACY_RAW,
-  raw_selected_text: LEGACY_RAW,
-  formatted_selected_text: "",
-  anchor_geometry: [],
+  script_location: scriptLocation(page3, 0, page3, 3),
+  scene_text: SAVED_TEXT,
+  raw_text: SAVED_RAW,
 });
 
 export const OTHER_TEXT = "### SAM\n\n> > (quietly)\n>\n> Then coffee. And the booth by the window.";
@@ -224,14 +150,7 @@ export const otherScene = sceneRow({
   start_time_seconds: 300,
   end_time_seconds: 360,
   tags: ["character-focus:supporting-character"],
-  page_start: 2,
-  page_end: 2,
-  selected_text: OTHER_TEXT,
-  raw_selected_text: "SAM\n\n(quietly)\n\nThen coffee. And the booth by the window.",
-  formatted_selected_text: OTHER_TEXT,
-  context_prefix: "Coffee is all I can do.",
-  context_suffix: "Maya pours two cups and slides one across the counter.",
-  start_offset: 250,
-  end_offset: 330,
-  anchor_geometry: v2Geometry(page2, 0, page2, 3),
+  script_location: scriptLocation(page2, 0, page2, 3),
+  scene_text: OTHER_TEXT,
+  raw_text: "SAM\n\n(quietly)\n\nThen coffee. And the booth by the window.",
 });
