@@ -31,6 +31,11 @@ against. This record holds the decisions and why the alternatives lost.
   data, not a rescue of unrecoverable records.
 - Only one deployment exists, one admin writes to it, and the release is a coordinated
   maintenance cutover (E2), so migrations do not have to stay compatible with the running API.
+- The tag taxonomy and the screenplay grammar live in `client/`, but the production image is
+  built from a context holding `server/` alone (`infra/deploy-prod.sh` rsyncs `$ROOT_DIR/server/`;
+  `server/Dockerfile` copies that context). `server/src/tools/inventory.js` already imports the
+  taxonomy across that boundary, which is why issue 03 had to bundle the inventory command with
+  esbuild to run it in production at all.
 
 ## Decision
 
@@ -56,6 +61,13 @@ against. This record holds the decisions and why the alternatives lost.
    a fresh install creates only that. The existing database is brought to the same state by a
    one-use conversion command, which converts and stamps version 1 in one transaction, and is
    deleted after the cutover (issue 18).
+6. **Code that the API, its commands and the client all need lives under `server/`.** `server/`
+   is the only tree the image ships, and it ships alone, while the client is built from a full
+   checkout and can always see `server/`. So the dependency points from the client into
+   `server/`, never the other way. The tag taxonomy (the write-time rule of decision 4's sibling,
+   §4 of the Contract) and the screenplay grammar (which the conversion needs to turn legacy text
+   into canonical scene text) both move under `server/src/domain/`, and the client imports them
+   through a Vite alias. One copy, nothing generated, and no change to the build context.
 
 ## Alternatives considered
 
@@ -77,8 +89,18 @@ against. This record holds the decisions and why the alternatives lost.
   check into a rejected write instead of corrupt data.
 - **Convert with SQL only.** Rejected: rows whose formatted text is null hold hard-wrapped text
   from before screenplay markdown existed, and turning it into canonical scene text needs the
-  legacy parser that issue 14 moves out of the client. The conversion is therefore a Node
-  command, not a `.sql` migration.
+  screenplay grammar and the legacy parser that issue 14 moves into the command. The conversion
+  is therefore a Node command, not a `.sql` migration.
+- **A repo-level `shared/` module included in both builds** (instead of decision 6). Rejected: it
+  ships only if the deploy script rsyncs a second path *and* the build context reproduces the
+  repository's layout, because otherwise the relative depth of the import differs between the
+  checkout and the image, so it resolves in one and not the other. Making that work means moving
+  the image's `WORKDIR`, and changing the Dockerfile, the rsync, every `node src/…` command in
+  `infra/run-api-task.sh`, the task definition and the runbook — a larger and riskier change than
+  a move, for nothing extra.
+- **A generated copy under `server/`, with a test asserting it equals the client's.** Rejected by
+  "Replace, don't layer": it is two copies of one truth plus a generator and a check to keep them
+  equal, and a stale checked-in copy still ships.
 - **A backward-compatible, reversible migration with field aliases.** Rejected by the spec
   (E2 and "Replace, don't layer"): with one deployment and a maintenance window, a matching
   database-and-application pair restored from a snapshot is the recovery path, and permanent
@@ -101,3 +123,13 @@ against. This record holds the decisions and why the alternatives lost.
   value the table doesn't cover.
 - After the cutover, `node src/migrate.js` is the only way a database changes shape, and it
   refuses to run against a database that still holds the legacy tables.
+- The client imports the taxonomy and the grammar from outside its own project root, so
+  `client/vite.config.js` gains an alias and the Vite **dev server** needs `server.fs.allow` to
+  serve them. `vite build` and `vitest` need only the alias. The backend build context and
+  `server/Dockerfile` do not change, and the cutover proves that by running the conversion's
+  no-op path inside the built image before the maintenance window opens.
+- Because the conversion rejoins words hyphenated across the PDF's line breaks ("grease-" plus
+  "paint"), its word-fidelity check compares an ordered stream of letters and digits rather than
+  a sequence of whitespace-delimited words. It still catches dropped, invented, reordered and
+  misspelled words; it no longer sees differences that are only whitespace, hyphenation or
+  punctuation.
