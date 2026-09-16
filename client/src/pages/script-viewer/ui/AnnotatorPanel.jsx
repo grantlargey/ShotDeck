@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { filmTimingErrorWhileTyping } from "@/entities/script-scene/model/filmTiming.js";
+import { filmTimingErrorWhileTyping, formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import {
   getScriptTagLabel,
   SCRIPT_TAG_CATEGORIES,
@@ -103,36 +103,23 @@ function TimeField({ label, value, onChange, onBlur }) {
 }
 
 function CaptureTab({
-  anchors,
-  anchorsSuggested,
-  canUndo,
+  draft,
+  draftActions,
   indexStatus,
-  onJumpToAnchor,
-  onRemoveAnchor,
-  onClearAnchors,
-  onUndoAnchors,
   overlapScene,
   onEditOverlapScene,
-  startTime,
-  endTime,
+  onJumpToAnchor,
   runtimeSeconds,
-  onTimeChange,
-  onTimeBlur,
-  markdown,
-  textOrigin,
-  captureStale,
-  legacyText,
-  draftScene,
   movieTitle,
-  proposal,
   onRecapture,
   onExpandDraft,
   onRequestAi,
   onReviewProposal,
-  onDiscardProposal,
 }) {
+  const { anchors, anchorsSuggested, canUndoAnchors, startTime, endTime, text, textOrigin, textStale, legacyText } =
+    draft;
   const hasAnchors = Boolean(anchors.start || anchors.end);
-  const hasText = Boolean(markdown.trim());
+  const hasText = Boolean(text.trim());
   const originBadge = ORIGIN_BADGES[textOrigin];
   const timingError = filmTimingErrorWhileTyping(startTime, endTime, runtimeSeconds);
 
@@ -146,21 +133,21 @@ function CaptureTab({
           <div className={styles.sectionTools}>
             <Button
               size="sm"
-              onClick={onUndoAnchors}
-              disabled={!canUndo}
+              onClick={draftActions.undoAnchors}
+              disabled={!canUndoAnchors}
               title={`Undo anchor change (${undoShortcutLabel()})`}
             >
               Undo
             </Button>
-            <Button size="sm" onClick={onClearAnchors} disabled={!hasAnchors}>
+            <Button size="sm" onClick={draftActions.clearAnchors} disabled={!hasAnchors}>
               Clear
             </Button>
           </div>
         </div>
 
         <div className={styles.anchorList}>
-          <AnchorRow kind="start" anchor={anchors.start} onJump={onJumpToAnchor} onRemove={onRemoveAnchor} />
-          <AnchorRow kind="end" anchor={anchors.end} onJump={onJumpToAnchor} onRemove={onRemoveAnchor} />
+          <AnchorRow kind="start" anchor={anchors.start} onJump={onJumpToAnchor} onRemove={draftActions.removeAnchor} />
+          <AnchorRow kind="end" anchor={anchors.end} onJump={onJumpToAnchor} onRemove={draftActions.removeAnchor} />
         </div>
 
         {anchorsSuggested ? (
@@ -198,14 +185,14 @@ function CaptureTab({
           <TimeField
             label="Start"
             value={startTime}
-            onChange={(value) => onTimeChange("startTime", value)}
-            onBlur={() => onTimeBlur("startTime")}
+            onChange={(value) => draftActions.setTime("startTime", value)}
+            onBlur={() => draftActions.normalizeTime("startTime")}
           />
           <TimeField
             label="End"
             value={endTime}
-            onChange={(value) => onTimeChange("endTime", value)}
-            onBlur={() => onTimeBlur("endTime")}
+            onChange={(value) => draftActions.setTime("endTime", value)}
+            onBlur={() => draftActions.normalizeTime("endTime")}
           />
         </div>
         {timingError && (
@@ -223,7 +210,7 @@ function CaptureTab({
           {hasText && originBadge && <Badge tone={originBadge.tone}>{originBadge.label}</Badge>}
         </div>
 
-        {captureStale && (
+        {textStale && (
           <Callout tone="info" className={styles.callout} action="Re-capture from anchors" onAction={onRecapture}>
             {legacyText
               ? "This scene was saved before screenplay formatting."
@@ -233,7 +220,7 @@ function CaptureTab({
 
         {hasText ? (
           <SceneCard
-            scene={draftScene}
+            scene={draft.previewScene}
             title={movieTitle}
             tooltip="Double-click to expand and edit"
             onDoubleClick={onExpandDraft}
@@ -252,21 +239,27 @@ function CaptureTab({
             <Button size="sm" block onClick={onExpandDraft}>
               Expand &amp; edit
             </Button>
-            <Button size="sm" block variant="ai" onClick={onRequestAi} disabled={proposal?.status === "loading"}>
-              {proposal?.status === "loading" ? "Formatting…" : "Format with AI"}
+            <Button
+              size="sm"
+              block
+              variant="ai"
+              onClick={onRequestAi}
+              disabled={draft.proposal?.status === "loading"}
+            >
+              {draft.proposal?.status === "loading" ? "Formatting…" : "Format with AI"}
             </Button>
           </div>
         )}
 
-        {proposal?.status === "ready" && (
+        {draft.proposal?.status === "ready" && (
           <Callout tone="ai" className={styles.callout} action="Review" onAction={onReviewProposal}>
             An AI formatting proposal is ready. Nothing changes until you accept it.
           </Callout>
         )}
 
-        {proposal?.status === "error" && (
-          <Callout tone="error" className={styles.callout} action="Dismiss" onAction={onDiscardProposal}>
-            {proposal.error}
+        {draft.proposal?.status === "error" && (
+          <Callout tone="error" className={styles.callout} action="Dismiss" onAction={draftActions.discardProposal}>
+            {draft.proposal.error}
           </Callout>
         )}
       </section>
@@ -315,23 +308,38 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
  * The annotator beside the PDF: a Capture tab (anchors, timing, captured
  * text) and a Tags tab that unlocks once there is text to tag, with Save
  * pinned to the bottom.
+ *
+ * It reads the scene draft and calls `draftActions` itself. The page passes
+ * what it owns: the tab, the film's title and runtime, indexing progress, the
+ * overlapping scene, request state, and the handlers that prompt or send a
+ * request.
  */
-export function AnnotatorPanel(props) {
-  const {
-    editing,
-    sceneLabel,
-    onNewScene,
-    activeTab,
-    onTabChange,
-    tagsDisabled,
-    tags,
-    onToggleTag,
-    onClearTags,
-    saving,
-    deleting,
-    onSave,
-    onDelete,
-  } = props;
+export function AnnotatorPanel({
+  draft,
+  draftActions,
+  activeTab,
+  onTabChange,
+  movieTitle,
+  runtimeSeconds,
+  indexStatus,
+  overlapScene,
+  onEditOverlapScene,
+  onNewScene,
+  onJumpToAnchor,
+  onRecapture,
+  onExpandDraft,
+  onRequestAi,
+  onReviewProposal,
+  saving,
+  deleting,
+  onSave,
+  onDelete,
+}) {
+  const editing = Boolean(draft.savedScene?.id);
+  const sceneLabel = draft.savedScene ? formatFilmTiming(draft.savedScene) : "Untitled scene";
+  // Tagging needs text to tag, so an empty draft stays on the Capture tab.
+  const tagsDisabled = !draft.text.trim();
+  const visibleTab = tagsDisabled ? "capture" : activeTab;
   // Lives here so expanded categories survive switching tabs.
   const [openTagGroups, setOpenTagGroups] = useState(() => new Set());
 
@@ -365,14 +373,14 @@ export function AnnotatorPanel(props) {
         idPrefix="annotator-tab"
         panelId="annotator-tabpanel"
         className={styles.tabs}
-        value={activeTab}
+        value={visibleTab}
         onChange={onTabChange}
         options={[
           { value: "capture", label: "Capture" },
           {
             value: "tags",
             label: "Tags",
-            badge: tags.length,
+            badge: draft.tags.length,
             disabled: tagsDisabled,
             title: tagsDisabled ? "Capture script text before tagging" : undefined,
           },
@@ -382,19 +390,32 @@ export function AnnotatorPanel(props) {
       <div
         id="annotator-tabpanel"
         role="tabpanel"
-        aria-labelledby={`annotator-tab-${activeTab}`}
+        aria-labelledby={`annotator-tab-${visibleTab}`}
         className={styles.body}
       >
-        {activeTab === "tags" ? (
+        {visibleTab === "tags" ? (
           <TagsTab
-            tags={tags}
+            tags={draft.tags}
             openGroups={openTagGroups}
             onToggleGroup={toggleTagGroup}
-            onToggleTag={onToggleTag}
-            onClearTags={onClearTags}
+            onToggleTag={draftActions.toggleTag}
+            onClearTags={draftActions.clearTags}
           />
         ) : (
-          <CaptureTab {...props} />
+          <CaptureTab
+            draft={draft}
+            draftActions={draftActions}
+            indexStatus={indexStatus}
+            overlapScene={overlapScene}
+            onEditOverlapScene={onEditOverlapScene}
+            onJumpToAnchor={onJumpToAnchor}
+            runtimeSeconds={runtimeSeconds}
+            movieTitle={movieTitle}
+            onRecapture={onRecapture}
+            onExpandDraft={onExpandDraft}
+            onRequestAi={onRequestAi}
+            onReviewProposal={onReviewProposal}
+          />
         )}
       </div>
 

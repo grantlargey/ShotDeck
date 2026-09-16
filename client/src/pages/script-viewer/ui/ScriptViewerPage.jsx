@@ -150,8 +150,6 @@ function ScriptViewerPage() {
     () => findOverlappingScriptLocation(scenes.list, draft.anchors, draftSceneId),
     [scenes.list, draft.anchors, draftSceneId]
   );
-  const tagsDisabled = !draft.text.trim();
-  const visibleTab = tagsDisabled ? "capture" : activeTab;
   const title = movie?.title || "Script";
   const runtimeSeconds = movie?.runtime_minutes ? Number(movie.runtime_minutes) * 60 : 0;
   useDocumentTitle(movie ? `${movie.title} script` : "Script");
@@ -468,42 +466,21 @@ function ScriptViewerPage() {
 
         {canEdit && (
           <AnnotatorPanel
-            editing={Boolean(draftSceneId)}
-            sceneLabel={draft.savedScene ? formatFilmTiming(draft.savedScene) : "Untitled scene"}
-            onNewScene={startNewScene}
-            activeTab={visibleTab}
+            draft={draft}
+            draftActions={draftActions}
+            activeTab={activeTab}
             onTabChange={setActiveTab}
-            tagsDisabled={tagsDisabled}
-            anchors={anchors}
-            anchorsSuggested={draft.anchorsSuggested}
-            canUndo={draft.canUndoAnchors}
+            movieTitle={title}
+            runtimeSeconds={runtimeSeconds}
             indexStatus={{ complete: textIndex.complete, loaded: textIndex.pages.size, total: numPages }}
-            onJumpToAnchor={jumpToAnchor}
-            onRemoveAnchor={draftActions.removeAnchor}
-            onClearAnchors={draftActions.clearAnchors}
-            onUndoAnchors={draftActions.undoAnchors}
             overlapScene={overlapScene}
             onEditOverlapScene={() => overlapScene && selectScene(overlapScene)}
-            startTime={draft.startTime}
-            endTime={draft.endTime}
-            runtimeSeconds={runtimeSeconds}
-            onTimeChange={draftActions.setTime}
-            onTimeBlur={draftActions.normalizeTime}
-            markdown={draft.text}
-            textOrigin={draft.textOrigin}
-            captureStale={draft.textStale}
-            legacyText={draft.legacyText}
-            draftScene={draft.previewScene}
-            movieTitle={title}
-            proposal={draft.proposal}
+            onNewScene={startNewScene}
+            onJumpToAnchor={jumpToAnchor}
             onRecapture={recapture}
             onExpandDraft={() => setModal({ kind: "draft" })}
             onRequestAi={requestAiFormat}
             onReviewProposal={() => setModal({ kind: "draft" })}
-            onDiscardProposal={draftActions.discardProposal}
-            tags={draft.tags}
-            onToggleTag={draftActions.toggleTag}
-            onClearTags={draftActions.clearTags}
             saving={scenes.saving}
             deleting={Boolean(draftSceneId) && scenes.deletingSceneId === draftSceneId}
             onSave={saveScene}
