@@ -18,10 +18,10 @@ import { getScript } from "@/shared/api/scripts.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
+import { Button } from "@/shared/ui/Button.jsx";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { CloseIcon } from "@/shared/ui/icons.jsx";
 import { LoadingState } from "@/shared/ui/LoadingState.jsx";
-import { SceneModalButton } from "@/widgets/scene-detail-modal/ui/SceneDetailModal.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
 import { isTypingTarget } from "../lib/pdfViewport.js";
@@ -566,13 +566,13 @@ function ScriptViewerPage() {
           renderActions={!canEdit ? undefined : ({ view, scene }) =>
             view === "script" &&
             scene && (
-              <SceneModalButton
+              <Button
                 variant="danger"
                 disabled={scenes.deletingSceneId === scene.id}
                 onClick={() => deleteScene(scene)}
               >
                 {scenes.deletingSceneId === scene.id ? "Deleting…" : "Delete"}
-              </SceneModalButton>
+              </Button>
             )
           }
         />

@@ -11,7 +11,6 @@ import { Field } from "@/shared/ui/Field.jsx";
 import { FileDropzone } from "@/shared/ui/FileDropzone.jsx";
 import { FileInput } from "@/shared/ui/FileInput.jsx";
 import { Input } from "@/shared/ui/Input.jsx";
-import { SceneModalButton } from "@/widgets/scene-detail-modal/ui/SceneDetailModal.jsx";
 import styles from "./useStillEditor.module.css";
 
 /** A typed still timestamp in seconds. Throws the film timing message for the form to show. */
@@ -157,12 +156,12 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
     if (view !== "still" || !still) return null;
     return (
       <>
-        <SceneModalButton variant="danger" disabled={busy} onClick={() => deleteStill(still)}>
+        <Button variant="danger" disabled={busy} onClick={() => deleteStill(still)}>
           Delete
-        </SceneModalButton>
-        <SceneModalButton onClick={() => toggleEdit(still)}>
+        </Button>
+        <Button onClick={() => toggleEdit(still)}>
           {edit?.stillId === still.id ? "Cancel edit" : "Edit"}
-        </SceneModalButton>
+        </Button>
       </>
     );
   }
