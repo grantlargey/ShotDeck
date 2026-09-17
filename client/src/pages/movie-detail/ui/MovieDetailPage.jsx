@@ -9,7 +9,7 @@ import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.
 import { useSession } from "@/entities/session/model/useSession.js";
 import { listAnnotations } from "@/shared/api/annotations.js";
 import { getMovie, updateMovie } from "@/shared/api/movies.js";
-import { listScripts, saveScript } from "@/shared/api/scripts.js";
+import { getMovieScript, saveScript } from "@/shared/api/scripts.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
@@ -81,7 +81,7 @@ export default function MovieDetailPage() {
   const [movie, setMovie] = useState(null);
   // The project's stills sorted by time; null until they load.
   const [stillRows, setStillRows] = useState(null);
-  const [scripts, setScripts] = useState([]);
+  const [script, setScript] = useState(null);
   const [err, setErr] = useState("");
 
   // The still the scene viewer opened on; null while it's closed.
@@ -128,10 +128,10 @@ export default function MovieDetailPage() {
     const isLatest = () => loadIdRef.current === loadId;
     setErr("");
 
-    const details = Promise.all([getMovie(id), listScripts(id)]).then(([m, scriptRows]) => {
+    const details = Promise.all([getMovie(id), getMovieScript(id)]).then(([m, loadedScript]) => {
       if (!isLatest()) return;
       setMovie(m);
-      setScripts(Array.isArray(scriptRows) ? scriptRows : []);
+      setScript(loadedScript);
       // Keep edit form in sync with loaded movie
       setEditForm(createMovieEditForm(m));
     });
@@ -192,13 +192,9 @@ export default function MovieDetailPage() {
     setSavingScript(true);
 
     try {
-      const script = await saveScript({ movieId: id, file: scriptFile });
+      const savedScript = await saveScript({ movieId: id, file: scriptFile });
       setScriptFile(null);
-      setScripts((prev) => {
-        if (!script?.id) return prev;
-        const rest = prev.filter((row) => row.id !== script.id);
-        return [script, ...rest];
-      });
+      setScript(savedScript);
     } catch (e) {
       setErr(getErrorMessage(e, "Failed to save script PDF."));
     } finally {
@@ -228,11 +224,8 @@ export default function MovieDetailPage() {
   }
 
   const coverUrl = movie?.cover_image_url || null;
-  // A movie has at most one script; the API still returns it in a list.
-  const currentScript = scripts[0] || null;
-
   function openScript() {
-    if (currentScript) nav(`/movies/${id}/scripts/${currentScript.id}`);
+    if (script) nav(`/movies/${id}/scripts/${script.id}`);
   }
 
   if (!movie) {
@@ -257,7 +250,7 @@ export default function MovieDetailPage() {
         backdropUrl={backdropUrl}
         actions={
           <>
-            {currentScript && (
+            {script && (
               <Button variant="primary" onClick={openScript}>
                 Open script
               </Button>
@@ -292,7 +285,7 @@ export default function MovieDetailPage() {
         )}
 
         <MovieScriptPanel
-          currentScript={currentScript}
+          currentScript={script}
           canEdit={canEdit}
           scriptFile={scriptFile}
           savingScript={savingScript}
@@ -362,7 +355,7 @@ export default function MovieDetailPage() {
           initialView="still"
           initialStillId={viewerStillId}
           movie={movie}
-          scriptId={currentScript?.id ?? null}
+          scriptId={script?.id ?? null}
           stills={annotations}
           onClose={closeViewer}
           onSelectTag={(tag) => nav(`/script-search?tag=${encodeURIComponent(tag)}`)}

@@ -8,29 +8,23 @@ export function listScriptScenes(movieId, scriptId) {
 }
 
 export function createScriptScene(movieId, scriptId, payload) {
-  const body = { ...payload };
-  if ("tags" in body) body.tags = normalizeTags(body.tags);
-
   return req(
     `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     }
   );
 }
 
 export function updateScriptScene(movieId, scriptId, sceneId, payload) {
-  const body = { ...payload };
-  if ("tags" in body) body.tags = normalizeTags(body.tags);
-
   return req(
     `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations/${encodeURIComponent(sceneId)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     }
   );
 }
