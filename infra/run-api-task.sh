@@ -3,7 +3,8 @@
 # Runs one command inside the production API's environment as a one-off ECS
 # task: the service's current task definition (image, env, secrets), its
 # network configuration and its launch settings. Waits for the task to stop
-# and exits with the container's exit code.
+# and exits with the container's exit code (1 through 255). Runner failures
+# such as a task-start or wait failure exit 1.
 #
 # This is how the owner account is created in production, where the database
 # is only reachable from inside the VPC:
@@ -218,9 +219,14 @@ if [[ -n "$log_group" && -n "$log_prefix" ]]; then
   fi
 fi
 
+if [[ ! "$exit_code" =~ ^[0-9]+$ ]] || (( exit_code < 0 || exit_code > 255 )); then
+  echo "[ERROR] Task returned an invalid exit code: $exit_code ($stopped_reason)" >&2
+  exit 1
+fi
+
 if [[ "$exit_code" != "0" ]]; then
   echo "[ERROR] Task exited with code $exit_code ($stopped_reason)" >&2
-  exit 1
+  exit "$exit_code"
 fi
 
 echo "[DONE] Task finished successfully"
