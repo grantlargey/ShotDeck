@@ -5,7 +5,7 @@ import {
 import {
   SCRIPT_TAG_CATEGORIES,
   SCRIPT_TAG_LABELS,
-} from "@/entities/script-scene/model/scriptTagCategories.js";
+} from "@server/domain/script-tags.js";
 
 export const SCENE_SORT_OPTIONS = [
   { value: "recent", label: "Recently updated" },

@@ -4,7 +4,7 @@ import {
 } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { formatScenePages } from "@/entities/script-scene/model/scriptLocation.js";
-import { groupScriptTagsByCategory } from "@/entities/script-scene/model/scriptTagCategories.js";
+import { groupScriptTagsByCategory } from "@server/domain/script-tags.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
 import { ImageIcon, ScriptIcon } from "@/shared/ui/icons.jsx";

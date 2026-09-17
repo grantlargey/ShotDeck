@@ -45,7 +45,15 @@ const still = { plain: fixedId(4, 1), titled: fixedId(4, 2), withBody: fixedId(4
 const scene = (n) => fixedId(5, n);
 const orphanAnchor = fixedId(6, 1);
 
-const lines = (page, startLine, endLine) => anchorPair({ startPage: page, startLine, endLine });
+function legacyAnchorPair(options) {
+    const pair = anchorPair(options);
+    return [
+        { kind: "start", version: 2, unit: "pt", ...pair.start },
+        { kind: "end", version: 2, unit: "pt", ...pair.end },
+    ];
+}
+
+const lines = (page, startLine, endLine) => legacyAnchorPair({ startPage: page, startLine, endLine });
 
 /*
  * Scenes of the main script. Each case has its own page and its own stretch of
@@ -90,7 +98,7 @@ const MAIN_SCRIPT_SCENES = [
         n: 21,
         start: 11000,
         end: 11010,
-        geometry: anchorPair({ startPage: 11, startLine: 40, endPage: 12, endLine: 3 }),
+        geometry: legacyAnchorPair({ startPage: 11, startLine: 40, endPage: 12, endLine: 3 }),
     },
     { n: 22, start: 11100, end: 11110, geometry: lines(12, 0, 2) },
     // A reversed pair, start after end, across another scene's lines: not a valid pair, so not compared.
@@ -312,7 +320,7 @@ let report;
 before(async () => {
     await db.connect();
     await db.query(`CREATE SCHEMA ${SCHEMA}`);
-    await db.query(await readFile(path.join(serverDir, "sql/schema.sql"), "utf8"));
+    await db.query(await readFile(path.join(serverDir, "test/fixtures/legacy-schema.sql"), "utf8"));
     await db.query(`
         DROP INDEX idx_scripts_movie_id_unique;
         ALTER TABLE script_scene_annotations DROP CONSTRAINT script_scene_annotations_anchor_id_fkey;

@@ -1,207 +1,100 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { pool } from "./db.js";
-import { v4 as uuidv4 } from "uuid";
-import "./env.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const schemaPath = path.resolve(__dirname, "../sql/schema.sql");
-const sql = fs.readFileSync(schemaPath, "utf8");
-await pool.query(sql);
-await pool.query(`
-  ALTER TABLE annotations
-  ADD COLUMN IF NOT EXISTS thumb_key TEXT
-`);
-await pool.query(`
-  ALTER TABLE movies
-  ADD COLUMN IF NOT EXISTS links JSONB NOT NULL DEFAULT '[]'::jsonb
-`);
-await pool.query(`
-  ALTER TABLE movies
-  ADD COLUMN IF NOT EXISTS writer TEXT,
-  ADD COLUMN IF NOT EXISTS cinematographer TEXT
-`);
-await pool.query(`
-  DO $$
-  BEGIN
-    IF EXISTS (
-      SELECT 1
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-        AND table_name = 'script_annotations'
-    ) THEN
-      ALTER TABLE script_annotations
-      ADD COLUMN IF NOT EXISTS raw_selected_text TEXT;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const migrationsDirectory = path.resolve(__dirname, "../sql/migrations");
+const MIGRATION_FILE = /^(\d{4})_([a-z0-9_]+)\.sql$/;
+const LEGACY_TABLES = ["script_annotations", "script_scene_annotations", "script_scene_anchors"];
 
-      ALTER TABLE script_annotations
-      ADD COLUMN IF NOT EXISTS formatted_selected_text TEXT;
+async function readMigrations() {
+    const entries = await fs.readdir(migrationsDirectory, { withFileTypes: true });
+    const migrations = entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
+        .map((entry) => {
+            const match = entry.name.match(MIGRATION_FILE);
+            if (!match) throw new Error(`Invalid migration filename: ${entry.name}`);
+            return { version: Number(match[1]), name: entry.name.slice(0, -4), file: entry.name };
+        })
+        .sort((a, b) => a.version - b.version);
 
-      UPDATE script_annotations
-      SET raw_selected_text = COALESCE(raw_selected_text, selected_text, '')
-      WHERE raw_selected_text IS NULL;
-
-      ALTER TABLE script_annotations
-      ALTER COLUMN raw_selected_text SET NOT NULL;
-    END IF;
-  END $$;
-`);
-
-await pool.query(`
-  DO $$
-  BEGIN
-    IF EXISTS (
-      SELECT 1
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-        AND table_name = 'script_scene_anchors'
-    ) THEN
-      ALTER TABLE script_scene_anchors
-      ADD COLUMN IF NOT EXISTS anchor_geometry JSONB NOT NULL DEFAULT '[]'::jsonb;
-    END IF;
-
-    IF EXISTS (
-      SELECT 1
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-        AND table_name = 'script_scene_annotations'
-    ) THEN
-      ALTER TABLE script_scene_annotations
-      ADD COLUMN IF NOT EXISTS legacy_annotation_id UUID UNIQUE;
-
-      ALTER TABLE script_scene_annotations
-      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-    END IF;
-  END $$;
-`);
-
-const legacyTableExistsResult = await pool.query(`
-  SELECT EXISTS (
-    SELECT 1
-    FROM information_schema.tables
-    WHERE table_schema = 'public'
-      AND table_name = 'script_annotations'
-  ) AS exists
-`);
-
-if (legacyTableExistsResult.rows[0]?.exists) {
-  const legacyRows = await pool.query(`
-    SELECT sa.*
-    FROM script_annotations sa
-    LEFT JOIN script_scene_annotations ssa ON ssa.legacy_annotation_id = sa.id
-    WHERE ssa.id IS NULL
-    ORDER BY sa.created_at ASC
-  `);
-
-  if (legacyRows.rows.length > 0) {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-
-      for (const row of legacyRows.rows) {
-        const rawSelectedText =
-          typeof row.raw_selected_text === "string" && row.raw_selected_text.length > 0
-            ? row.raw_selected_text
-            : typeof row.selected_text === "string"
-              ? row.selected_text
-              : "";
-        const formattedSelectedText =
-          typeof row.formatted_selected_text === "string" && row.formatted_selected_text.length > 0
-            ? row.formatted_selected_text
-            : null;
-        const selectedText =
-          typeof row.selected_text === "string" && row.selected_text.length > 0
-            ? row.selected_text
-            : formattedSelectedText || rawSelectedText;
-
-        if (!rawSelectedText.trim()) {
-          continue;
-        }
-
-        const anchorId = uuidv4();
-        const sceneId = uuidv4();
-        const tags = Array.isArray(row.tags) ? row.tags : [];
-
-        await client.query(
-          `
-            INSERT INTO script_scene_anchors (
-              id,
-              movie_id,
-              script_id,
-              page_start,
-              page_end,
-              selected_text,
-              raw_selected_text,
-              formatted_selected_text,
-              context_prefix,
-              context_suffix,
-              start_offset,
-              end_offset,
-              anchor_geometry,
-              created_at,
-              updated_at
-            )
-            VALUES (
-              $1, $2, $3, $4, $5, $6, $7, $8,
-              NULL, NULL, NULL, NULL, '[]'::jsonb, $9, $9
-            )
-          `,
-          [
-            anchorId,
-            row.movie_id,
-            row.script_id,
-            row.page_start ?? null,
-            row.page_end ?? null,
-            selectedText,
-            rawSelectedText,
-            formattedSelectedText,
-            row.created_at,
-          ]
-        );
-
-        await client.query(
-          `
-            INSERT INTO script_scene_annotations (
-              id,
-              anchor_id,
-              legacy_annotation_id,
-              movie_id,
-              script_id,
-              start_time_seconds,
-              end_time_seconds,
-              tags,
-              created_at,
-              updated_at
-            )
-            VALUES (
-              $1, $2, $3, $4, $5, $6, $7, $8::jsonb,
-              $9, $9
-            )
-          `,
-          [
-            sceneId,
-            anchorId,
-            row.id,
-            row.movie_id,
-            row.script_id,
-            row.start_time_seconds,
-            row.end_time_seconds,
-            JSON.stringify(tags),
-            row.created_at,
-          ]
-        );
-      }
-
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
+    const versions = new Set();
+    for (const migration of migrations) {
+        if (versions.has(migration.version)) throw new Error(`Duplicate migration version: ${migration.version}`);
+        versions.add(migration.version);
     }
-  }
+    return migrations;
 }
 
-console.log("Schema applied.");
-await pool.end();
+async function legacyTables(db) {
+    const result = await db.query(
+        `SELECT table_name
+         FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = ANY($1::text[])
+         ORDER BY table_name`,
+        [LEGACY_TABLES]
+    );
+    return result.rows.map((row) => row.table_name);
+}
+
+async function applyMigration(db, migration) {
+    const sql = await fs.readFile(path.join(migrationsDirectory, migration.file), "utf8");
+    await db.query("BEGIN");
+    try {
+        await db.query(sql);
+        await db.query("INSERT INTO schema_migrations (version, name) VALUES ($1, $2)", [
+            migration.version,
+            migration.name,
+        ]);
+        await db.query("COMMIT");
+    } catch (error) {
+        await db.query("ROLLBACK").catch(() => {});
+        throw error;
+    }
+}
+
+async function runMigrations() {
+    const client = await pool.connect();
+    try {
+        await client.query("SELECT pg_advisory_lock(hashtextextended('shotdeck-schema-migrations', 0))");
+
+        const legacy = await legacyTables(client);
+        if (legacy.length > 0) {
+            throw new Error(
+                `This database predates the canonical schema; run node src/tools/convert-captured-scenes.js first. Legacy tables: ${legacy.join(", ")}`
+            );
+        }
+
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INT PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+
+        const [migrations, appliedResult] = await Promise.all([
+            readMigrations(),
+            client.query("SELECT version, name FROM schema_migrations ORDER BY version"),
+        ]);
+        const applied = new Set(appliedResult.rows.map((row) => row.version));
+        const highestApplied = Math.max(0, ...applied);
+        const pending = migrations.filter((migration) => !applied.has(migration.version));
+        const outOfOrder = pending.find((migration) => migration.version < highestApplied);
+        if (outOfOrder) {
+            throw new Error(
+                `Migration ${outOfOrder.file} is pending below already-applied version ${highestApplied}; renumber it.`
+            );
+        }
+
+        for (const migration of pending) await applyMigration(client, migration);
+        if (pending.length === 0) console.log("No migrations pending.");
+        else console.log(`Applied migrations: ${pending.map((migration) => migration.name).join(", ")}`);
+    } finally {
+        client.release();
+        await pool.end();
+    }
+}
+
+await runMigrations();

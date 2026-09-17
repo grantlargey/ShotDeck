@@ -14,6 +14,7 @@ const MAX_TEXT_LENGTH = 60000;
 const MAX_PAGE_IMAGES = 6;
 const MAX_IMAGE_DATA_URL_LENGTH = 3_000_000;
 const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+const SCREENPLAY_MODEL = "gpt-5-nano";
 
 function optionalPage(value) {
     return Number.isInteger(value) && value > 0 ? value : null;
@@ -160,7 +161,6 @@ export async function formatScreenplaySelection(body) {
         throw new HttpError(503, "AI formatting isn't available right now.");
     }
 
-    const model = process.env.OPENAI_SCREENPLAY_MODEL || "gpt-5-nano";
     const timeoutMs = Number(process.env.OPENAI_SCREENPLAY_TIMEOUT_MS || 90000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -174,13 +174,11 @@ export async function formatScreenplaySelection(body) {
             },
             signal: controller.signal,
             body: JSON.stringify({
-                model,
+                model: SCREENPLAY_MODEL,
                 input: [
                     { role: "system", content: [{ type: "input_text", text: SYSTEM_PROMPT }] },
                     { role: "user", content: buildUserContent(input) },
                 ],
-                // Reasoning models reject temperature; older chat models benefit from 0.
-                ...(model.startsWith("gpt-4") ? { temperature: 0 } : {}),
             }),
         });
 
@@ -193,7 +191,7 @@ export async function formatScreenplaySelection(body) {
         const markdown = stripCodeFences(extractResponseOutputText(await response.json()));
         if (!markdown) throw new HttpError(502, "The AI formatter returned no text.");
 
-        return { markdown, model };
+        return { markdown, model: SCREENPLAY_MODEL };
     } catch (err) {
         if (err?.name === "AbortError") {
             throw new HttpError(504, "The AI formatter timed out. Try a shorter selection.");

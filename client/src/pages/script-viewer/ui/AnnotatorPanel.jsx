@@ -3,7 +3,7 @@ import { filmTimingErrorWhileTyping, formatFilmTiming } from "@/entities/script-
 import {
   getScriptTagLabel,
   SCRIPT_TAG_CATEGORIES,
-} from "@/entities/script-scene/model/scriptTagCategories.js";
+} from "@server/domain/script-tags.js";
 import { SceneCard } from "@/entities/script-scene/ui/SceneCard.jsx";
 import { TagCategoryList } from "@/entities/script-scene/ui/TagCategoryList.jsx";
 import { cx } from "@/shared/lib/cx.js";

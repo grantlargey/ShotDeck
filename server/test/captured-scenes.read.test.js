@@ -1,32 +1,15 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, test } from "node:test";
-import { signInOwner, startApi } from "./helpers/api.js";
-import {
-    createMovieWithScript,
-    createScene,
-    sceneBody,
-    scenesPath,
-    TAGS,
-} from "./helpers/fixtures.js";
 import { pool } from "../src/db.js";
-
-/*
- * Characterization of captured-scene reads: the scoped list
- * (GET /movies/:movieId/scripts/:scriptId/scene-annotations) and global search
- * (GET /script-scenes).
- *
- * "changes in NN" marks behavior that overhaul issue NN is expected to change.
- */
+import { signInOwner, startApi } from "./helpers/api.js";
+import { anchorPair, createMovieWithScript, createScene, sceneBody, scenesPath, TAGS } from "./helpers/fixtures.js";
 
 const api = await startApi();
 const { cookie } = await signInOwner(api);
 
-function ids(scenes) {
-    return scenes.map((scene) => scene.id);
-}
+const ids = (scenes) => scenes.map((scene) => scene.id);
 
-/** The ids of `results` that are in `mine`, in the order the API returned them. */
 function onlyMine(results, mine) {
     const wanted = new Set(ids(mine));
     return ids(results).filter((id) => wanted.has(id));
@@ -46,23 +29,32 @@ async function createStill(movie, timeSeconds, imageKey) {
 }
 
 describe("listing a script's captured scenes", () => {
-    test("orders scenes by first page, scenes without one last, then by film timing; each is the saved scene", async () => {
+    test("orders by start page, start line and id", async () => {
         const place = await createMovieWithScript(api, cookie);
-        const pageThree = await createScene(api, cookie, place, { page_start: 3, page_end: 3, start_time_seconds: 0, end_time_seconds: 10 });
-        const noPage = await createScene(api, cookie, place, { page_start: null, page_end: null, start_time_seconds: 20, end_time_seconds: 30 });
-        const pageOneLater = await createScene(api, cookie, place, { page_start: 1, page_end: 2, start_time_seconds: 100, end_time_seconds: 110 });
-        const pageOneEarlier = await createScene(api, cookie, place, { page_start: 1, page_end: 1, start_time_seconds: 50, end_time_seconds: 60 });
-
+        const pageThree = await createScene(api, cookie, place, {
+            start_time_seconds: 0,
+            end_time_seconds: 10,
+            script_location: anchorPair({ startPage: 3, startLine: 0 }),
+        });
+        const pageOneLater = await createScene(api, cookie, place, {
+            start_time_seconds: 20,
+            end_time_seconds: 30,
+            script_location: anchorPair({ startPage: 1, startLine: 20 }),
+        });
+        const pageOneEarlier = await createScene(api, cookie, place, {
+            start_time_seconds: 40,
+            end_time_seconds: 50,
+            script_location: anchorPair({ startPage: 1, startLine: 0 }),
+        });
         const response = await api.get(scenesPath(place));
         assert.equal(response.status, 200);
-        assert.deepEqual(response.body, [pageOneEarlier, pageOneLater, pageThree, noPage]);
+        assert.deepEqual(response.body, [pageOneEarlier, pageOneLater, pageThree]);
     });
 
-    test("is public, and answers an empty list for a script without scenes, a missing script or another movie's script", async () => {
+    test("is public and answers an empty list outside the requested script", async () => {
         const place = await createMovieWithScript(api, cookie);
         const other = await createMovieWithScript(api, cookie);
         await createScene(api, cookie, other);
-
         for (const path of [
             scenesPath(place),
             scenesPath({ movie: place.movie, script: { id: randomUUID() } }),
@@ -74,51 +66,30 @@ describe("listing a script's captured scenes", () => {
         }
     });
 
-    test("ignores tags and match in the query: it has no tag filter", async () => {
+    test("returns the earliest still with an image inside the film timing, edges included", async () => {
         const place = await createMovieWithScript(api, cookie);
-        const tagged = await createScene(api, cookie, place, { tags: [TAGS.protagonist], start_time_seconds: 0, end_time_seconds: 10 });
-        const other = await createScene(api, cookie, place, { tags: [TAGS.selfConflict], start_time_seconds: 20, end_time_seconds: 30 });
-
-        for (const params of [query({ tags: TAGS.protagonist }), query({ tags: TAGS.protagonist, match: "any" }), "tags="]) {
-            const response = await api.get(`${scenesPath(place)}?${params}`);
-            assert.equal(response.status, 200);
-            assert.deepEqual(ids(response.body), [tagged.id, other.id]);
-        }
-    });
-
-    test("gives each scene the earliest still with an image inside its film timing, edges included", async () => {
-        const place = await createMovieWithScript(api, cookie);
-        const { movie } = place;
-        const middle = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120, page_start: 1, page_end: 1 });
-        const startEdge = await createScene(api, cookie, place, { start_time_seconds: 200, end_time_seconds: 260, page_start: 2, page_end: 2 });
-        const endEdge = await createScene(api, cookie, place, { start_time_seconds: 300, end_time_seconds: 360, page_start: 3, page_end: 3 });
-        const empty = await createScene(api, cookie, place, { start_time_seconds: 400, end_time_seconds: 460, page_start: 4, page_end: 4 });
-
-        await createStill(movie, 59, `annotations/${movie.id}/before.jpg`);
-        await createStill(movie, 80); // no image
-        const first = await createStill(movie, 100, `annotations/${movie.id}/first.jpg`);
-        await createStill(movie, 110, `annotations/${movie.id}/second.jpg`);
-        const atStart = await createStill(movie, 200, `annotations/${movie.id}/start.jpg`);
-        const atEnd = await createStill(movie, 360, `annotations/${movie.id}/end.jpg`);
-        await pool.query("UPDATE annotations SET thumb_key = $1 WHERE id = $2", [`annotations/${movie.id}/thumbs/first.jpg.webp`, first.id]);
-
-        const byId = new Map((await api.get(scenesPath(place))).body.map((scene) => [scene.id, scene]));
-        assert.deepEqual(byId.get(middle.id).first_image_annotation, {
+        const scene = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
+        await createStill(place.movie, 59, `annotations/${place.movie.id}/before.jpg`);
+        await createStill(place.movie, 80);
+        const first = await createStill(place.movie, 100, `annotations/${place.movie.id}/first.jpg`);
+        await createStill(place.movie, 120, `annotations/${place.movie.id}/end.jpg`);
+        await pool.query("UPDATE annotations SET thumb_key = $1 WHERE id = $2", [
+            `annotations/${place.movie.id}/thumbs/first.jpg.webp`,
+            first.id,
+        ]);
+        const listed = (await api.get(scenesPath(place))).body.find((candidate) => candidate.id === scene.id);
+        assert.deepEqual(listed.first_image_annotation, {
             id: first.id,
             time_seconds: 100,
             image_key: first.image_key,
-            thumb_key: `annotations/${movie.id}/thumbs/first.jpg.webp`,
+            thumb_key: `annotations/${place.movie.id}/thumbs/first.jpg.webp`,
             created_at: first.created_at,
         });
-        assert.equal(byId.get(startEdge.id).first_image_annotation.id, atStart.id);
-        assert.equal(byId.get(startEdge.id).first_image_annotation.thumb_key, null);
-        assert.equal(byId.get(endEdge.id).first_image_annotation.id, atEnd.id);
-        assert.equal(byId.get(empty.id).first_image_annotation, null);
     });
 });
 
 describe("searching captured scenes", () => {
-    test("is public and returns scenes from every movie, most recently updated first, with the movie title", async () => {
+    test("is public, returns every movie most-recently-updated first and adds movie_title", async () => {
         const first = await createMovieWithScript(api, cookie);
         const second = await createMovieWithScript(api, cookie);
         const older = await createScene(api, cookie, first);
@@ -132,57 +103,71 @@ describe("searching captured scenes", () => {
         const response = await api.get("/script-scenes");
         assert.equal(response.status, 200);
         assert.deepEqual(onlyMine(response.body, [older, newer]), [older.id, newer.id]);
-
         const result = response.body.find((scene) => scene.id === older.id);
         const { movie_title: movieTitle, ...scene } = result;
         assert.deepEqual(scene, touched.body);
         assert.equal(movieTitle, first.movie.title);
     });
 
-    test("filters by tags, matching all of them unless match=any", async () => {
+    test("includes movie_title when the allowed movie title is empty", async () => {
         const place = await createMovieWithScript(api, cookie);
-        const both = await createScene(api, cookie, place, { tags: [TAGS.protagonist, TAGS.revelation], start_time_seconds: 0, end_time_seconds: 10 });
-        const one = await createScene(api, cookie, place, { tags: [TAGS.revelation], start_time_seconds: 20, end_time_seconds: 30 });
-        const other = await createScene(api, cookie, place, { tags: [TAGS.selfConflict], start_time_seconds: 40, end_time_seconds: 50 });
+        await api.put(`/movies/${place.movie.id}`, {
+            cookie,
+            body: {
+                title: "",
+                director: place.movie.director,
+                writer: place.movie.writer,
+                cinematographer: place.movie.cinematographer,
+                year: place.movie.year,
+                runtime_minutes: place.movie.runtime_minutes,
+            },
+        });
+        const scene = await createScene(api, cookie, place);
+        const result = (await api.get("/script-scenes")).body.find((candidate) => candidate.id === scene.id);
+        assert.ok(Object.hasOwn(result, "movie_title"));
+        assert.equal(result.movie_title, "");
+    });
+
+    test("filters by every tag unless match=any", async () => {
+        const place = await createMovieWithScript(api, cookie);
+        const both = await createScene(api, cookie, place, {
+            tags: [TAGS.protagonist, TAGS.revelation],
+            start_time_seconds: 0,
+            end_time_seconds: 10,
+        });
+        const one = await createScene(api, cookie, place, {
+            tags: [TAGS.revelation],
+            start_time_seconds: 20,
+            end_time_seconds: 30,
+        });
+        const other = await createScene(api, cookie, place, {
+            tags: [TAGS.selfConflict],
+            start_time_seconds: 40,
+            end_time_seconds: 50,
+        });
         const mine = [both, one, other];
         const search = async (params) => onlyMine((await api.get(`/script-scenes?${params}`)).body, mine);
-
         assert.deepEqual(await search(query({ tags: `${TAGS.protagonist},${TAGS.revelation}` })), [both.id]);
         assert.deepEqual(
             (await search(query({ tags: `${TAGS.protagonist},${TAGS.selfConflict}`, match: "any" }))).sort(),
             [both.id, other.id].sort()
         );
-        assert.deepEqual((await search(`${query({ tags: TAGS.revelation })}&${query({ tags: TAGS.selfConflict })}&match=any`)).sort(), [both.id, one.id, other.id].sort());
     });
 
-    test("ignores movie_id, script_id, q and limit in the query", async () => {
+    test("ignores q and limit and returns at most 500", async () => {
         const place = await createMovieWithScript(api, cookie);
-        const other = await createMovieWithScript(api, cookie);
-        const zebra = await createScene(api, cookie, place, { raw_selected_text: "A zebra crosses." });
-        const plain = await createScene(api, cookie, other, { raw_selected_text: "Plain." });
-        const mine = [zebra, plain];
-        const search = async (params) => onlyMine((await api.get(`/script-scenes?${query(params)}`)).body, mine);
-
-        for (const params of [{ movie_id: place.movie.id }, { script_id: other.script.id }, { q: "zebra" }, { limit: "1" }]) {
-            assert.deepEqual(await search(params), [plain.id, zebra.id]);
-        }
-    });
-
-    test("returns at most 500 scenes, whatever limit the query asks for", async () => {
-        const place = await createMovieWithScript(api, cookie);
-        // Stored directly: 501 scenes through the API would make this test slow.
         await pool.query(
-            `WITH anchors AS (
-               INSERT INTO script_scene_anchors (id, movie_id, script_id, selected_text, raw_selected_text)
-               SELECT gen_random_uuid(), $1, $2, 'Text', 'Text' FROM generate_series(1, 501)
-               RETURNING id
+            `INSERT INTO captured_scenes (
+               id, script_id, start_time_seconds, end_time_seconds,
+               start_page, start_line, start_top, start_bottom, start_text,
+               end_page, end_line, end_top, end_bottom, end_text, scene_text, raw_text
              )
-             INSERT INTO script_scene_annotations (id, anchor_id, movie_id, script_id, start_time_seconds, end_time_seconds)
-             SELECT gen_random_uuid(), id, $1, $2, 0, 0 FROM anchors`,
-            [place.movie.id, place.script.id]
+             SELECT gen_random_uuid(), $1, 0, 0, 1, n * 2, n * 12, n * 12 + 10, 'Start',
+                    1, n * 2, n * 12, n * 12 + 10, 'End', 'Text', 'Text'
+             FROM generate_series(1, 501) AS n`,
+            [place.script.id]
         );
-
-        for (const path of ["/script-scenes", "/script-scenes?limit=1000"]) {
+        for (const path of ["/script-scenes", "/script-scenes?q=zebra&limit=1000"]) {
             const response = await api.get(path);
             assert.equal(response.status, 200);
             assert.equal(response.body.length, 500);

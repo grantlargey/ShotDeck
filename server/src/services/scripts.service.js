@@ -46,10 +46,9 @@ export async function saveScript(db, movieId, body) {
 }
 
 export async function listScripts(db, movieId) {
-    const result = await db.query(`SELECT * FROM scripts WHERE movie_id = $1 ORDER BY created_at DESC`, [
-        movieId,
-    ]);
-    return Promise.all(result.rows.map(withScriptViewUrl));
+    await ensureMovieExists(db, movieId);
+    const result = await db.query(`SELECT * FROM scripts WHERE movie_id = $1`, [movieId]);
+    return result.rows[0] ? withScriptViewUrl(result.rows[0]) : null;
 }
 
 export async function getScript(db, { movieId, scriptId }) {

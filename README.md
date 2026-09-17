@@ -136,7 +136,6 @@ Common settings include:
 - `S3_BUCKET` - Bucket used for covers, scripts, and annotation images.
 - `ALLOWED_ORIGINS` - Comma-separated list of additional browser origins allowed by CORS.
 - `OPENAI_API_KEY` - Optional, enables AI formatting proposals. Without it, manual editing and PDF capture remain available.
-- `OPENAI_SCREENPLAY_MODEL` - Model used for screenplay proposals, defaults to `gpt-5-nano`.
 - `OPENAI_SCREENPLAY_TIMEOUT_MS` - Screenplay formatter request timeout in milliseconds, defaults to `90000`.
 
 Admin sign-in needs no configuration: sessions are stored in Postgres and the cookie is marked `Secure` automatically when the API is reached over HTTPS.

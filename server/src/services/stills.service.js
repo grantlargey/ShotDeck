@@ -12,22 +12,13 @@ import { queueThumbnailsForRows } from "./thumbnails.service.js";
 
 const INVALID_BODY_MESSAGE = "Invalid body. Expected { time_seconds:number, (optional) image_key:string }";
 
-function isValidStillBody({ time_seconds, title, body, image_key }, { allowTitleBody = false } = {}) {
+function isValidStillBody({ time_seconds, image_key }) {
     return (
         typeof time_seconds === "number" &&
         Number.isFinite(time_seconds) &&
         time_seconds >= 0 &&
-        (!allowTitleBody || title === undefined || title === null || typeof title === "string") &&
-        (!allowTitleBody || body === undefined || body === null || typeof body === "string") &&
         (image_key === undefined || image_key === null || typeof image_key === "string")
     );
-}
-
-/** The title and body as stored, trimmed. No response includes them. */
-function storedTitleAndBody(fields) {
-    const title = typeof fields.title === "string" ? fields.title.trim() : "";
-    const body = typeof fields.body === "string" && fields.body.trim() ? fields.body.trim() : null;
-    return [title, body];
 }
 
 async function signedViewUrl(key) {
@@ -62,14 +53,13 @@ export async function createStill(db, movieId, body) {
     if (!isValidStillBody(fields)) throw new HttpError(400, INVALID_BODY_MESSAGE);
     await ensureMovieExists(db, movieId);
 
-    const [title, textBody] = storedTitleAndBody(fields);
     const result = await db.query(
         `
-        INSERT INTO annotations (id, movie_id, time_seconds, title, body, image_key)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO annotations (id, movie_id, time_seconds, image_key)
+        VALUES ($1, $2, $3, $4)
         RETURNING *
       `,
-        [uuidv4(), movieId, fields.time_seconds, title, textBody, fields.image_key ?? null]
+        [uuidv4(), movieId, fields.time_seconds, fields.image_key ?? null]
     );
 
     queueThumbnailsForRows(db, result.rows);
@@ -91,29 +81,26 @@ export async function listStills(db, movieId) {
     return Promise.all(result.rows.map(toStillResponse));
 }
 
-/** Replaces the time, title and body. The image is kept when the body leaves image_key out, and null removes it. */
+/** Replaces the time. The image is kept when the body leaves image_key out, and null removes it. */
 export async function updateStill(db, { movieId, stillId, body }) {
     const fields = body ?? {};
-    if (!isValidStillBody(fields, { allowTitleBody: true })) throw new HttpError(400, INVALID_BODY_MESSAGE);
+    if (!isValidStillBody(fields)) throw new HttpError(400, INVALID_BODY_MESSAGE);
 
     const saved = await db.query(`SELECT image_key FROM annotations WHERE id = $1 AND movie_id = $2`, [stillId, movieId]);
     if (!saved.rows[0]) throw new HttpError(404, "Annotation not found");
 
-    const [title, textBody] = storedTitleAndBody(fields);
     const imageKey = fields.image_key === undefined ? saved.rows[0].image_key : fields.image_key;
     const result = await db.query(
         `
         UPDATE annotations
         SET time_seconds = $1,
-            title = $2,
-            body = $3,
-            image_key = $4,
+            image_key = $2,
             -- A replaced image needs a new thumbnail.
-            thumb_key = CASE WHEN image_key IS NOT DISTINCT FROM $4 THEN thumb_key END
-        WHERE id = $5 AND movie_id = $6
+            thumb_key = CASE WHEN image_key IS NOT DISTINCT FROM $2 THEN thumb_key END
+        WHERE id = $3 AND movie_id = $4
         RETURNING *
       `,
-        [fields.time_seconds, title, textBody, imageKey, stillId, movieId]
+        [fields.time_seconds, imageKey, stillId, movieId]
     );
     if (!result.rows[0]) throw new HttpError(404, "Annotation not found");
 
