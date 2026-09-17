@@ -422,7 +422,10 @@ PY
   if [[ "$skip_verify" -eq 0 ]]; then
     if ! verify_backend; then
       echo "[ERROR] Backend verification failed for $new_td" >&2
-      if [[ "$auto_rollback" -eq 1 ]]; then
+      if [[ "$run_migrations" -eq 1 ]]; then
+        echo "[ERROR] Automatic backend-only rollback is unsafe after the captured-scene conversion may have committed." >&2
+        echo "[ERROR] Keep writers stopped and recover the matching database snapshot, previous task definition and previous frontend together." >&2
+      elif [[ "$auto_rollback" -eq 1 ]]; then
         rollback_backend "$current_task_definition_arn"
       else
         echo "[WARN] Auto-rollback disabled. Manual rollback target: $current_task_definition_arn" >&2
