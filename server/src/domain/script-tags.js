@@ -125,16 +125,16 @@ const TAG_CATEGORY_INDEX = new Map(
 );
 
 /**
- * Groups a scene's tags under their taxonomy category labels, in taxonomy
- * order, with unknown tags collected under "Other". Each group's `tags` are
- * { value, label } pairs for linking back to filters.
+ * Groups taxonomy tags under their category labels, in taxonomy order.
+ * Each group's `tags` are { value, label } pairs for linking back to filters.
  */
 export function groupScriptTagsByCategory(tags) {
   const groups = new Map();
   for (const tag of Array.isArray(tags) ? tags.map(String) : []) {
-    const index = TAG_CATEGORY_INDEX.get(tag) ?? SCRIPT_TAG_CATEGORIES.length;
+    const index = TAG_CATEGORY_INDEX.get(tag);
+    if (index === undefined) continue;
     if (!groups.has(index)) {
-      groups.set(index, { label: SCRIPT_TAG_CATEGORIES[index]?.label || "Other", tags: [] });
+      groups.set(index, { label: SCRIPT_TAG_CATEGORIES[index].label, tags: [] });
     }
     groups.get(index).tags.push({ value: tag, label: getScriptTagLabel(tag) });
   }

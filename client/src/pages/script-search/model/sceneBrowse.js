@@ -2,10 +2,7 @@ import {
   safeScriptSceneTags,
   sortScriptScenes,
 } from "@/entities/script-scene/model/capturedScene.js";
-import {
-  SCRIPT_TAG_CATEGORIES,
-  SCRIPT_TAG_LABELS,
-} from "@server/domain/script-tags.js";
+import { SCRIPT_TAG_CATEGORIES } from "@server/domain/script-tags.js";
 
 export const SCENE_SORT_OPTIONS = [
   { value: "recent", label: "Recently updated" },
@@ -33,31 +30,7 @@ export function countSceneTags(scenes) {
   return counts;
 }
 
-/**
- * Sidebar groups: the known tag taxonomy plus an "Other" group for saved tags
- * outside it, so older free-form tags stay filterable.
- */
-export function buildFilterGroups(catalog, selectedTags) {
-  const otherTags = new Set();
-  for (const scene of catalog) {
-    for (const tag of safeScriptSceneTags(scene.tags)) {
-      if (!SCRIPT_TAG_LABELS[tag]) otherTags.add(tag);
-    }
-  }
-  for (const tag of selectedTags) {
-    if (!SCRIPT_TAG_LABELS[tag]) otherTags.add(tag);
-  }
-
-  if (otherTags.size === 0) return SCRIPT_TAG_CATEGORIES;
-
-  return [
-    ...SCRIPT_TAG_CATEGORIES,
-    {
-      key: "other",
-      label: "Other Tags",
-      tags: [...otherTags]
-        .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ value, label: value })),
-    },
-  ];
+/** Sidebar groups are exactly the write-time taxonomy. */
+export function buildFilterGroups() {
+  return SCRIPT_TAG_CATEGORIES;
 }

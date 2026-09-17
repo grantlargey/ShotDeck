@@ -92,10 +92,7 @@ export default function ScriptSearchPage() {
 
   const results = useMemo(() => sortScenes(response.rows, sort), [response.rows, sort]);
   const tagCounts = useMemo(() => countSceneTags(catalog), [catalog]);
-  const filterGroups = useMemo(
-    () => buildFilterGroups(catalog, selectedTags),
-    [catalog, selectedTags]
-  );
+  const filterGroups = buildFilterGroups();
   const titleCount = useMemo(() => new Set(results.map((row) => row.movie_id)).size, [results]);
 
   function updateParams(update) {

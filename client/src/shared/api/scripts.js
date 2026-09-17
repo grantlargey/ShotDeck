@@ -1,7 +1,8 @@
 import { req } from "./request.js";
 import { uploadMediaFile } from "./uploads.js";
 
-export function listScripts(movieId) {
+/** Returns the movie's one script, or null when it has none. */
+export function getMovieScript(movieId) {
   return req(`/movies/${encodeURIComponent(movieId)}/scripts`);
 }
 

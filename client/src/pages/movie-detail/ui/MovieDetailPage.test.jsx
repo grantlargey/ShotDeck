@@ -15,7 +15,7 @@ import MovieDetailPage from "./MovieDetailPage.jsx";
 const api = vi.hoisted(() => ({
   getMovie: vi.fn(),
   updateMovie: vi.fn(),
-  listScripts: vi.fn(),
+  getMovieScript: vi.fn(),
   saveScript: vi.fn(),
   listAnnotations: vi.fn(),
   createAnnotation: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock("@/shared/api/annotations.js", () => ({
   deleteAnnotation: api.deleteAnnotation,
 }));
 vi.mock("@/shared/api/movies.js", () => ({ getMovie: api.getMovie, updateMovie: api.updateMovie }));
-vi.mock("@/shared/api/scripts.js", () => ({ listScripts: api.listScripts, saveScript: api.saveScript }));
+vi.mock("@/shared/api/scripts.js", () => ({ getMovieScript: api.getMovieScript, saveScript: api.saveScript }));
 vi.mock("@/shared/api/scriptScenes.js", () => ({ listScriptScenes: api.listScriptScenes }));
 vi.mock("@/shared/api/uploads.js", () => ({ getViewUrlForKey: api.getViewUrlForKey }));
 vi.mock("@/entities/session/model/useSession.js", () => ({ useSession: () => session }));
@@ -43,6 +43,7 @@ URL.createObjectURL ??= () => "blob:still-preview";
 URL.revokeObjectURL ??= () => {};
 
 const MOVIE = { id: "m1", title: "Night Diner", runtime_minutes: 120 };
+const SCRIPT = { id: "s1", movie_id: "m1", s3_key: "scripts/m1.pdf", script_url: "https://media.test/m1.pdf" };
 const RUNTIME_LABEL = "02:00:00";
 const WITH_IMAGE = {
   id: "a1",
@@ -91,6 +92,7 @@ async function renderPage({ admin = true } = {}) {
     <MemoryRouter initialEntries={["/movies/m1"]}>
       <Routes>
         <Route path="/movies/:id" element={<MovieDetailPage />} />
+        <Route path="/movies/:movieId/scripts/:scriptId" element={<p>Opened script</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -185,7 +187,7 @@ beforeEach(() => {
   stills = [WITH_IMAGE, WITHOUT_IMAGE];
   for (const fn of Object.values(api)) fn.mockReset();
   api.getMovie.mockImplementation(async () => ({ ...MOVIE }));
-  api.listScripts.mockImplementation(async () => []);
+  api.getMovieScript.mockImplementation(async () => null);
   api.listAnnotations.mockImplementation(async () => stills.map((row) => ({ ...row })));
   api.listScriptScenes.mockImplementation(async () => []);
   api.getViewUrlForKey.mockImplementation(async () => ({ url: "" }));
@@ -195,6 +197,27 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("loading the project's script", () => {
+  it("consumes the one script object and opens it", async () => {
+    api.getMovieScript.mockResolvedValueOnce({ ...SCRIPT });
+
+    await renderPage();
+
+    expect(api.getMovieScript).toHaveBeenCalledWith("m1");
+    expect(screen.getByText("Uploaded")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open script" }));
+    expect(await screen.findByText("Opened script")).toBeTruthy();
+  });
+
+  it("consumes null without keeping a script selection", async () => {
+    await renderPage();
+
+    expect(api.getMovieScript).toHaveBeenCalledWith("m1");
+    expect(screen.getByText("Not uploaded")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open script" })).toBeNull();
+  });
 });
 
 describe("adding a still", () => {
