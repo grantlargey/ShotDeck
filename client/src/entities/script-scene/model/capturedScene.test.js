@@ -21,6 +21,16 @@ describe("displayScriptSceneText", () => {
     expect(displayScriptSceneText(scene("a", 1, 0, { scene_text: "## INT. DINER" }))).toBe("## INT. DINER");
     expect(displayScriptSceneText({})).toBe("");
   });
+
+  it("does not fall back to removed text fields", () => {
+    expect(
+      displayScriptSceneText({
+        formatted_selected_text: "## INT. LEGACY DINER",
+        raw_selected_text: "INT. LEGACY DINER",
+        selected_text: "INT. LEGACY DINER",
+      })
+    ).toBe("");
+  });
 });
 
 describe("sortScriptScenes", () => {
