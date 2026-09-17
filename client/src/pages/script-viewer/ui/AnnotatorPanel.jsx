@@ -54,11 +54,11 @@ function AnchorRow({ kind, anchor, onJump, onRemove }) {
   }
 
   return (
-    <div className={cx(styles.anchorRow, anchor.suggested && styles.anchorRowSuggested)}>
+    <div className={styles.anchorRow}>
       <span className={badgeClass}>{label[0]}</span>
       <span className={styles.anchorText}>
         <span className={styles.anchorLocation}>
-          {anchor.suggested ? `Suggested ${label.toLowerCase()}` : label} · p. {anchor.page} · line {anchor.line + 1}
+          {label} · p. {anchor.page} · line {anchor.line + 1}
         </span>
         <span className={styles.anchorSnippet} title={anchor.text}>
           {anchor.text}
@@ -73,16 +73,14 @@ function AnchorRow({ kind, anchor, onJump, onRemove }) {
         >
           <CrosshairIcon />
         </IconButton>
-        {!anchor.suggested && (
-          <IconButton
-            size="sm"
-            label={`Remove the ${kind} anchor`}
-            title="Remove anchor"
-            onClick={() => onRemove(kind)}
-          >
-            <CloseIcon size={14} />
-          </IconButton>
-        )}
+        <IconButton
+          size="sm"
+          label={`Remove the ${kind} anchor`}
+          title="Remove anchor"
+          onClick={() => onRemove(kind)}
+        >
+          <CloseIcon size={14} />
+        </IconButton>
       </span>
     </div>
   );
@@ -116,8 +114,7 @@ function CaptureTab({
   onRequestAi,
   onReviewProposal,
 }) {
-  const { anchors, anchorsSuggested, canUndoAnchors, startTime, endTime, text, textOrigin, textStale, legacyText } =
-    draft;
+  const { anchors, canUndoAnchors, startTime, endTime, text, textOrigin, textStale } = draft;
   const hasAnchors = Boolean(anchors.start || anchors.end);
   const hasText = Boolean(text.trim());
   const originBadge = ORIGIN_BADGES[textOrigin];
@@ -150,18 +147,11 @@ function CaptureTab({
           <AnchorRow kind="end" anchor={anchors.end} onJump={onJumpToAnchor} onRemove={draftActions.removeAnchor} />
         </div>
 
-        {anchorsSuggested ? (
+        {!(anchors.start && anchors.end) && (
           <p className={styles.hint}>
-            Suggested from this scene&apos;s saved text. Move them with the right-click menu, or re-capture below to
-            confirm them.
+            Right-click a line in the script to place an anchor. Or hover a line and press <kbd>[</kbd> for the start
+            or <kbd>]</kbd> for the end.
           </p>
-        ) : (
-          !(anchors.start && anchors.end) && (
-            <p className={styles.hint}>
-              Right-click a line in the script to place an anchor. Or hover a line and press <kbd>[</kbd> for the
-              start or <kbd>]</kbd> for the end.
-            </p>
-          )
         )}
 
         {!indexStatus.complete && indexStatus.total > 0 && (
@@ -212,9 +202,7 @@ function CaptureTab({
 
         {textStale && (
           <Callout tone="info" className={styles.callout} action="Re-capture from anchors" onAction={onRecapture}>
-            {legacyText
-              ? "This scene was saved before screenplay formatting."
-              : "The anchors moved after this text was captured."}
+            The anchors moved after this text was captured.
           </Callout>
         )}
 

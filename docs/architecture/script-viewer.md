@@ -1,367 +1,292 @@
-# Script viewer
+# Script viewer architecture
 
-The script viewer is the page where admins capture scenes from a film's script, and where visitors read the script and open its captured scenes. Terms in this document (scene draft, scene anchor, suggested anchors, captured text, scene text, raw text, text origin, stale text, re-capture, AI proposal, script location, legacy scene, film timing) are defined in [`CONTEXT.md`](../../CONTEXT.md).
+The script viewer is the page where admins capture scenes from a film's script and visitors read those scenes in context. Terms in this document—captured scene, script location, scene anchor, scene draft, captured text, scene text, raw text, text origin, stale text, re-capture, AI proposal, and film timing—are defined in [`CONTEXT.md`](../../CONTEXT.md).
 
-## What will a scene draft save, and why?
+This document describes the canonical captured-scene contract accepted in [ADR 0001](../adr/0001-canonical-captured-scene-storage.md). The viewer has no compatibility path for saved scenes without anchors, old geometry, inferred locations, stored page ranges, text offsets, or surrounding context.
 
-Read one module: `useSceneDraft` in `client/src/pages/script-viewer/model/sceneDraft.js`. It owns the scene draft's state, how that state changes, and `draftActions.buildSave({ runtimeSeconds, scenes })`, which takes the film's runtime and the script's captured scenes and returns either `{ error }` or `{ payload, applySaved, confirmStaleText }`. When `confirmStaleText` is true, the page asks the admin first and sends nothing if they cancel. The collection module then sends `payload` to create or update the captured scene and passes the returned scene to `applySaved`.
+## Invariants
 
-**Validation**, in order:
+- Every stored captured scene has one complete, ordered `script_location` with a start and end anchor.
+- A scene draft may have zero or one anchor while it is being edited, but it cannot be saved until both anchors resolve to indexed script lines and yield non-blank captured text.
+- The saved `scene_text` is the screenplay text visible in the draft. The saved `raw_text` is always the plain text captured from the draft's current anchors.
+- Clearing all anchors makes the draft unsaveable. Undo may restore the pair; the saved scene's old location is never silently reused.
+- Film timing and script location may touch but not overlap another scene of the same script. The client refuses before sending; the server remains the invariant owner.
+- The draft preview and stored scenes share the same presentation shape. There is no preview adapter with old field names.
 
-1. Film timing: both times present, `HH:MM:SS` or `MM:SS`, end not before start, and not past the film's runtime when it is known (`parseFilmTiming`).
-2. The film timing doesn't overlap another captured scene of the script. See [Overlapping scenes are refused](#overlapping-scenes-are-refused).
-3. Explicit anchors have a capture. See [Explicit anchors need a capture to save](#explicit-anchors-need-a-capture-to-save).
-4. Scene text isn't blank.
-5. A script location exists.
-6. The script location doesn't share a line with another captured scene of the script.
+## Canonical save
 
-The fourth and fifth checks share the message "Place start and end anchors in the script to capture the scene text."
-
-**Scene text** (`selected_text` and `formatted_selected_text`, both set to `draft.text`) depends on the text origin:
-
-| Text origin | Where the text comes from |
-|---|---|
-| `"capture"` | Captured text, read live from the anchors in effect. It changes whenever the anchors or the text index change, and isn't stored in the draft. See [Captured text that changes during indexing](#captured-text-that-changes-during-indexing). |
-| `"edited"` | Typed in the editor dialog. |
-| `"ai"` | An accepted AI proposal. |
-| `"saved"` | The saved scene's formatted text, else its raw text, else its selected text. |
-
-Text of any origin other than `"capture"` remembers the anchor pair it belongs to. When a capture exists under a different pair, the text is stale. Stale text is still saved as it is, but with explicit anchors only after the admin confirms. See [Stale text needs confirmation to save](#stale-text-needs-confirmation-to-save). Re-capturing is the alternative.
-
-**Script location** (`page_start`, `page_end`, `start_offset`, `end_offset`, `context_prefix`, `context_suffix`, `anchor_geometry`):
-
-- With explicit anchors, from the current capture. Empty context becomes `null`, and geometry is written as version-2 entries. Without a capture, saving is refused.
-- Without explicit anchors (none, or only suggested ones), from the saved scene, as stored. Missing fields become `null`, and non-array geometry becomes `[]`.
-- Otherwise there's no location, and saving is refused.
-
-A capture needs only the pages in its range, but offsets stay `null` until the whole script has been indexed. Suggested anchors never become the saved location on their own; an anchor change or a re-capture must first make them explicit.
-
-**Raw text** (`raw_selected_text`) follows the location: the capture's plain text, else the saved scene's raw text, else plain text derived from the scene text.
-
-**Film timing and tags**: times are parsed to seconds, and tags are sent in the order they were selected.
-
-### Overlapping scenes are refused
-
-Captured scenes of the same script can't overlap. `buildSave` compares the draft with `scenes`, leaving out the draft's own saved scene. An overlap returns `{ error }` naming the other scene's film timing: the page shows it as an error notice, sends no request, and leaves the draft unchanged. The server stays the authority and answers 409 for an overlap it refuses.
-
-| Overlap | When two scenes overlap | Message |
-|---|---|---|
-| Film timing, checked right after the timing itself | `a.start < b.end && b.start < a.end`, in seconds (`findOverlappingFilmTiming`). Scenes that only touch are fine, so a zero-length timing overlaps only a scene that strictly contains it. Scenes without usable timing aren't compared. | "This scene's film timing overlaps the scene at 00:10:00 – 00:12:00. Scenes can touch but not overlap." |
-| Script location, checked last, once a location exists | The location being saved shares a line with the other scene's anchors, comparing `(page, line)` inclusively, so adjacent lines are fine (`findOverlappingScriptLocation` in `@/entities/script-scene/model/scriptLocation.js`). That location comes from the explicit anchors, else from the saved scene's stored anchors. Only valid anchor pairs are compared, by the server's rule: each of the pair's entries has kind `start` or `end`, version 2, unit `"pt"`, a whole page from 1 and line from 0, finite top and bottom, and string text; a repeated kind's last such entry wins; and the start is at or before the end. The panel's callout checks the anchors in effect as `anchorsToGeometry` stores them. `buildSave` first reads the location it would save with the lenient `anchorsFromGeometry`, for explicit anchors and stored geometry alike, so for a location the server would reject anyway (for example an anchor whose text isn't a string, which that read turns into one) it may show an overlap message instead of sending; this goes when legacy scenes are removed. Otherwise legacy scenes, stored pairs that only read leniently (for example without a unit) and stored pairs whose end comes before their start aren't compared, although their anchors still display. | "These anchors share lines with the scene at 00:10:00 – 00:12:00. Move the anchors so the scenes don't overlap." |
-
-While the anchors in effect share a line with another scene, the panel shows the script location message as an error callout with an "Edit that scene" action (`scriptLocationOverlapError`). The page finds that scene with the same `findOverlappingScriptLocation`. The callout follows the anchors in effect, so suggested anchors can show it for a legacy scene even though saving keeps, and doesn't compare, that scene's stored location. Film timing overlap has no live callout; saving reports it.
-
-### Responses arriving after the draft changes
-
-`buildSave` captures the draft being saved. Its `applySaved(scene)` callback reconciles the response in the reducer, where it sees all queued changes:
-
-- If the same draft is unchanged, load the returned scene normally.
-- If that draft has newer changes, update its saved baseline and keep its current text, timing, tags, anchors, undo history, and editor key. Those newer edits remain unsaved. A newly created scene receives its saved id, so the next save updates it instead of creating a duplicate.
-- If the admin loaded or started another draft, leave it alone. Leaving and reopening the same scene also counts as a new draft.
-
-Before a deletion request, call `draftActions.prepareDelete(sceneId)` and retain its completion callback. Call it only after the request succeeds. It clears an unchanged deleted draft, leaves a different scene alone, and preserves newer changes to the deleted scene as a new unsaved draft. A legacy draft without explicit anchors may need a new capture before it can be saved as a new scene. Deletion also invalidates older saves for that draft.
-
-`useSceneCollection` sends each request, updates the script's captured scenes and calls these callbacks; the page shows the result. Networking for captured scenes lives in the collection module, and whether a response can replace the draft belongs to the draft module. These rules fix the earlier I1/I2 response races.
-
-### AI proposals keep the selection they were requested for
-
-`startProposal()` reads the committed draft and stores the proposal's selection with its token:
-
-- **With a capture:** the capture's anchor key, plus its plain text as the proposal's word-check baseline (`draft.proposal.capturedPlainText`). This applies even when the draft text is stale, because the request sends that capture.
-- **Without a capture** (no anchor pair, or pages not yet indexed): the draft text's own anchor key, and `""` as the baseline, which means no word check. The key is empty for a legacy scene or for text typed without a capture. The request still sends plain text derived from the draft text.
-
-Accepting a ready proposal is always explicit and is never refused. The proposal becomes `"ai"` text keyed to the stored selection, and the usual stale-text rule applies:
-
-- **Stale:** a capture exists under a different anchor pair. This happens when the anchors moved while the request was pending or after it was ready, when they were cleared and placed on another pair, or when suggested anchors appear for a legacy scene.
-- **Fresh again:** the anchors return to the requested pair.
-- **Never stale:** there is no capture, for example while the anchors are cleared.
-
-Saving follows the usual rules: stale AI text under explicit anchors needs confirmation (B6), and a draft with no script location is still refused.
-
-The editor dialog checks the draft against the current capture (`draft.capturedPlainText`) and checks the proposal against its stored baseline. A capture that changes or appears later never replaces that baseline. A newer `startProposal`, `discardProposal`, `loadScene` or `reset` replaces or drops the proposal along with its selection. Request tokens still decide whether a response applies.
-
-These rules fix H2, where an accepted proposal was keyed to the anchors at accept time and so looked fresh for anchors it was never requested for.
-
-### Explicit anchors need a capture to save
-
-With explicit anchors, the script location and raw text come from the capture, so saving needs one. Without a capture, `buildSave` returns an error after the film timing checks and before the blank-text check. The page shows it as an error notice and sends no request. `captureUnavailableReason` in `model/captureRange.js` says why there is no capture:
-
-| Why | Message |
-|---|---|
-| The start or end anchor is missing | "Place a start anchor in the script before saving." or "Place an end anchor in the script before saving." |
-| A page in the range isn't indexed yet, and indexing is still running | "Wait for the pages between the anchors to finish indexing, then save again." |
-| Anything else: indexing finished without a page in the range (such as a scanned page), an anchor's page has no text lines, or a stored end anchor is on an earlier page than the start | "The script text between the anchors can't be read. Move the anchors to lines with text, then save again." |
-
-A refused save leaves the draft as it was, and saving again works once the capture exists. Only the pages in the range must be indexed.
-
-Unchanged:
-
-- **Without explicit anchors** (a legacy scene, suggested anchors, or a saved scene whose anchors were all cleared), a saved scene keeps its stored location.
-- **Stale text** saves the current capture's location and raw text alongside the draft's text, once the admin confirms. See [Stale text needs confirmation to save](#stale-text-needs-confirmation-to-save).
-
-A saved scene opens with its stored anchors as explicit anchors. Until its range is indexed, updating it, even only its timing or tags, asks the admin to wait.
-
-This fixes B5, where explicit anchors without a capture saved the scene's previously stored location while the page showed different anchors.
-
-### Stale text needs confirmation to save
-
-With explicit anchors, saving stores the draft's text with the current capture's script location and raw text. If the text is stale (Saved, Edited or AI formatted text keyed to another anchor pair), the location and raw text belong to a different selection. `buildSave` then returns the usual payload with `confirmStaleText: true`, and the page asks:
-
-> This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location and raw text will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.
-
-- **Cancel:** no request is sent and the draft is unchanged. Re-capture stays available from the panel callout and the editor dialog, and still asks before replacing Edited or AI formatted text. Any earlier notice is cleared, because validation passed.
-- **Confirm:** the page sends exactly the payload it asked about, mapped as usual. `window.confirm` blocks, so the draft can't change between building the payload and the answer. Nothing is remembered: each save builds its own payload and decides again, so an answer never covers later edits or another draft.
-- **Afterwards:** confirming changes nothing in the draft. The response is reconciled as in [Responses arriving after the draft changes](#responses-arriving-after-the-draft-changes). An unchanged draft reloads the returned scene, whose text is now keyed to its stored anchors, so it is no longer stale. A draft that changed during the request keeps its stale text, and its next save asks again.
-
-The prompt comes after validation, so timing, overlapping scenes, a missing capture, blank text and a missing location are reported first. There's no prompt for:
-
-- captured text, or Saved, Edited or AI formatted text keyed to the capture's anchor pair;
-- drafts without explicit anchors: legacy scenes, suggested anchors (even though their legacy text is stale), and saved scenes whose anchors were all cleared. These keep their stored location. Once suggested anchors become explicit, legacy text is stale and the prompt applies.
-
-This fixes B6, where stale text was saved with another selection's location and raw text without acknowledgement.
-
-### Captured text that changes during indexing
-
-The action margin is estimated from the pages indexed so far, so indexing more pages can reclassify captured text under unchanged anchors. Offsets appear once the whole script is indexed. Script mode, Markdown mode, the panel preview and saving all use `draft.text`. Who owns the text decides what an index update may change:
-
-| Text | Owner | When a new index changes the captured text |
-|---|---|---|
-| Captured, not yet edited | The live capture | The new text replaces it everywhere. The script editor is replaced too, as it is after an anchor change. |
-| Edited, AI formatted or Saved | The draft | Nothing changes: the text, the editor, focus and caret stay. |
-
-Rules:
-
-- **Editor source.** `draft.editorKey` is `revision:seed`, and the dialog passes it to `ScreenplayEditor` as `sourceKey`. For Captured text the seed is the anchor pair plus a fingerprint of the captured Markdown, so it changes only when that text does. Pages elsewhere in the script, offsets and context don't replace the editor.
-- **First edit.** `editText` stores the seed from the latest commit, which is the text the editor was showing. The first keystroke keeps the key and wins over a newer capture, even when both are committed in the same batch.
-- **Focus.** When `sourceKey` changes while one of the editor's fields has focus, the editor rebuilds its blocks and focuses the same block number, with the caret at the same offset, both clamped to the new text. It records the position in a layout-effect cleanup, before the old fields leave the page.
-- **After a reclassification.** Edited and AI formatted text keep their anchor key, so they aren't stale and saving doesn't ask. The draft's word check, "Revert to captured text", and the saved raw text and location come from the new capture. A pending AI proposal keeps the plain text it was requested with as its word-check baseline (H2).
-- **Unchanged.** Classification, capturing and saving from a partly indexed script, B5 messages, B6 staleness, and I1/I2 response handling.
-
-This fixes C3. The script editor kept its mount-time text while the preview and save used the reclassified capture, and the first keystroke silently replaced the newer capture with the older text.
-
-Known limits:
-
-- Staleness still compares anchor pairs only (D7). Text edited from an earlier classification isn't marked stale when indexing reclassifies the capture. Only the word check and the revert button reflect the new capture.
-- The restored caret is positional. If reclassification splits or joins blocks, the same block number and offset may hold different words.
-- The fingerprint is a 32-bit FNV-1a hash plus the text length. A collision would leave the old text in the editor until the next replacement.
-- Markdown mode's source is a controlled textarea. When untouched text is reclassified there, focus stays but Chromium moves the caret to the end, as it does for any outside replacement in that mode. Only Script mode restores the caret.
-
-## Entry points and ownership
-
-The route `/movies/:movieId/scripts/:scriptId` is declared in `client/src/app/App.jsx`, which lazy-loads `@/pages/script-viewer/ui/ScriptViewerPage.jsx`, whose default export is `ScriptViewerRoute`. It keys the page by `scriptId`, so switching scripts remounts the page and starts a fresh draft.
-
-The page composes two model modules, the scene draft and the script's captured scenes, and owns the rest of the screen.
-
-| `useSceneDraft` (`model/sceneDraft.js`) | `useSceneCollection` (`model/sceneCollection.js`) | `ScriptViewerPage.jsx` |
-|---|---|---|
-| Draft state and every transition (a private pure reducer) | The script's captured scenes and their order (`sortScriptScenes`) | Loading the project and script; notices and all UI wording |
-| Anchors in effect: explicit, or suggested | Their create, update and delete requests | PDF rendering, windowing, scrolling, deep links |
-| Capture memoization and captured text | Which request is running (`saving`, `deletingSceneId`) | Menus, dialogs, tabs, the marker toggle, the visitor's focused scene |
-| Text origin, stale text, legacy text, the editor source key | Handing each response to the draft's `applySaved` and `prepareDelete` | `window.confirm` prompts, including re-capture button labels |
-| The dirty check | | Keyboard and pointer wiring |
-| Re-capture rules, the AI proposal lifecycle and request tokens | | The AI formatting call, its page snapshots and error-message mapping |
-| Save validation, including overlapping scenes, the payload, and whether saving needs confirmation (`buildSave`) | | The overlap callout, scene bars in the margin, admin vs visitor behavior |
-
-`AnnotatorPanel` reads `draft` and `draftActions` itself, so the page relays no draft fields to it; the page passes only what it owns. A failed request resolves with the error it threw, and the page words it.
-
-## Module map
-
-All paths are under `client/src/pages/script-viewer/`.
-
-| File | Role |
-|---|---|
-| `ui/ScriptViewerPage.jsx` | The route module and page: it composes the draft and the collection, loads the project and script, and owns the PDF, dialogs, navigation, prompts and notices. |
-| `model/sceneDraft.js` | `useSceneDraft`, and `scriptLocationOverlapError`, the script location overlap message that `AnnotatorPanel`'s callout also shows. |
-| `model/sceneCollection.js` | `useSceneCollection({ movieId, scriptId, onLoadError })`: the script's captured scenes in the API's list order (`list`), `loading`, the `save` and `remove` requests, and which one is running (`saving`, `deletingSceneId`). Each request resolves with `{ ok: true }` (a save also carries the saved `scene`) or `{ ok: false, error }`, and a failed one leaves the list as it was. |
-| `model/anchors.js` | Pure helpers for scene anchors while capturing: placement and swapping, anchor keys, a stored anchor's current line (`resolveAnchorLine`), suggestions from saved text, and the saved scenes' bars in the margin (`buildSceneSegmentsByPage`). |
-| `model/captureRange.js` | `captureAnchoredRange(textIndex, anchors)`: captured text, key, pages, offsets and context. Expensive. `captureUnavailableReason(textIndex, anchors)` says why there is no capture. |
-| `model/useScriptTextIndex.js` | Indexes every page's text lines in the background on a separate pdf.js worker. Publishes a new index object every 8 pages and on completion. |
-| `model/usePdfPageWindowing.js` | Page sizing, mobile windowing and scrolling. |
-| `ui/PdfPageFrame.jsx` | One memoized page plus its overlay: markers, range, scene bars, hover line. |
-| `ui/AnnotatorPanel.jsx` | The annotator beside the PDF: the Capture and Tags tabs and the Save and Delete buttons. It takes `draft` and `draftActions`, and from the page the tab, the film's title and runtime, indexing progress, the overlapping scene, request state, and the handlers that prompt or send a request. It derives the header label and the Tags tab's gate from the draft. |
-| `ui/DraftEditorModal.jsx`, `ui/ScreenplayEditor.jsx`, `ui/AnchorContextMenu.jsx`, `ui/SavedScenesGrid.jsx`, `ui/ViewerTopBar.jsx` | Presentational components. `ScreenplayEditor` owns its blocks until its `sourceKey` (`draft.editorKey`) changes, then rebuilds them and keeps focus in the same block. |
-| `lib/pageSnapshots.js` | Renders cropped page images for the AI formatter. |
-| `lib/pdfViewport.js`, `lib/platform.js` | Scroll helpers, typing-target detection, shortcut labels. |
-
-Film timing rules live outside the page slice, in `client/src/entities/script-scene/model/filmTiming.js`: checking typed timing for saving (`parseFilmTiming`) and while typing (`filmTimingErrorWhileTyping`), film timing overlap (`findOverlappingFilmTiming`), whether a moment falls inside a scene (`filmTimingCovers`), the range label (`formatFilmTiming`), and the check for a single moment such as a still's timestamp (`parseFilmMoment`). Generic typed-time parsing, formatting and normalizing are in `client/src/shared/lib/time.js`.
-
-Where a stored captured scene sits in its script is read outside the page slice, in `client/src/entities/script-scene/model/scriptLocation.js`, so every page reads it the same way:
-
-- **Scene anchors:** version-2 geometry read and write (`anchorsFromGeometry`, `anchorsToGeometry`), and their `(page, line)` order (`compareAnchors`), which placement and suggestions in `model/anchors.js` also use. Reading returns null for a legacy scene.
-- **Pages:** `scenePageRange` and its label, `formatScenePages`. Pages are known only when `page_start` is, because the API orders scenes by `page_start` alone. Unknown pages get no label, not "Page 1".
-- **Scroll target:** `sceneScrollTarget` is the start anchor's line, else the first page, else null, in which case the page doesn't scroll.
-- **Script location overlap:** `findOverlappingScriptLocation` compares `(page, line)` ranges inclusively, so ranges that share a line overlap and adjacent lines don't. It reads both pairs as strictly as the server does: every entry strictly valid (kind, version 2, unit `"pt"`, page from 1, line from 0, finite top and bottom, string text), each kind's last strictly valid entry, and the start at or before the end. The check skips the excluded scene and any scene without such a pair: a legacy scene, a pair that only reads leniently, or a stored pair whose end comes before its start. `anchorsFromGeometry` stays lenient, so those anchors still display. `buildSave`'s script location check and the page's overlap callout both use it.
-
-`client/src/entities/script-scene/model/capturedScene.js` reads pages through that module for `sortScriptScenes`, which matches the API's list order (first page with unknown pages last, then film timing start, then creation time), and for `getSceneScriptPath`, which leaves out `page` when it's unknown.
-
-## The `useSceneDraft` interface
+`useSceneDraft` returns `draftActions.buildSave({ runtimeSeconds, scenes })`. Its successful result has one payload:
 
 ```js
-const textIndex = useScriptTextIndex(pdfDocument);
+{
+  start_time_seconds,
+  end_time_seconds,
+  script_location: {
+    start: { page, line, top, bottom, text },
+    end: { page, line, top, bottom, text },
+  },
+  scene_text,
+  raw_text,
+  tags,
+}
+```
+
+Nothing else is sent. In particular, the viewer does not send page ranges, geometry arrays, selected/formatted text aliases, offsets, or context snippets.
+
+The checks run in this order:
+
+1. Film timing parses, is non-negative, is ordered, and does not exceed a known runtime.
+2. Film timing does not overlap another captured scene, excluding the scene being edited.
+3. Both scene anchors form a contract-valid location: integer page `1…100000`, integer line `0…100000`, finite top and bottom, string text, and start at or before end.
+4. Every page in the anchored range has been indexed, both anchors resolve to script lines, and the capture produces non-blank raw text.
+5. Scene text is non-blank.
+6. Script location does not share a line with another captured scene, excluding the scene being edited.
+
+The successful result also carries `confirmStaleText`. The page asks for confirmation when the visible scene text came from a different anchor pair; accepting the prompt saves that text with the current location and current raw text.
+
+## The scene draft module
+
+`model/sceneDraft.js` is the deep module for the editor workflow. Its interface is the stable pair returned by `useSceneDraft(textIndex)`:
+
+```js
 const [draft, draftActions] = useSceneDraft(textIndex);
 ```
 
-`draft` is derived for the current render and is never stored:
+The interface hides reducer transitions, capture derivation, editor source keys, proposal tokens, request reconciliation, and stale-text provenance. The page does not reproduce those rules.
+
+### Draft view
 
 | Field | Meaning |
 |---|---|
-| `savedScene` | The scene row as loaded or last saved, or `null` for a new draft. The page derives `draftSceneId` from its `id`. |
-| `anchors`, `anchorsSuggested`, `canUndoAnchors` | The anchors in effect (`{ start, end }`), whether they are suggested, and whether anchor undo is available. |
-| `startTime`, `endTime`, `tags` | Film timing as typed, and the selected tags in order. |
-| `text`, `textOrigin` | The scene text saving would store, and where it came from. |
-| `textStale`, `legacyText` | Stale text; saved text that belongs to no anchor pair. |
-| `capturedPlainText` | The capture's plain text when the text isn't stale, else `""` (the draft's word check). |
-| `recaptureOption`, `recaptureReplacesEdits` | `"none"`, `"recapture"` or `"revert"`, which the page turns into a button label; and whether re-capture would replace edited or AI text, in which case the page confirms first. |
-| `editorKey` | The editor's source key, passed to `ScreenplayEditor` as `sourceKey`. While Captured, it changes when the captured text does, after an anchor change or a reclassification, but not when only offsets or context appear. It stays the same on the first edit and through later index updates, so the caret isn't lost. It changes on reset, load, re-capture and accepting a proposal. |
-| `proposal` | `null` or `{ status, markdown, error, capturedPlainText }`. `capturedPlainText` is the plain text of the capture the request was made from, else `""`; it is the baseline for the proposal's word check. The token and requested anchor key stay private. |
-| `previewScene` | A scene-shaped preview for the panel's card and the dialog's page label. |
-| `dirty` | Whether there are unsaved changes, used for the discard prompt. |
+| `savedScene` | The current stored baseline, or `null` for a new draft. |
+| `anchors` | `{ start, end }`; either may be `null` only while editing. |
+| `canUndoAnchors` | Whether one of the last 50 anchor states can be restored. |
+| `startTime`, `endTime` | Typed film timing fields. |
+| `tags` | Ordered selected taxonomy values. |
+| `text` | Current scene text, derived from capture while origin is Captured. |
+| `textOrigin` | `capture`, `edited`, `ai`, or `saved`. |
+| `textStale` | Whether current text belongs to a different anchor pair. |
+| `capturedPlainText` | Current raw capture only when it matches the text's pair; otherwise empty for the editor's fidelity baseline. |
+| `recaptureOption` | `none`, `recapture`, or `revert`. |
+| `editorKey` | Changes only when the editor must replace its block model. |
+| `proposal` | Public loading, ready, or error state; the token and provenance stay private. |
+| `previewScene` | `{ start_time_seconds, end_time_seconds, script_location, tags, scene_text }`; `script_location` is `null` while incomplete. |
+| `dirty` | Whether the draft differs from its saved baseline. |
 
-`draftActions` has one identity for the life of the hook, so its functions can be passed straight to memoized components: `loadScene`, `reset`, `setAnchorAtLine`, `removeAnchor`, `clearAnchors`, `undoAnchors`, `setTime`, `normalizeTime`, `toggleTag`, `clearTags`, `editText`, `recapture`, `startProposal`, `proposalReady`, `proposalFailed`, `acceptProposal`, `discardProposal`, `buildSave`, `prepareDelete`. The callbacks returned by `buildSave` and `prepareDelete` belong to individual requests. `buildSave({ runtimeSeconds, scenes })` takes the film's runtime in seconds, 0 when it's unknown, and the script's captured scenes, which may include the draft's own saved scene.
+### Draft actions
 
-Timing rules:
-
-- Actions read the draft from the latest **commit**, through a ref assigned in a layout effect, never during render. Several actions called in one event all see the same draft, and `draft` shows their changes only after React commits. There are no synchronous state reads.
-- `startProposal()` returns `null` for blank text, or the request data together with a fresh token. The proposal's selection and word-check baseline are taken from the same committed view as the request data. `proposalReady` and `proposalFailed` apply only if their token still matches. `acceptProposal()` reads nothing from the view; the proposal carries its selection. The token counter lives in a ref and is incremented at call time, never in the reducer, which `StrictMode` runs twice.
-- Capture work (`captureAnchoredRange`) reruns only when the text index or the anchors in effect change. Anchor objects keep their identity while no anchor input changes, so memoized PDF pages don't re-render.
-
-## Name mappings
-
-| Glossary term | Client | HTTP | Database |
-|---|---|---|---|
-| Captured scene | script scene: `scenes.list`, `draft.savedScene` | `/movies/:movieId/scripts/:scriptId/scene-annotations` (list, create, update, delete); `GET /script-scenes` (search) | `script_scene_annotations` joined to `script_scene_anchors` |
-| Script location | `page_start`/`page_end`, `start_offset`/`end_offset`, `context_prefix`/`context_suffix`, `anchor_geometry` | the same payload fields | `script_scene_anchors` columns |
-| Scene anchor | `draft.anchors.start` / `.end`; version-2 geometry entries `{ kind, version: 2, unit: "pt", page, line, top, bottom, text }`, read and written by `anchorsFromGeometry` / `anchorsToGeometry` (`@/entities/script-scene/model/scriptLocation.js`) | `anchor_geometry` | `script_scene_anchors.anchor_geometry` (JSONB) |
-| Suggested anchors | `draft.anchorsSuggested`; anchors carrying `suggested: true` | never sent | never stored |
-| Scene text | `draft.text` (the dialog's prop `markdown`; the panel reads the draft) | `formatted_selected_text`; `selected_text` mirrors it on save | `script_scene_anchors.formatted_selected_text`, `selected_text` |
-| Raw text | — | `raw_selected_text` | `script_scene_anchors.raw_selected_text` |
-| Text origin | `draft.textOrigin`: `"capture"`, `"edited"`, `"saved"`, `"ai"` (also the panel's badge keys) | — | — |
-| Stale text | `draft.textStale` | — | — |
-| Legacy scene | a scene for which `anchorsFromGeometry(scene.anchor_geometry)` is null: geometry without a valid version-2 start and end pair; `draft.legacyText` for its saved text | `anchor_geometry` that isn't version-2 anchors | — |
-| AI proposal | `draft.proposal` | `POST /api/script-scenes/format` | — |
-| Film timing | `draft.startTime` / `endTime` as typed; `formatFilmTiming` labels a scene's range | `start_time_seconds` / `end_time_seconds` | `script_scene_annotations.start_time_seconds` / `end_time_seconds` |
-
-## Where to change draft behavior
-
-| To change | Look in |
+| Action | Responsibility |
 |---|---|
-| What gets saved | `buildSave` in `model/sceneDraft.js` |
-| Sending a captured scene's create, update or delete request, and what the list does with the response | `useSceneCollection` in `model/sceneCollection.js`; the prompts, notices and their wording in `ui/ScriptViewerPage.jsx` |
-| Film timing validation, overlap, range labels and the single-moment check | `@/entities/script-scene/model/filmTiming.js` |
-| Script location overlap | `findOverlappingScriptLocation` in `@/entities/script-scene/model/scriptLocation.js`; the message in `scriptLocationOverlapError` (`model/sceneDraft.js`) |
-| Typed-time parsing, formatting and normalizing | `@/shared/lib/time.js` |
-| Why a save is refused without a capture | `buildSavePayload` in `model/sceneDraft.js`; the reasons in `captureUnavailableReason` (`model/captureRange.js`) |
-| When saving asks to confirm stale text | `confirmStaleText` in `buildSavePayload` (`model/sceneDraft.js`); the prompt in `saveScene` (`ui/ScriptViewerPage.jsx`) |
-| Suggested anchors | `suggestAnchorsFromSavedText` in `model/anchors.js`, and the suggestions memo in `useSceneDraft` |
-| How stored anchors are read and written, a scene's pages, page label and scroll target | `@/entities/script-scene/model/scriptLocation.js` |
-| Scene order and links to a scene | `sortScriptScenes` and `getSceneScriptPath` in `@/entities/script-scene/model/capturedScene.js` |
-| Captured text layout | `model/captureRange.js`, `@/shared/lib/screenplay/layoutClassifier.js` and `@/shared/lib/screenplay/grammar.js` |
-| Line geometry and pointer snapping | `@/shared/lib/pdf-text/pageTextLines.js` |
-| Text origin, stale text, the editor key, the dirty check | `useSceneDraft` |
-| Focus when the editor's text is replaced from outside | `ScreenplayEditor` in `ui/ScreenplayEditor.jsx` |
-| Confirm wording and button labels | `ui/ScriptViewerPage.jsx` |
-| AI requests, which stay in the page | `startProposal` (what is sent) and `requestAiFormat` in the page (snapshots and the network call) |
-| AI proposal selection and word-check baseline | `startProposal` and the `proposalAccept` transition in `useSceneDraft`; the proposal check in `ui/DraftEditorModal.jsx` |
-| Indexing | `model/useScriptTextIndex.js` |
+| `loadScene`, `reset` | Start a new generation so older save responses cannot replace it. |
+| `setAnchorAtLine`, `removeAnchor`, `clearAnchors`, `undoAnchors` | Maintain the ordered pair and bounded undo history. |
+| `setTime`, `normalizeTime`, `toggleTag`, `clearTags` | Own form state transitions. |
+| `editText`, `recapture` | Preserve text provenance and editor identity. |
+| `startProposal`, `proposalReady`, `proposalFailed`, `acceptProposal`, `discardProposal` | Own proposal tokens and anchor-pair provenance. |
+| `buildSave` | Validate and return the canonical payload plus an `applySaved` completion callback. |
+| `prepareDelete` | Snapshot the draft and return the callback to run only after deletion succeeds. |
 
-## Tests
+Actions read the latest committed view through a ref assigned in a layout effect. An event never observes an abandoned concurrent render, and several actions in one event see one committed snapshot.
 
-Run the client tests from the repository root:
+## Anchors, indexing, and capture
 
-```bash
-npm test --prefix client
+### Text indexing
+
+`useScriptTextIndex` indexes PDF pages in the background and publishes immutable snapshots:
+
+```js
+{
+  doc,
+  pages: Map<pageNumber, positionedPage>,
+  complete,
+  actionMargin,
+}
 ```
 
-Vitest runs with jsdom (`client/vitest.config.js`, setup in `client/src/test/setup.js`). The script viewer has three suites:
+Each positioned line contains its page-local index, bounds, assembled text, and pdf.js items. The index has no document-wide character offsets. A capture depends only on the pages between its anchors, so it can become available before the whole script finishes indexing.
 
-- **`ui/ScriptViewerPage.test.jsx`** characterizes the page end to end: capture, indexing, editing, re-capture, suggestions, saving, prompts, keys, AI proposals, visitors, page-frame prop identity, and scrolling to a scene (P21: a deep link with only a `sceneId` scrolls once scenes load, and a scene without a known page doesn't scroll from a deep link, its card or "Show in script"). It doubles only the edges: the API modules the page calls (`@/shared/api/*.js`), the session hook, `react-pdf`, the text indexer (a store the test publishes indexes to), page windowing, `PdfPageFrame` (which records the props of each render), AI page snapshots and `window.confirm`. Capture runs through a passthrough spy. The panel, dialogs, editor, anchors, capture and screenplay code are real.
-- **`model/sceneDraft.test.jsx`** tests the hook's interface directly: the committed-view rule, identities, capture work, request tokens under `StrictMode`, AI proposal provenance, re-capture options, editor keys, undo limits, and the exact save mapping.
-- **`model/sceneCollection.test.js`** tests the collection through its interface, doubling the captured-scene API owner (`@/shared/api/scriptScenes.js`): loading and ordering, a failed load, a create followed by an update of the id the create returned, the responses reaching `applySaved` and `prepareDelete`, busy state, and failed requests that leave the list unchanged.
+### Capture
 
-Where a stored scene sits is tested through the entity modules' exports, using stored-row shapes:
+`captureAnchoredRange(textIndex, anchors)` is the capture seam. It first applies the same strict location predicate used by page labels, scrolling, overlap checks, and saving. It then:
 
-- **`scriptLocation.test.js`** covers:
-  - version-2 pairs, and missing, empty, one-sided, wrong-version and malformed geometry;
-  - page ranges with a start only, an end only, neither, or string values, and their labels;
-  - scroll targets for anchored and legacy scenes;
-  - script location overlap: a shared boundary line, adjacent lines on one page and across a page break, cross-page ranges, containment, identical ranges, one-line scenes, skipped legacy scenes, reversed stored pairs and pairs that fail the server's strict entry check (on either side), a repeated kind's last strictly valid entry, and the excluded row.
-- **`capturedScene.test.js`** covers the API's list order, including ties on page and on film timing start, and links with and without a known page.
+1. requires every page in the range;
+2. resolves the start and end anchor against current line geometry;
+3. slices the positioned lines inclusively;
+4. classifies screenplay layout using the current action margin;
+5. returns `{ key, markdown, plainText, pageStart, pageEnd }`.
 
-Both suites cover persistence response races: switching drafts, preserving newer edits, attaching the id from a first save, and keeping newer changes after deletion. Hook tests also cover an edit/reset and a response queued in the same React batch.
+The page numbers in the capture are transient conveniences for the AI request. They are not persisted.
 
-AI proposal provenance (H2) is covered in both suites.
+Publishing more indexed pages may change the estimated action margin and therefore reclassify an unchanged range. Captured text then changes and receives a new editor key. If a publication leaves the capture unchanged, the editor instance, focus, and caret stay in place. Edited, AI, and saved text do not get overwritten by background indexing.
 
-- **Hook tests** check each case: an unchanged selection; anchors moved while pending and after readiness; cleared anchors; proposals requested for legacy and anchored saved scenes before any capture; and superseded and discarded requests.
-- **Page tests (P13)** check the dialog's proposal word check and the panel's stale callout after the anchors move.
+### Anchor presentation
 
-Saving explicit anchors without a capture (B5) is covered in both suites.
+`model/anchors.js` owns draft-only placement, automatic start/end swapping, stable pair keys, current-line resolution, and saved-scene margin segments. Every stored scene has exact anchors, so margin segments always use their top and bottom geometry; there are no page-wide approximation bars.
 
-- **Hook tests** check each message and its order after the timing check, a saved scene with a removed anchor, retrying once the range is indexed but the script isn't, indexing that finished without a range page, an anchor page with no lines, and legacy scenes with and without suggested anchors.
-- **Page tests (P14)** check that a refused save sends no request and keeps the draft, then saves once the end anchor is placed again or the range is indexed. The first test places the end anchor on a different line than the saved text's, so it now also confirms the B6 prompt.
+## Text provenance and re-capture
 
-Saving stale text under explicit anchors (B6) is covered in both suites.
+Text origins behave as follows:
 
-- **Hook tests** check:
-  - `confirmStaleText` and the exact payload for stale Saved, Edited and AI formatted text, without changing the draft;
-  - no confirmation for fresh text of every origin, for anchors moved back to the text's pair, for legacy text with suggested anchors, or after all anchors are cleared;
-  - confirmation once suggested anchors become explicit;
-  - validation errors first;
-  - a new decision after later edits and re-capture;
-  - responses for a draft that changed during the request, an unchanged draft, and a different draft.
-- **Page tests (P15)** check:
-  - canceling and confirming stale Saved text, with the exact payload and no prompt after the response reloads the scene;
-  - the timing error before the prompt for stale Edited text, with re-capture still available behind its own prompt;
-  - confirmed AI formatted text, where an edit during the save keeps the text stale and the next save asks again;
-  - a legacy scene that asks only once its suggested anchors become explicit.
+- **Captured:** the visible text follows the current capture. Moving anchors replaces it automatically.
+- **Edited:** typing freezes the visible scene text and remembers the anchor pair it came from.
+- **AI formatted:** accepting a proposal freezes its markdown and keys it to the selection used for that proposal.
+- **Saved:** loading a scene uses its `scene_text` and keys it to its stored location.
 
-Captured text that changes during indexing (C3) is covered in both suites. `marginShiftPage` moves the estimated action margin.
+Frozen text is stale only when a capture exists under a different pair key. Moving anchors back clears staleness without changing text. Re-capture replaces stale or edited text with current captured markdown; the page confirms first when hand edits or accepted AI text would be lost.
 
-- **Hook tests** check:
-  - the Captured editor key changes only when the text does, not for unrelated pages or completed offsets, and still changes after an anchor move;
-  - edits keep the key whether the index update commits after the first edit or in the same batch, and re-capture then takes the reclassified text;
-  - the first edit after re-capture and removing an anchor keeps the editor key and preview text, while saving still refuses the incomplete anchor pair;
-  - accepted AI text and a pending proposal's baseline don't change.
-- **Page tests (P3)** check, with the dialog open:
-  - an untouched editor is replaced with the reclassified text, with focus kept in the same block;
-  - unrelated publishes and index completion keep the field, focus and caret, then save offsets;
-  - edits made after, or in the same batch as, the first keystroke survive mode switches, reopening and saving;
-  - a confirmed re-capture and a later anchor change;
-  - accepted AI text with a pending request.
+The editor key separates text provenance from UI lifetime. The first manual edit preserves the captured editor key, so typing does not remount the editor. Re-capture, scene loading, reset, proposal acceptance, or a changed captured source intentionally replaces it. `ScreenplayEditor` transfers focus to the corresponding replacement block and clamps the caret to the new value.
 
-Overlapping scenes are covered at three levels.
+## AI proposals
 
-- **Module tests** in `client/src/entities/script-scene/model/filmTiming.test.js` check the film timing rules through their exports: time formats, an unknown runtime, end before start, labels, moments at both endpoints, and overlap (overlapping, touching on either side, identical ranges, containment, zero-length inside another scene and at its edge, and the excluded row). `client/src/shared/lib/time.test.js` covers typed-time parsing, formatting and normalizing. The script location rule is tested in `scriptLocation.test.js`, described above.
-- **Hook tests** check that overlapping film timing is refused with its message and the draft unchanged, that touching timing saves, that the draft's own scene and untimed scenes are ignored, and the order: timing format and runtime, then film timing overlap, then B5's capture. For script locations they check:
-  - shared lines are refused after the blank-text check and before the B6 prompt;
-  - adjacent lines save, both across a page break and on one page where the line boxes touch;
-  - legacy locations aren't compared, but a stored location kept after clearing anchors is;
-  - another scene whose stored anchors fail the server's strict check (no unit) doesn't block a save, while the same anchors with a unit do.
-- **Page tests (P20)** check that overlapping film timing and anchors that share a line send no request, and that the panel's overlap callout is an error. They also check that touching timing saves, and that adjacent anchors save both across a page break and on one page where the line boxes touch.
+`startProposal()` returns request data without changing scene text:
 
-Shared fixtures live in `test/`. `textIndexFixtures.js` builds synthetic screenplay pages through the real line builder. Its `textIndexFrom` repeats the indexer's publish step (page offsets and the action margin), so keep it in step with `useScriptTextIndex.js`. `pageHarness.js` holds the page suite's doubles and helpers.
+```js
+{
+  token,
+  capturedText,
+  draftMarkdown,
+  pageStart,
+  pageEnd,
+  snapshotAnchors,
+}
+```
 
-A test named "[ID] existing compatibility behavior: …", with a "Why this may be a bug" comment, pins behavior kept on purpose. None remain since C3 was fixed; use the convention for the next one.
+When a capture exists, the request uses its raw text, page range, and anchor snapshot for PDF images. A saved scene whose pages are not indexed can still propose from its stored text and stored anchor pages, without snapshots. The private proposal stores the requested pair key and captured baseline. A late result is accepted only when its token is current; accepting it does not pretend the anchors stayed put while the request ran.
 
-jsdom has no layout, so real PDF rendering, pointer snapping and caret behavior need a browser. Check them manually against a non-production database: place anchors with `[` and `]`, edit in the dialog, re-capture, accept an AI proposal, save and reload.
+## Request reconciliation
 
-Persistence was also verified on 2026-09-14 using Chromium, the real Express routes and serializers, and a disposable Postgres database with synthetic records. Login/session cookies, capture/save, reload/reopen, update, and delete passed. A delayed real save response preserved a newer time edit, which could then be saved to the same row. Only PDF delivery was replaced with a synthetic local fixture; all external browser traffic was blocked. This does not verify S3 credentials/CORS, actual AI responses, concurrent database overlap enforcement, or production deployment.
+`model/sceneCollection.js` owns list loading, canonical sorting, save/delete request state, and list replacement. It calls the draft's completion callbacks only after the API operation succeeds.
 
-B6 was verified the same way on 2026-09-14, with S3 sends stubbed to fail:
+The draft uses snapshots and generations:
 
-- A fresh capture saved without a prompt.
-- After reopening the scene from the database and moving its end anchor, canceling the prompt sent no request and left the draft and stored row unchanged.
-- Confirming stored the kept text with the new anchors' location and raw text. After a reload, the next update didn't ask.
-- Confirmed stale Edited text was saved while its response was held. A time edit made during the request survived the response, and the next save asked again and sent nothing when canceled.
+- An unchanged save reloads the returned API scene as the new baseline.
+- Edits made while saving stay visible. The returned scene is acknowledged as `savedScene`, so a successful create becomes an update on the next save.
+- Loading or resetting while saving changes the generation; the older response is ignored by the draft.
+- Deleting an unchanged open scene resets the draft.
+- Changes made while deleting survive as a new unsaved draft after the row disappears.
+- A delete completing after another scene was opened leaves that scene alone.
 
-AI formatted text was covered only by the page tests, because the check calls no AI service.
+This seam gives request-race behavior locality: the page reports notices, while the draft and collection decide state.
 
-C3 was verified on 2026-09-14 in Chromium 151 against the Vite dev app, which runs in `StrictMode`, using local fixtures only. Real pdf.js indexed a synthetic 17-page PDF, the browser answered API requests from fixtures, and every other host was blocked. A per-page gate injected into the served indexer module made each index publish happen on cue. Pages 1–3 match the test fixtures, and page 17 moves the action margin.
+## Page composition
 
-- Unrelated publishes kept the focused field, focus and caret, in Script and Markdown mode.
-- A reclassifying publish replaced an untouched editor with the panel's text and kept focus in block 2 at caret 5. Real keystrokes then landed at that caret without replacing the field.
-- Two keystrokes before and 17 right after a reclassifying publish stayed in the same field with focus and caret. The edited text wasn't reclassified.
-- In each case, Markdown mode, Script mode, the reopened dialog and the actual save request agreed. Raw text and offsets came from the current capture, and nothing prompted.
-- A first keystroke racing the publish ended consistent in one run where the publish landed first and in another where the keystroke did. A browser can't show whether both landed in one React batch; the hook and page tests cover that.
-- In Markdown mode the reclassified source kept focus, but Chromium moved the caret to the end.
+`ui/ScriptViewerPage.jsx` composes modules and owns cross-module coordination:
 
-The harness is in `.scratch/architecture-followups/c3-browser/`, which Git ignores, and uses a locally cached Playwright. Saved and AI formatted text, other browsers and production data weren't part of this check.
+- route parameters, movie/script loading, admin versus visitor mode;
+- the PDF document, text index, page windowing, and scroll execution;
+- the active annotator tab, anchor menu, dialogs, and transient notices;
+- AI request transport and snapshot rendering;
+- confirmation prompts and calls into the collection.
+
+It does not own draft transitions or list mutation.
+
+| Module | Owns |
+|---|---|
+| `model/sceneDraft.js` | Draft state, canonical save validation, text provenance, proposals, and persistence reconciliation. |
+| `model/sceneCollection.js` | Captured-scene list and requests. |
+| `model/anchors.js` | Draft anchor mechanics and exact saved-scene margin segments. |
+| `model/captureRange.js` | Anchored PDF text capture and screenplay classification. |
+| `model/useScriptTextIndex.js` | Incremental positioned-page index. |
+| `model/usePdfPageWindowing.js` | Responsive page window and scroll mechanics. |
+| `ui/AnnotatorPanel.jsx` | Draft controls and presentation. |
+| `ui/DraftEditorModal.jsx` | Expanded editor and proposal review. |
+| `ui/PdfPageFrame.jsx` | One PDF page and its overlays. |
+
+## Shared captured-scene modules
+
+`entities/script-scene/model/scriptLocation.js` is the shared script-location module:
+
+- `isValidScriptLocation` is the client-side shape and bounds rule;
+- `scenePageRange` derives pages from the pair;
+- `formatScenePages` labels the derived range;
+- `sceneScrollTarget` always targets the start anchor;
+- `findOverlappingScriptLocation` applies the inclusive line rule and excludes the draft's own row.
+
+Stored rows are canonical, so the overlap implementation does not filter unsupported stored shapes. Only an incomplete or invalid unsaved location produces no comparison.
+
+`entities/script-scene/model/capturedScene.js` reads `scene_text`, sorts by start page, start line, then id to mirror the server, and builds script links from the derived start page.
+
+## Data map
+
+| Concept | Draft | HTTP / stored scene |
+|---|---|---|
+| Film timing | `startTime`, `endTime` strings | `start_time_seconds`, `end_time_seconds` integers |
+| Script location | `anchors` | `script_location.start`, `script_location.end` |
+| Scene text | `text` | `scene_text` |
+| Raw text | current capture's `plainText` | `raw_text` |
+| Text origin | `textOrigin` | not persisted |
+| Stale text | `textStale`, derived from pair keys | not persisted |
+| Tags | `tags` | `tags` |
+| AI proposal | private token/provenance plus public status | never persisted until accepted as scene text |
+
+## Where to change behavior
+
+| Change | Primary owner | Related seam |
+|---|---|---|
+| Canonical request fields and validation order | `buildSavePayload` in `model/sceneDraft.js` | `saveScene` in `ui/ScriptViewerPage.jsx` sends the result and owns notices/prompts. |
+| Capture-unavailable messages | `captureUnavailableReason` in `model/captureRange.js` | `CAPTURE_UNAVAILABLE_ERRORS` in `model/sceneDraft.js` maps reasons to user text. |
+| Film timing validation, display and overlap | `entities/script-scene/model/filmTiming.js` | `buildSavePayload` chooses its place in save validation. |
+| Script-location validity, page labels, scrolling and overlap | `entities/script-scene/model/scriptLocation.js` | Keep every consumer on `isValidScriptLocation`; do not grow another validity rule. |
+| Stored scene text, order and links | `entities/script-scene/model/capturedScene.js` | Search, cards, scene detail and the viewer all consume it. |
+| Anchor placement, swapping, resolution and margin lanes | `model/anchors.js` | `PdfPageFrame` renders the resulting draft markers and stored segments. |
+| PDF line construction and pointer snapping | `shared/lib/pdf-text/pageTextLines.js` | `useScriptTextIndex` owns background publication. |
+| Screenplay layout classification | `shared/lib/screenplay/layoutClassifier.js` | `captureRange.js` supplies positioned line segments and the estimated action margin. |
+| Text origin, stale state, dirty state and re-capture | `useSceneDraft` reducer and derived view | `AnnotatorPanel` and `DraftEditorModal` present, but do not reproduce, those rules. |
+| Editor replacement, focus and caret handoff | `editorKey` in `useSceneDraft`; `ScreenplayEditor` in `ui/ScreenplayEditor.jsx` | Index publication is the important race boundary. |
+| AI request payload and selection snapshots | `startProposal` in `useSceneDraft`; `requestAiFormat` in `ScriptViewerPage` | `DraftEditorModal` compares the proposal with the request-time baseline. |
+| Save/delete response reconciliation | `useSceneDraft` completion callbacks | `model/sceneCollection.js` owns network state and list replacement. |
+| Confirmation wording and navigation guards | `ui/ScriptViewerPage.jsx` | The draft exposes `dirty`, `confirmStaleText` and `recaptureReplacesEdits`. |
+| Keyboard anchors and undo exclusions | `ui/ScriptViewerPage.jsx` | Inputs, editors, modifier chords and the open anchor menu must keep their keys. |
+| Visitor scene selection and Show in script | `ui/ScriptViewerPage.jsx` | `SceneViewerModal` presents the scene; `sceneScrollTarget` supplies the exact target. |
+| Test indexes and API rows | `test/textIndexFixtures.js`, `test/pageHarness.js` | These must mirror `useScriptTextIndex` snapshots and the canonical serializer shape. |
+
+## Regression coverage
+
+Run all client checks from the repository root:
+
+```bash
+npm test --prefix client -- --run
+npm run lint --prefix client
+npm run build --prefix client
+```
+
+Vitest uses jsdom. The page suite doubles only external seams: HTTP operation modules, session state, `react-pdf`, the background index store, page windowing, page-frame rendering, AI page snapshots, and `window.confirm`. The draft, capture, screenplay classifier, panel, editor and dialogs are real.
+
+### Shared entity and collection rules
+
+- `entities/script-scene/model/scriptLocation.test.js` pins the one strict predicate, page/line caps, malformed and reversed locations, page derivation, scrolling, inclusive overlap, adjacent lines, cross-page containment, one-line scenes and own-row exclusion. Stored rows are canonical fixtures; only draft inputs are invalid.
+- `entities/script-scene/model/capturedScene.test.js` pins `scene_text`, start-page/start-line/id ordering and links derived from the start anchor.
+- `model/sceneCollection.test.js` pins sorted loading, create/update/delete list reconciliation, busy state, completion callbacks and failures that leave the list unchanged.
+
+### Draft interface
+
+`model/sceneDraft.test.jsx` exercises the hook without duplicating reducer internals:
+
+- **Committed view:** several actions in one React batch read the preceding committed snapshot, and actions never see a render React abandoned. Action, anchor, preview and public proposal identities stay stable while their inputs do.
+- **Capture work and indexing:** timing, tags, editing and proposal transitions do not recapture. Anchor or index changes do. Stable publications preserve the editor; layout reclassification replaces untouched Captured text. Edits that commit before or in the same batch as publication survive, as do accepted AI text and a pending proposal's request-time baseline.
+- **Location requirements:** incomplete, malformed, out-of-bounds and reversed anchors; unfinished ranges; completed indexes missing a required page; empty anchor pages; and captures reduced to blank raw text all refuse locally. The exact six-field payload test uses a real taxonomy value.
+- **Text provenance:** stale Saved, Edited and AI text require confirmation; moving back to the original pair clears it. The re-capture table pins `none`, `revert` and `recapture`, whether edits would be replaced, editor-key revisions, and a 50-entry undo cap.
+- **Proposal provenance:** StrictMode token allocation, superseded/discarded/previous-draft responses, anchor changes while pending or ready, clearing anchors, and a canonical saved scene requested before its pages are indexed.
+- **Persistence:** unchanged responses establish a baseline; newer edits survive; create responses attach their id; reset/load/reopen generations reject old responses; delete completion clears unchanged work, detaches changed work and invalidates an older pending save. Same-batch cases are explicit.
+- **Overlap:** film timing and script-location rules are checked in the documented order, with the draft's own row excluded.
+
+### Composed page behavior
+
+`ui/ScriptViewerPage.test.jsx` is the user-visible matrix:
+
+- **Canonical round trip:** **“saves the exact canonical payload, applies the API-shaped response, and reopens the scene intact”** asserts the six exact keys, distinct scene/raw text, timing, tags and anchors; applies the fake Contract response; starts a new draft; reopens the created row; then updates it with the same payload.
+- **Anchors and keys:** clear makes a loaded scene unsaveable; undo restores it. Keyboard placement and undo ignore editor/input focus, modifiers and an open anchor menu.
+- **Index/editor races:** unfinished ranges refuse; stable publishes keep focus/caret; reclassification hands them to an untouched replacement; manual edits before and in the same batch as reclassification stay in the same editor. Page-frame handler identity and capture locality are pinned.
+- **Text and AI:** re-capture asks before replacing edits; Saved, Edited and AI stale-save paths keep separate confirmations; an edit during a confirmed AI save requires a new decision. AI results remain inert until accepted, keep the request-time baseline across anchor movement, report/dismiss failures, and do nothing when no capture or draft text exists.
+- **Persistence races:** a response does not replace a different, reset or left-and-reopened draft. A create response binds newer edits to the new id. Delete completion handles unchanged, changed and different open drafts separately.
+- **Overlap and navigation:** film ranges that overlap refuse while touching saves; shared boundary lines refuse while adjacent lines save. Admin and visitor deep links, visitor scene-bar selection, Show in script, exact margin segments, canonical DOM order and API load failure are covered.
+
+### Browser verification history and limitations
+
+The entries below are historical evidence from 2026-09-14. They exercised the same editor state machine before the canonical storage cutover, so their interaction/race findings still matter; their old request-field and storage-shape observations are **not** evidence for the current HTTP contract. The current canonical contract is verified automatically by the named save/response/reopen test above, not by a post-cutover browser run yet.
+
+- Chromium, the real Express routes and serializers, and a disposable PostgreSQL database passed login/session, capture/save, reload/reopen, update and delete with synthetic records. A delayed save response preserved a newer time edit and the next save targeted the same row. PDF delivery alone used a local fixture and all external traffic was blocked.
+- The stale-text flow was exercised with object-storage sends forced to fail: a fresh capture saved without a prompt; canceling a moved-anchor prompt sent nothing; confirming stored the retained text with the new location and raw capture; reloading cleared the prompt; and an edit during a confirmed request survived and required another decision. Those semantics remain current, but the historical requests used the pre-canonical field names.
+- The indexing/focus flow ran in Chromium 151 against the Vite development app in `StrictMode`, with real pdf.js indexing a synthetic 17-page PDF. A gate injected into the locally served indexer published pages on cue; page 17 moved the estimated action margin. Unrelated publications preserved focus/caret, reclassification replaced untouched text and handed off focus, real keystrokes around a publication survived, and Script/Markdown/reopened views agreed. Markdown mode moved the caret to the end in Chromium. The same-batch boundary was observable only in automated hook/page tests.
+- Historical harness files live in the ignored `.scratch/architecture-followups/c3-browser/` directory and use a locally cached Playwright.
+
+Neither the historical browser work nor jsdom verifies object-storage credentials/CORS, real AI output, browser layout and pointer snapping across engines, concurrent database exclusion constraints, the production deployment, or the issue-11/issue-14 integration result. After those branches merge, rerun the full client suite/build and perform one real-browser canonical create/reopen/update/delete smoke check before release.

@@ -6,9 +6,8 @@ import {
   estimateActionMargin,
   screenplayElementsFromLayout,
 } from "@/shared/lib/screenplay/layoutClassifier.js";
+import { isValidScriptLocation } from "@/entities/script-scene/model/scriptLocation.js";
 import { anchorPairKey, resolveAnchorLine } from "./anchors.js";
-
-const CONTEXT_LENGTH = 180;
 
 /** The indexed pages from the start anchor's page to the end anchor's, or null while any is missing. */
 function rangePages(textIndex, start, end) {
@@ -28,7 +27,7 @@ function rangePages(textIndex, start, end) {
  */
 export function captureAnchoredRange(textIndex, anchors) {
   const { start, end } = anchors || {};
-  if (!start || !end) return null;
+  if (!isValidScriptLocation(anchors)) return null;
 
   const pages = rangePages(textIndex, start, end);
   if (!pages) return null;
@@ -51,28 +50,13 @@ export function captureAnchoredRange(textIndex, anchors) {
   const elements = screenplayElementsFromLayout(segments, {
     actionMargin: textIndex.actionMargin ?? estimateActionMargin(pages),
   });
-  const plainText = screenplayToPlainText(elements);
-  const startPageOffset = textIndex.pageOffsets?.get(start.page);
-  const endPageOffset = textIndex.pageOffsets?.get(end.page);
 
   return {
     key: anchorPairKey(anchors),
     markdown: serializeScreenplayMarkdown(elements),
-    plainText,
+    plainText: screenplayToPlainText(elements),
     pageStart: start.page,
     pageEnd: end.page,
-    startOffset: Number.isInteger(startPageOffset) ? startPageOffset + startLine.offset : null,
-    endOffset: Number.isInteger(endPageOffset) ? endPageOffset + endLine.offset + endLine.text.length : null,
-    contextPrefix: firstPage.lines
-      .slice(0, startLine.index)
-      .map((line) => line.text)
-      .join("\n")
-      .slice(-CONTEXT_LENGTH),
-    contextSuffix: lastPage.lines
-      .slice(endLine.index + 1)
-      .map((line) => line.text)
-      .join("\n")
-      .slice(0, CONTEXT_LENGTH),
   };
 }
 
@@ -87,6 +71,7 @@ export function captureUnavailableReason(textIndex, anchors) {
   const { start, end } = anchors || {};
   if (!start) return "start";
   if (!end) return "end";
+  if (!isValidScriptLocation(anchors)) return "unreadable";
   if (!rangePages(textIndex, start, end)) return textIndex.complete ? "unreadable" : "indexing";
   return "unreadable";
 }

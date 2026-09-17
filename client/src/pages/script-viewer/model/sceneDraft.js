@@ -4,11 +4,7 @@ import {
   safeScriptSceneTags,
 } from "@/entities/script-scene/model/capturedScene.js";
 import { findOverlappingFilmTiming, formatFilmTiming, parseFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
-import {
-  anchorsFromGeometry,
-  anchorsToGeometry,
-  findOverlappingScriptLocation,
-} from "@/entities/script-scene/model/scriptLocation.js";
+import { findOverlappingScriptLocation } from "@/entities/script-scene/model/scriptLocation.js";
 import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
 import { formatSecondsToHms, normalizeTypedTime, parseTimeInputToSeconds } from "@/shared/lib/time.js";
 import {
@@ -17,8 +13,6 @@ import {
   hasAnyAnchor,
   NO_ANCHORS,
   placeAnchor,
-  suggestAnchorsFromSavedText,
-  withoutSuggestions,
 } from "./anchors.js";
 import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.js";
 
@@ -34,7 +28,7 @@ import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.j
  *
  * Text of any other origin is stored with the anchor pair key it belongs to
  * (`textAnchorKey`). When a capture exists under a different key the text is
- * stale; saved text with no key belongs to a legacy scene.
+ * stale.
  *
  * An AI proposal keeps the selection its request was made from: the capture's
  * anchor key, else the draft text's own key. Accepting it keys the AI text to
@@ -46,11 +40,6 @@ import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.j
  * reclassify the text under unchanged anchors. The first edit keeps that key,
  * so typing never replaces the editor, and index updates never change Edited,
  * AI formatted or Saved text.
- *
- * Suggested anchors are derived, never stored. They are in effect for a saved
- * scene with no explicit anchors until the admin clears them, and stay out of
- * undo history, the dirty check and the saved script location until an anchor
- * change or a re-capture makes them explicit.
  */
 
 const HISTORY_LIMIT = 50;
@@ -67,7 +56,6 @@ function createEmptyDraft(generation = 0) {
     savedScene: null,
     anchors: NO_ANCHORS,
     anchorHistory: [],
-    suggestionsDismissed: false,
     startTime: "",
     endTime: "",
     tags: [],
@@ -96,7 +84,7 @@ function withAnchors(draft, anchors) {
 }
 
 function draftFromScene(scene, editorRevision, generation) {
-  const anchors = anchorsFromGeometry(scene.anchor_geometry) || NO_ANCHORS;
+  const anchors = scene.script_location;
   return {
     ...createEmptyDraft(generation),
     savedScene: scene,
@@ -151,13 +139,10 @@ function reduceDraft(draft, action) {
       return withAnchors(draft, placeAnchor(action.currentAnchors, action.kind, action.anchor));
 
     case "removeAnchor":
-      return withAnchors(draft, { ...withoutSuggestions(action.currentAnchors), [action.kind]: null });
+      return withAnchors(draft, { ...action.currentAnchors, [action.kind]: null });
 
     case "clearAnchors":
-      return {
-        ...(hasAnyAnchor(draft.anchors) ? withAnchors(draft, NO_ANCHORS) : draft),
-        suggestionsDismissed: true,
-      };
+      return hasAnyAnchor(draft.anchors) ? withAnchors(draft, NO_ANCHORS) : draft;
 
     case "undoAnchors": {
       if (draft.anchorHistory.length === 0) return draft;
@@ -193,7 +178,7 @@ function reduceDraft(draft, action) {
 
     case "recapture":
       return {
-        ...withAnchors(draft, withoutSuggestions(action.anchors)),
+        ...withAnchors(draft, action.anchors),
         textOrigin: "capture",
         text: action.capture.markdown,
         textAnchorKey: action.capture.key,
@@ -259,7 +244,7 @@ function isDraftDirty(draft, text) {
     draft.endTime !== timeField(scene.end_time_seconds) ||
     draft.tags.join("|") !== safeScriptSceneTags(scene.tags).join("|") ||
     text !== displayScriptSceneText(scene) ||
-    anchorPairKey(draft.anchors) !== anchorPairKey(anchorsFromGeometry(scene.anchor_geometry))
+    anchorPairKey(draft.anchors) !== anchorPairKey(scene.script_location)
   );
 }
 
@@ -280,19 +265,11 @@ const CAPTURE_UNAVAILABLE_ERRORS = {
 
 /**
  * What saving the draft would store, or why it can't be saved. The checks run
- * in order: film timing, film timing overlap with the script's other captured
- * scenes, that explicit anchors have a capture, text, that a script location
- * exists, and script location overlap. The draft's own saved scene is never
- * an overlap.
- *
- * With explicit anchors the script location comes from the capture, and saving
- * is refused without one, so the saved location always matches the anchors
- * shown. Without explicit anchors (none, or only suggested ones) a saved scene
- * keeps its stored location. Raw text follows the location: the capture's
- * plain text, else the saved scene's raw text, else plain text derived from
- * the scene text. The scene text is saved as it is, even when stale, but stale
- * text under explicit anchors sets `confirmStaleText`: it would be stored with
- * another selection's location and raw text, so the admin must confirm first.
+ * in order: film timing, film timing overlap, a complete captured location,
+ * text, and script location overlap. The draft's own saved scene is excluded.
+ * Scene text is saved as shown. Raw text always comes from the current capture.
+ * Stale scene text sets `confirmStaleText` because it will be stored with the
+ * current location and raw text.
  */
 function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, scenes }) {
   const savedScene = draft.savedScene;
@@ -306,44 +283,17 @@ function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, sce
       error: `This scene's film timing overlaps the scene at ${formatFilmTiming(timingOverlap)}. Scenes can touch but not overlap.`,
     };
   }
-  // Explicit anchors are never combined with suggestions, so the capture is theirs.
-  const useCapture = hasAnyAnchor(draft.anchors);
-  if (useCapture && !capture) {
+  if (!capture) {
     return { error: CAPTURE_UNAVAILABLE_ERRORS[captureUnavailableReason(textIndex, draft.anchors)] };
+  }
+  if (!capture.plainText.trim()) {
+    return { error: CAPTURE_UNAVAILABLE_ERRORS.unreadable };
   }
   if (!text.trim()) {
     return { error: "Place start and end anchors in the script to capture the scene text." };
   }
 
-  let location = null;
-
-  if (useCapture) {
-    location = {
-      page_start: capture.pageStart,
-      page_end: capture.pageEnd,
-      start_offset: capture.startOffset,
-      end_offset: capture.endOffset,
-      context_prefix: capture.contextPrefix || null,
-      context_suffix: capture.contextSuffix || null,
-      anchor_geometry: anchorsToGeometry(draft.anchors),
-    };
-  } else if (savedScene) {
-    location = {
-      page_start: savedScene.page_start ?? null,
-      page_end: savedScene.page_end ?? null,
-      start_offset: savedScene.start_offset ?? null,
-      end_offset: savedScene.end_offset ?? null,
-      context_prefix: savedScene.context_prefix ?? null,
-      context_suffix: savedScene.context_suffix ?? null,
-      anchor_geometry: Array.isArray(savedScene.anchor_geometry) ? savedScene.anchor_geometry : [],
-    };
-  }
-
-  if (!location) {
-    return { error: "Place start and end anchors in the script to capture the scene text." };
-  }
-  // Locations without a valid anchor pair, this draft's or another scene's, aren't compared.
-  const locationOverlap = findOverlappingScriptLocation(scenes, anchorsFromGeometry(location.anchor_geometry), savedScene?.id);
+  const locationOverlap = findOverlappingScriptLocation(scenes, draft.anchors, savedScene?.id);
   if (locationOverlap) {
     return { error: scriptLocationOverlapError(locationOverlap) };
   }
@@ -352,21 +302,18 @@ function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, sce
     payload: {
       start_time_seconds: timing.start,
       end_time_seconds: timing.end,
-      selected_text: text,
-      raw_selected_text: useCapture
-        ? capture.plainText
-        : savedScene?.raw_selected_text || screenplayToPlainText(text),
-      formatted_selected_text: text,
-      ...location,
+      script_location: draft.anchors,
+      scene_text: text,
+      raw_text: capture.plainText,
       tags: draft.tags,
     },
-    confirmStaleText: useCapture && isTextStale(draft, capture),
+    confirmStaleText: isTextStale(draft, capture),
   };
 }
 
 /**
  * A short fingerprint of captured text for the editor key, so reclassified
- * text replaces the editor while offsets or context appearing later don't.
+ * text replaces the editor while index updates that leave it unchanged don't.
  */
 function textFingerprint(text) {
   let hash = 0x811c9dc5;
@@ -403,14 +350,7 @@ function recaptureOptionFor(capture, textStale, textOrigin) {
 export function useSceneDraft(textIndex) {
   const [state, dispatch] = useReducer(reduceDraft, undefined, createEmptyDraft);
 
-  const suggestedAnchors = useMemo(
-    () =>
-      state.savedScene && !state.suggestionsDismissed && !hasAnyAnchor(state.anchors)
-        ? suggestAnchorsFromSavedText(state.savedScene, textIndex.pages)
-        : null,
-    [state.savedScene, state.suggestionsDismissed, state.anchors, textIndex.pages]
-  );
-  const anchors = suggestedAnchors || state.anchors;
+  const anchors = state.anchors;
   const capture = useMemo(() => captureAnchoredRange(textIndex, anchors), [textIndex, anchors]);
 
   const text = state.textOrigin === "capture" ? capture?.markdown ?? "" : state.text;
@@ -422,12 +362,11 @@ export function useSceneDraft(textIndex) {
     () => ({
       start_time_seconds: parseTimeInputToSeconds(state.startTime),
       end_time_seconds: parseTimeInputToSeconds(state.endTime),
-      page_start: capture?.pageStart ?? state.savedScene?.page_start ?? null,
-      page_end: capture?.pageEnd ?? state.savedScene?.page_end ?? null,
+      script_location: anchors.start && anchors.end ? anchors : null,
       tags: state.tags,
-      formatted_selected_text: text,
+      scene_text: text,
     }),
-    [state.startTime, state.endTime, state.savedScene, state.tags, capture, text]
+    [state.startTime, state.endTime, state.tags, anchors, text]
   );
 
   // The request token and requested selection stay private.
@@ -474,7 +413,7 @@ export function useSceneDraft(textIndex) {
       dispatch({ type: "removeAnchor", kind, currentAnchors: latestRef.current.anchors });
     },
 
-    /** Removes explicit anchors and dismisses suggestions until another scene loads. */
+    /** Removes every anchor. The draft stays unsaveable until both are restored and captured. */
     clearAnchors() {
       dispatch({ type: "clearAnchors" });
     },
@@ -547,8 +486,8 @@ export function useSceneDraft(textIndex) {
         token,
         capturedText,
         draftMarkdown: currentText,
-        pageStart: currentCapture?.pageStart ?? current.savedScene?.page_start ?? null,
-        pageEnd: currentCapture?.pageEnd ?? current.savedScene?.page_end ?? null,
+        pageStart: currentCapture?.pageStart ?? currentAnchors.start?.page ?? null,
+        pageEnd: currentCapture?.pageEnd ?? currentAnchors.end?.page ?? null,
         snapshotAnchors: currentCapture ? currentAnchors : null,
       };
     },
@@ -602,7 +541,6 @@ export function useSceneDraft(textIndex) {
   const draft = {
     savedScene: state.savedScene,
     anchors,
-    anchorsSuggested: Boolean(suggestedAnchors),
     canUndoAnchors: state.anchorHistory.length > 0,
     startTime: state.startTime,
     endTime: state.endTime,
@@ -610,7 +548,6 @@ export function useSceneDraft(textIndex) {
     text,
     textOrigin: state.textOrigin,
     textStale,
-    legacyText: state.textOrigin === "saved" && !state.textAnchorKey,
     capturedPlainText: capture && !textStale ? capture.plainText : "",
     recaptureOption: recaptureOptionFor(capture, textStale, state.textOrigin),
     recaptureReplacesEdits: Boolean(capture) && (state.textOrigin === "edited" || state.textOrigin === "ai"),
