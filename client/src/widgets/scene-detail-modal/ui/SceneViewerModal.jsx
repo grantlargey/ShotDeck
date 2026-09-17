@@ -50,9 +50,11 @@ const STILL_SCENE_NOTES = {
  * scene's script or as a film still, with arrows on both tabs; the tab not
  * being stepped follows along (see sceneViewerCursor.js).
  *
- * - `scenes`: what the script tab's arrows walk (defaults to the script's scenes).
- * - `scriptScenes` / `stills`: the whole script and the film's stills, when the
- *   page already has them; otherwise they're fetched.
+ * - `scenes`: what the script tab's arrows walk and, when `scriptId` identifies
+ *   them as the whole script, the list used to match stills. Otherwise the
+ *   script's scenes are fetched.
+ * - `stills`: the film's stills, when the page already has them; otherwise
+ *   they're fetched.
  * - `movie` / `scriptId`: the title and script to use when opening on a still.
  * - `renderActions({ view, scene, still })` adds page-specific footer buttons;
  *   `renderStillTools(still)` renders above the still, e.g. an edit form.
@@ -62,7 +64,6 @@ export function SceneViewerModal({
   initialSceneId = null,
   initialStillId = null,
   scenes,
-  scriptScenes,
   stills,
   movie,
   scriptId = null,
@@ -79,7 +80,7 @@ export function SceneViewerModal({
       view: initialView,
       sceneId: initialSceneId,
       stillId: initialStillId,
-      scenes: scenes || scriptScenes,
+      scenes,
       stills,
       context: { movieId: movie?.id, scriptId, movieTitle: movie?.title },
     })
@@ -89,7 +90,7 @@ export function SceneViewerModal({
     movieId: context.movieId,
     scriptId: context.scriptId,
     stills: movie?.id && movie.id === context.movieId ? stills : undefined,
-    scriptScenes: scriptId && scriptId === context.scriptId ? scriptScenes : undefined,
+    scriptScenes: scriptId && scriptId === context.scriptId ? scenes : undefined,
   });
   const stepScenes = scenes || data.scriptScenes || [];
   const current = resolveSceneViewerCursor(cursor, {

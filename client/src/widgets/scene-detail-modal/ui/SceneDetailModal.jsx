@@ -1,12 +1,9 @@
 import { useEffect } from "react";
 import { cx } from "@/shared/lib/cx.js";
+import { isTypingTarget } from "@/shared/lib/keyboard.js";
 import { Dialog } from "@/shared/ui/Dialog.jsx";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/shared/ui/icons.jsx";
 import styles from "./SceneDetailModal.module.css";
-
-function isTypingTarget(target) {
-  return target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
-}
 
 /**
  * Full-screen dialog frame shared by the scene viewer and the draft editor: a
@@ -36,7 +33,7 @@ export function SceneDetailModal({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hasPrev, hasNext, onClose, onStep]);
+  }, [hasPrev, hasNext, onStep]);
 
   return (
     <Dialog
