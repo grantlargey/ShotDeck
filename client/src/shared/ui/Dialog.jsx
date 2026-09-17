@@ -24,11 +24,9 @@ export function Dialog({ title, onClose, footer, className, overlayClassName, re
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     // Skip hidden controls, such as a file picker's native input.
-    const firstField = renderContent
-      ? null
-      : [...(bodyRef.current?.querySelectorAll("input, select, textarea, button") ?? [])].find(
-          (element) => !element.disabled && element.getClientRects().length > 0
-        );
+    const firstField = [...(bodyRef.current?.querySelectorAll("input, select, textarea, button") ?? [])].find(
+      (element) => !element.disabled && element.getClientRects().length > 0
+    );
     (firstField || closeRef.current)?.focus();
 
     function onKeyDown(event) {
