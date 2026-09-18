@@ -106,7 +106,8 @@ aws ecs describe-services \
   --cluster "$ECS_CLUSTER" \
   --services "$ECS_SERVICE" \
   --region "$AWS_REGION" \
-  --query 'services[0]' > "$service_json"
+  --query 'services[0]' \
+  --output json > "$service_json"
 
 task_definition="$TASK_DEFINITION_OVERRIDE"
 if [[ -z "$task_definition" ]]; then
@@ -117,7 +118,8 @@ echo "[INFO] Task definition: $task_definition"
 aws ecs describe-task-definition \
   --task-definition "$task_definition" \
   --region "$AWS_REGION" \
-  --query taskDefinition > "$task_json"
+  --query taskDefinition \
+  --output json > "$task_json"
 
 if [[ -n "$EXPECTED_IMAGE_DIGEST" ]]; then
   python3 - "$task_json" "$EXPECTED_IMAGE_DIGEST" <<'PY'

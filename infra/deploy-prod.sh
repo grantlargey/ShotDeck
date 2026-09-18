@@ -209,16 +209,19 @@ if [[ "$cutover" -eq 1 ]]; then
     echo "--resume-desired-count must be a positive integer." >&2
     exit 1
   fi
-  if [[ ! "$VERIFICATION_PORT" =~ ^[0-9]+$ ]] || (( VERIFICATION_PORT < 1 || VERIFICATION_PORT > 65535 )); then
-    echo "--verification-port must be an integer from 1 through 65535." >&2
+  if [[ "$VERIFICATION_PORT" != "443" ]]; then
+    echo "--verification-port must be 443, the production API HTTPS forwarding listener." >&2
     exit 1
   fi
   python3 - "$VERIFICATION_CIDR" <<'PY'
 import ipaddress
 import sys
-network = ipaddress.ip_network(sys.argv[1], strict=False)
-if network.version != 4:
-    raise SystemExit("--verification-cidr must be an IPv4 CIDR.")
+try:
+    network = ipaddress.ip_network(sys.argv[1], strict=True)
+except ValueError as exc:
+    raise SystemExit(f"--verification-cidr must be a single-host IPv4 /32: {exc}")
+if network.version != 4 or network.prefixlen != 32:
+    raise SystemExit("--verification-cidr must be a single-host IPv4 /32.")
 PY
   if [[ -e "$CUTOVER_STATE_DIR" ]]; then
     echo "--cutover-state-dir must not already exist: $CUTOVER_STATE_DIR" >&2
@@ -259,7 +262,7 @@ chmod 700 "$work_dir"
 
 describe_service_to() {
   aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
-    --region "$AWS_REGION" --query 'services[0]' > "$1"
+    --region "$AWS_REGION" --query 'services[0]' --output json > "$1"
   chmod 600 "$1"
 }
 
@@ -329,7 +332,7 @@ disable_cutover_rollback() {
 
 describe_verification_group_to() {
   aws ec2 describe-security-groups --group-ids "$VERIFICATION_SECURITY_GROUP" \
-    --region "$AWS_REGION" > "$1"
+    --region "$AWS_REGION" --output json > "$1"
   chmod 600 "$1"
 }
 
@@ -397,7 +400,7 @@ verify_task_definition_image() {
   local task_definition="$1"
   local target="$2"
   aws ecs describe-task-definition --task-definition "$task_definition" --region "$AWS_REGION" \
-    --query taskDefinition > "$target"
+    --query taskDefinition --output json > "$target"
   chmod 600 "$target"
   python3 - "$target" "$IMAGE_REF" <<'PY'
 import json, sys
@@ -449,7 +452,7 @@ verify_running_task_digests() {
   local tasks_file="$work_dir/running-tasks.json"
   local task_arns=()
   aws ecs list-tasks --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" \
-    --desired-status RUNNING --region "$AWS_REGION" --query taskArns > "$arns_file"
+    --desired-status RUNNING --region "$AWS_REGION" --query taskArns --output json > "$arns_file"
   while IFS= read -r task_arn; do
     [[ -n "$task_arn" ]] && task_arns+=("$task_arn")
   done < <(python3 - "$arns_file" <<'PY'
@@ -463,7 +466,7 @@ PY
     return 1
   fi
   aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "${task_arns[@]}" \
-    --region "$AWS_REGION" > "$tasks_file"
+    --region "$AWS_REGION" --output json > "$tasks_file"
   python3 - "$tasks_file" "$task_definition" "$IMAGE_DIGEST" "$expected_count" <<'PY'
 import json, sys
 path, expected_td, expected_digest, expected_count = sys.argv[1:5]
@@ -504,10 +507,15 @@ PY
 
 assert_verification_group_attached() {
   local service_file="$1"
-  local target_groups_file="$work_dir/target-groups.json"
-  local load_balancers_file="$work_dir/load-balancers.json"
+  local target_groups_file="$CUTOVER_STATE_DIR/load-balancer-target-groups.json"
+  local load_balancers_file="$CUTOVER_STATE_DIR/load-balancers.json"
+  local listeners_file="$CUTOVER_STATE_DIR/load-balancer-listeners.json"
   local target_group_arns=()
   local load_balancer_arns=()
+  local listener_arns=()
+  local rules_files=()
+  local listener_arn rules_file
+  local index=0
   while IFS= read -r arn; do
     [[ -n "$arn" ]] && target_group_arns+=("$arn")
   done < <(python3 - "$service_file" <<'PY'
@@ -517,12 +525,13 @@ for item in service.get("loadBalancers") or []:
     if item.get("targetGroupArn"): print(item["targetGroupArn"])
 PY
 )
-  if [[ "${#target_group_arns[@]}" -eq 0 ]]; then
-    echo "The ECS service has no load-balancer target group to enforce the writer barrier." >&2
+  if [[ "${#target_group_arns[@]}" -ne 1 ]]; then
+    echo "The ECS service must have exactly one load-balancer target group to prove the writer barrier path." >&2
     return 1
   fi
   aws elbv2 describe-target-groups --target-group-arns "${target_group_arns[@]}" \
-    --region "$AWS_REGION" > "$target_groups_file"
+    --region "$AWS_REGION" --output json > "$target_groups_file"
+  chmod 600 "$target_groups_file"
   while IFS= read -r arn; do
     [[ -n "$arn" ]] && load_balancer_arns+=("$arn")
   done < <(python3 - "$target_groups_file" <<'PY'
@@ -531,20 +540,103 @@ with open(sys.argv[1], encoding="utf-8") as fh: groups = json.load(fh).get("Targ
 for arn in sorted({arn for group in groups for arn in group.get("LoadBalancerArns") or []}): print(arn)
 PY
 )
-  if [[ "${#load_balancer_arns[@]}" -eq 0 ]]; then
-    echo "The ECS target group has no load balancer." >&2
+  if [[ "${#load_balancer_arns[@]}" -ne 1 ]]; then
+    echo "The ECS target group must resolve to exactly one load balancer." >&2
     return 1
   fi
   aws elbv2 describe-load-balancers --load-balancer-arns "${load_balancer_arns[@]}" \
-    --region "$AWS_REGION" > "$load_balancers_file"
-  python3 - "$load_balancers_file" "$VERIFICATION_SECURITY_GROUP" <<'PY'
+    --region "$AWS_REGION" --output json > "$load_balancers_file"
+  chmod 600 "$load_balancers_file"
+  aws elbv2 describe-listeners --load-balancer-arn "${load_balancer_arns[0]}" \
+    --region "$AWS_REGION" --output json > "$listeners_file"
+  chmod 600 "$listeners_file"
+  while IFS= read -r arn; do
+    [[ -n "$arn" ]] && listener_arns+=("$arn")
+  done < <(python3 - "$listeners_file" <<'PY'
 import json, sys
-with open(sys.argv[1], encoding="utf-8") as fh: load_balancers = json.load(fh).get("LoadBalancers") or []
-expected = [sys.argv[2]]
-if not load_balancers: raise SystemExit("No API load balancer was returned.")
-for load_balancer in load_balancers:
-    if load_balancer.get("SecurityGroups") != expected:
-        raise SystemExit(f"Load balancer security groups are {load_balancer.get('SecurityGroups')}, expected sole group {expected}")
+with open(sys.argv[1], encoding="utf-8") as fh: listeners = json.load(fh).get("Listeners") or []
+for listener in listeners:
+    if listener.get("ListenerArn"): print(listener["ListenerArn"])
+PY
+)
+  if [[ "${#listener_arns[@]}" -eq 0 ]]; then
+    echo "The API load balancer has no listeners to verify." >&2
+    return 1
+  fi
+  for listener_arn in "${listener_arns[@]}"; do
+    rules_file="$CUTOVER_STATE_DIR/load-balancer-listener-rules-$index.json"
+    aws elbv2 describe-rules --listener-arn "$listener_arn" \
+      --region "$AWS_REGION" --output json > "$rules_file"
+    chmod 600 "$rules_file"
+    rules_files+=("$rules_file")
+    index=$((index + 1))
+  done
+  python3 - "$service_file" "$target_groups_file" "$load_balancers_file" "$listeners_file" \
+    "$VERIFICATION_SECURITY_GROUP" "$VERIFICATION_PORT" "${rules_files[@]}" <<'PY'
+import json, sys
+
+service_path, groups_path, balancers_path, listeners_path, security_group, port, *rule_paths = sys.argv[1:]
+
+def read(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+def forwarded_targets(actions):
+    targets = set()
+    for action in actions or []:
+        if action.get("Type") != "forward":
+            continue
+        action_targets = set()
+        if action.get("TargetGroupArn"):
+            action_targets.add(action["TargetGroupArn"])
+        for target in (action.get("ForwardConfig") or {}).get("TargetGroups") or []:
+            if target.get("TargetGroupArn"):
+                action_targets.add(target["TargetGroupArn"])
+        if not action_targets:
+            raise SystemExit("A forwarding listener action has no target group.")
+        targets.update(action_targets)
+    return targets
+
+service = read(service_path)
+expected_targets = {item.get("targetGroupArn") for item in service.get("loadBalancers") or [] if item.get("targetGroupArn")}
+if len(expected_targets) != 1:
+    raise SystemExit("The ECS service target-group mapping is ambiguous.")
+
+target_groups = read(groups_path).get("TargetGroups") or []
+returned_targets = {item.get("TargetGroupArn") for item in target_groups if item.get("TargetGroupArn")}
+if returned_targets != expected_targets:
+    raise SystemExit(f"Returned target groups {returned_targets} do not exactly match service target groups {expected_targets}.")
+load_balancer_arns = {arn for item in target_groups for arn in item.get("LoadBalancerArns") or []}
+if len(load_balancer_arns) != 1:
+    raise SystemExit("The service target group does not resolve to exactly one load balancer.")
+
+load_balancers = read(balancers_path).get("LoadBalancers") or []
+if len(load_balancers) != 1 or load_balancers[0].get("LoadBalancerArn") not in load_balancer_arns:
+    raise SystemExit("The API load balancer response did not exactly match the service target group.")
+if load_balancers[0].get("SecurityGroups") != [security_group]:
+    raise SystemExit(f"Load balancer security groups are {load_balancers[0].get('SecurityGroups')}, expected sole group {[security_group]}")
+
+listeners = read(listeners_path).get("Listeners") or []
+if len(rule_paths) != len(listeners):
+    raise SystemExit("Rules were not inspected for every load-balancer listener.")
+forwarding = []
+for listener, rule_path in zip(listeners, rule_paths, strict=True):
+    listener_arn = listener.get("ListenerArn")
+    if not listener_arn:
+        raise SystemExit("A load-balancer listener has no ARN.")
+    targets = forwarded_targets(listener.get("DefaultActions"))
+    for rule in read(rule_path).get("Rules") or []:
+        targets.update(forwarded_targets(rule.get("Actions")))
+    if targets:
+        forwarding.append((listener, targets))
+
+if len(forwarding) != 1:
+    raise SystemExit(f"Expected exactly one accounted forwarding listener, found {len(forwarding)}.")
+listener, targets = forwarding[0]
+if listener.get("Port") != int(port) or listener.get("Protocol") != "HTTPS":
+    raise SystemExit(f"The sole forwarding listener is {listener.get('Protocol')}:{listener.get('Port')}, expected HTTPS:{port}.")
+if targets != expected_targets:
+    raise SystemExit(f"Forwarding listener target groups {targets} do not exactly match service target groups {expected_targets}.")
 PY
 }
 
@@ -631,7 +723,7 @@ PY
 assert_snapshot_completed() {
   local snapshot_file="$work_dir/snapshot.json"
   aws rds describe-db-snapshots --db-snapshot-identifier "$CUTOVER_SNAPSHOT_ID" \
-    --region "$AWS_REGION" --query 'DBSnapshots[0]' > "$snapshot_file"
+    --region "$AWS_REGION" --query 'DBSnapshots[0]' --output json > "$snapshot_file"
   python3 - "$snapshot_file" "$CUTOVER_SNAPSHOT_ID" "$CUTOVER_DB_INSTANCE_ID" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as fh: snapshot = json.load(fh)
@@ -885,7 +977,7 @@ if [[ "$deploy_backend" -eq 1 ]]; then
     current_td_json="$work_dir/task-definition-current.json"
     next_td_json="$work_dir/task-definition-next.json"
     aws ecs describe-task-definition --task-definition "$current_task_definition_arn" \
-      --region "$AWS_REGION" --query taskDefinition > "$current_td_json"
+      --region "$AWS_REGION" --query taskDefinition --output json > "$current_td_json"
     chmod 600 "$current_td_json"
     validate_task_definition_database "$current_td_json"
     python3 - "$current_td_json" "$next_td_json" "$IMAGE_REF" <<'PY'
@@ -912,7 +1004,10 @@ PY
     fi
   fi
 
-  if [[ "$deploy_frontend" -eq 1 ]]; then deploy_frontend_artifact; fi
+  # The cutover is a coordinated release under a zero-writer barrier, so its
+  # prebuilt frontend is published before the converted API resumes. Ordinary
+  # deploys publish only after the backend has passed all checks below.
+  if [[ "$cutover" -eq 1 && "$deploy_frontend" -eq 1 ]]; then deploy_frontend_artifact; fi
   desired_count="$current_desired_count"
   if [[ "$cutover" -eq 1 ]]; then desired_count="$RESUME_DESIRED_COUNT"; fi
   aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
@@ -924,7 +1019,9 @@ PY
   if [[ "$skip_verify" -eq 0 ]]; then
     if [[ "$cutover" -eq 1 ]]; then assert_writer_barrier; fi
     if ! verify_backend; then
+      echo "Backend verification failed for $new_td." >&2
       if [[ "$cutover" -eq 0 && "$run_migrations" -eq 0 && "$auto_rollback" -eq 1 ]]; then
+        echo "Rolling the API service back to $current_task_definition_arn before any frontend upload." >&2
         aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
           --task-definition "$current_task_definition_arn" --region "$AWS_REGION" >/dev/null
         aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --region "$AWS_REGION"
@@ -934,7 +1031,7 @@ PY
   fi
 fi
 
-if [[ "$deploy_frontend" -eq 1 && "$deploy_backend" -eq 0 ]]; then deploy_frontend_artifact; fi
+if [[ "$deploy_frontend" -eq 1 && "$cutover" -eq 0 ]]; then deploy_frontend_artifact; fi
 if [[ "$skip_verify" -eq 0 && "$deploy_frontend" -eq 1 ]]; then verify_frontend; fi
 
 if [[ "$cutover" -eq 1 ]]; then

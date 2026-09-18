@@ -19,6 +19,15 @@ fake_log() {
   printf '%s\n' "$1" >> "$FAKE_AWS_LOG"
 }
 
+require_json_output() {
+  local output
+  output="$(arg_after --output "$@" 2>/dev/null || true)"
+  if [[ "${AWS_DEFAULT_OUTPUT:-}" == "text" && "$output" != "json" ]]; then
+    echo "Parsed AWS response did not request --output json: $*" >&2
+    return 88
+  fi
+}
+
 fake_service_json() {
   local desired td config circuit_enable circuit_rollback alarm_enable alarm_rollback
   desired="$(<"$FAKE_STATE/desired")"
@@ -58,6 +67,7 @@ fake_aws() {
       printf '%s\n' "${FAKE_ECR_DIGEST:-$FAKE_IMAGE_DIGEST}"
       ;;
     "ecs describe-services")
+      require_json_output "$@"
       fake_log DESCRIBE_SERVICE
       fake_service_json
       ;;
@@ -85,10 +95,17 @@ PY
           fake_log RESTORE_ROLLBACK
         fi
       fi
-      if [[ -n "$td" ]]; then printf '%s\n' "$td" > "$FAKE_STATE/task-definition"; fi
+      if [[ -n "$td" ]]; then
+        printf '%s\n' "$td" > "$FAKE_STATE/task-definition"
+        if [[ "$td" == "$FAKE_OLD_TD" ]]; then fake_log SERVICE_ROLLBACK; else fake_log SERVICE_DEPLOY; fi
+      fi
       if [[ -n "$desired" ]]; then
         printf '%s\n' "$desired" > "$FAKE_STATE/desired"
-        if [[ "$desired" == "0" ]]; then fake_log SERVICE_ZERO; else fake_log SERVICE_DEPLOY; fi
+        if [[ "$desired" == "0" ]]; then
+          fake_log SERVICE_ZERO
+        elif [[ -z "$td" ]]; then
+          fake_log SERVICE_DEPLOY
+        fi
       fi
       printf '{}\n'
       ;;
@@ -97,11 +114,13 @@ PY
       ;;
     "ecs describe-task-definition")
       local requested
+      require_json_output "$@"
       requested="$(arg_after --task-definition "$@")"
       fake_log "DESCRIBE_TD:$requested"
       fake_task_definition_json "$requested"
       ;;
     "ecs run-task")
+      require_json_output "$@"
       fake_log RUN_CONVERSION_TASK
       python3 - "$TMPDIR" "$FAKE_STATE/secure-temp-ok" <<'PY'
 import os, stat, sys
@@ -132,6 +151,7 @@ PY
         printf '%s\n' "${FAKE_TASK_DIGEST:-$FAKE_IMAGE_DIGEST}"
       else
         local desired td i
+        require_json_output "$@"
         desired="$(<"$FAKE_STATE/desired")"
         td="$(<"$FAKE_STATE/task-definition")"
         printf '{"failures":[],"tasks":['
@@ -145,6 +165,7 @@ PY
       ;;
     "ecs list-tasks")
       local desired i
+      require_json_output "$@"
       desired="$(<"$FAKE_STATE/desired")"
       printf '['
       for ((i=1; i<=desired; i++)); do
@@ -154,22 +175,45 @@ PY
       printf ']\n'
       ;;
     "logs get-log-events")
+      require_json_output "$@"
       printf '{"events":[{"message":"offline conversion stub"}]}\n'
       ;;
     "rds describe-db-snapshots")
+      require_json_output "$@"
       fake_log SNAPSHOT_CHECK
       printf '{"DBSnapshotIdentifier":"snapshot-test","DBInstanceIdentifier":"db-test","Status":"%s","DBSnapshotArn":"arn:snapshot-test"}\n' \
         "${FAKE_SNAPSHOT_STATUS:-available}"
       ;;
     "elbv2 describe-target-groups")
+      require_json_output "$@"
       fake_log LOAD_BALANCER_TARGET
-      printf '{"TargetGroups":[{"LoadBalancerArns":["arn:load-balancer"]}]}\n'
+      printf '{"TargetGroups":[{"TargetGroupArn":"arn:target-group","LoadBalancerArns":["arn:load-balancer"]}]}\n'
       ;;
     "elbv2 describe-load-balancers")
+      require_json_output "$@"
       printf '{"LoadBalancers":[{"LoadBalancerArn":"arn:load-balancer","SecurityGroups":["sg-verification"]}]}\n'
+      ;;
+    "elbv2 describe-listeners")
+      require_json_output "$@"
+      if [[ "${FAKE_LISTENER_MODE:-}" == "multiple" ]]; then
+        printf '%s\n' '{"Listeners":[{"ListenerArn":"arn:listener:https","Port":443,"Protocol":"HTTPS","DefaultActions":[{"Type":"forward","TargetGroupArn":"arn:target-group"}]},{"ListenerArn":"arn:listener:alternate","Port":8443,"Protocol":"HTTPS","DefaultActions":[{"Type":"forward","TargetGroupArn":"arn:target-group"}]}]}'
+      elif [[ "${FAKE_LISTENER_MODE:-}" == "unaccounted" ]]; then
+        printf '%s\n' '{"Listeners":[{"ListenerArn":"arn:listener:https","Port":443,"Protocol":"HTTPS","DefaultActions":[{"Type":"forward","TargetGroupArn":"arn:target-group"}]},{"ListenerArn":"arn:listener:http","Port":80,"Protocol":"HTTP","DefaultActions":[{"Type":"forward","TargetGroupArn":"arn:other-target"}]}]}'
+      elif [[ "${FAKE_LISTENER_MODE:-}" == "wrong-port" ]]; then
+        printf '%s\n' '{"Listeners":[{"ListenerArn":"arn:listener:https","Port":443,"Protocol":"HTTPS","DefaultActions":[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"503"}}]},{"ListenerArn":"arn:listener:http","Port":80,"Protocol":"HTTP","DefaultActions":[{"Type":"forward","TargetGroupArn":"arn:target-group"}]}]}'
+      elif [[ "${FAKE_LISTENER_MODE:-}" == "wrong-target" ]]; then
+        printf '%s\n' '{"Listeners":[{"ListenerArn":"arn:listener:https","Port":443,"Protocol":"HTTPS","DefaultActions":[{"Type":"forward","TargetGroupArn":"arn:other-target"}]},{"ListenerArn":"arn:listener:http","Port":80,"Protocol":"HTTP","DefaultActions":[{"Type":"redirect","RedirectConfig":{"Port":"443","Protocol":"HTTPS"}}]}]}'
+      else
+        printf '%s\n' '{"Listeners":[{"ListenerArn":"arn:listener:https","Port":443,"Protocol":"HTTPS","DefaultActions":[{"Type":"forward","TargetGroupArn":"arn:target-group"}]},{"ListenerArn":"arn:listener:http","Port":80,"Protocol":"HTTP","DefaultActions":[{"Type":"redirect","RedirectConfig":{"Port":"443","Protocol":"HTTPS"}}]}]}'
+      fi
+      ;;
+    "elbv2 describe-rules")
+      require_json_output "$@"
+      printf '%s\n' '{"Rules":[]}'
       ;;
     "ec2 describe-security-groups")
       local sg_mode
+      require_json_output "$@"
       sg_mode="$(<"$FAKE_STATE/security-group")"
       if [[ "$sg_mode" == "original" ]]; then
         printf '{"SecurityGroups":[{"GroupId":"sg-verification","IpPermissions":[{"IpProtocol":"tcp","FromPort":443,"ToPort":443,"IpRanges":[{"CidrIp":"0.0.0.0/0"}]}]}]}\n'
@@ -292,6 +336,7 @@ export FAKE_IMAGE_DIGEST="$DIGEST"
 export FAKE_IMAGE_REF="718484332261.dkr.ecr.us-east-1.amazonaws.com/shotdeck-api@$DIGEST"
 export FAKE_OLD_TD="$OLD_TD"
 export FAKE_NEW_TD="$NEW_TD"
+export AWS_DEFAULT_OUTPUT=text
 
 pass_count=0
 pass() {
@@ -330,7 +375,8 @@ new_case() {
   printf '%s\n' original > "$FAKE_STATE/rollback"
   printf '%s\n' original > "$FAKE_STATE/security-group"
   printf '%s\n' present > "$FAKE_STATE/report"
-  unset FAKE_CURL_FAIL FAKE_ECR_DIGEST FAKE_TASK_DIGEST FAKE_TASK_EXIT_CODE FAKE_HEAD_ERROR FAKE_HOOK_STATUS FAKE_SNAPSHOT_STATUS
+  unset FAKE_CURL_FAIL FAKE_ECR_DIGEST FAKE_TASK_DIGEST FAKE_TASK_EXIT_CODE FAKE_HEAD_ERROR \
+    FAKE_HOOK_STATUS FAKE_SNAPSHOT_STATUS FAKE_LISTENER_MODE
 }
 
 cutover_args() {
@@ -343,6 +389,13 @@ cutover_args() {
     --verification-security-group sg-verification --verification-cidr 198.51.100.24/32
     --verification-port 443 --verification-command "$FAKE_BIN/cutover-smoke"
     --report-bucket report-bucket --migration-report-key ops/inventory/cutover-test.json
+  )
+}
+
+ordinary_args() {
+  ORDINARY_ARGS=(
+    --skip-build --prebuilt-frontend --skip-migrations
+    --image-tag git-deadbee-20260918 --image-digest "$DIGEST"
   )
 }
 
@@ -391,12 +444,31 @@ new_case refusals 0
 expect_failure "monolithic ECR uploader" bash "$DEPLOY" --image-tag test --image-digest "$DIGEST"
 cutover_args
 expect_failure "forbids --skip-migrations" bash "$DEPLOY" "${CUTOVER_ARGS[@]}" --skip-migrations
+expect_failure "single-host IPv4 /32" bash "$DEPLOY" "${CUTOVER_ARGS[@]}" --verification-cidr 0.0.0.0/0
+expect_failure "must be 443" bash "$DEPLOY" "${CUTOVER_ARGS[@]}" --verification-port 80
 expect_failure "internal to deploy-prod.sh --cutover" bash "$CONVERSION" \
   --task-definition "$NEW_TD" --report-key ops/inventory/direct.json --convert-and-migrate
 mkdir -p "$FAKE_CUTOVER_STATE_DIR"
 expect_failure "nonempty --verification-record" bash "$DEPLOY" \
   --complete-cutover --cutover-state-dir "$FAKE_CUTOVER_STATE_DIR"
 pass "unsafe option paths are refused"
+
+new_case ordinary_success 1
+ordinary_args
+bash "$DEPLOY" "${ORDINARY_ARGS[@]}"
+[[ "$(<"$FAKE_STATE/task-definition")" == "$NEW_TD" ]] || fail "ordinary deploy did not retain the new backend"
+assert_order SERVICE_DEPLOY CURL_VERIFY FRONTEND_SYNC
+pass "ordinary combined deploy verifies backend before publishing frontend"
+
+new_case ordinary_backend_failure 1
+export FAKE_CURL_FAIL=health
+ordinary_args
+expect_failure "Backend verification failed" bash "$DEPLOY" "${ORDINARY_ARGS[@]}"
+[[ "$(<"$FAKE_STATE/task-definition")" == "$OLD_TD" ]] || fail "ordinary backend failure did not roll back"
+assert_no_event FRONTEND_SYNC
+assert_no_event FRONTEND_INDEX
+assert_order SERVICE_DEPLOY CURL_VERIFY SERVICE_ROLLBACK
+pass "ordinary backend failure rolls back without touching frontend"
 
 new_case success 0
 cutover_args
@@ -444,6 +516,34 @@ expect_failure "API writers are not stopped" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
 assert_no_event RUN_CONVERSION_TASK
 pass "cutover refuses nonzero desired/running service counts"
 
+new_case multiple_forwarding_listeners 0
+export FAKE_LISTENER_MODE=multiple
+cutover_args
+expect_failure "exactly one accounted forwarding listener" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
+assert_no_event RUN_CONVERSION_TASK
+pass "cutover refuses multiple forwarding listeners before conversion"
+
+new_case unaccounted_forwarding_listener 0
+export FAKE_LISTENER_MODE=unaccounted
+cutover_args
+expect_failure "exactly one accounted forwarding listener" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
+assert_no_event RUN_CONVERSION_TASK
+pass "cutover refuses an unaccounted forwarding listener before conversion"
+
+new_case wrong_forwarding_port 0
+export FAKE_LISTENER_MODE=wrong-port
+cutover_args
+expect_failure "expected HTTPS:443" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
+assert_no_event RUN_CONVERSION_TASK
+pass "cutover refuses a non-production forwarding listener before conversion"
+
+new_case wrong_forwarding_target 0
+export FAKE_LISTENER_MODE=wrong-target
+cutover_args
+expect_failure "do not exactly match service target groups" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
+assert_no_event RUN_CONVERSION_TASK
+pass "cutover refuses a forwarding listener that misses the service target"
+
 new_case snapshot_incomplete 0
 export FAKE_SNAPSHOT_STATUS=creating
 cutover_args
@@ -490,5 +590,7 @@ expect_failure "schema is unknown" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
 [[ -s "$FAKE_CUTOVER_STATE_DIR/conversion-task-status.json" ]] || fail "digest mismatch lost task status"
 [[ "$(<"$FAKE_STATE/desired")" == 0 ]] || fail "task digest mismatch did not force zero"
 pass "task digest mismatch is recorded and fails closed"
+
+pass "parsed AWS calls explicitly request JSON under AWS_DEFAULT_OUTPUT=text"
 
 printf '1..%s\n' "$pass_count"
