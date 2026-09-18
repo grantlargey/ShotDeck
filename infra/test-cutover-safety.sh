@@ -253,6 +253,7 @@ dispatch="${0##*/}"
 if [[ "$dispatch" == "aws" ]]; then fake_aws "$@"; exit $?; fi
 if [[ "$dispatch" == "curl" ]]; then
   fake_log CURL_VERIFY
+  if [[ "${FAKE_CURL_FAIL:-}" == "health" && "${*: -1}" == *health* ]]; then exit 22; fi
   if [[ "${*: -1}" == *movies* ]]; then
     printf '[]\n'
   elif [[ "${*: -1}" == *scriptdeckdemo.com* && "${*: -1}" != *api.* ]]; then
@@ -329,7 +330,7 @@ new_case() {
   printf '%s\n' original > "$FAKE_STATE/rollback"
   printf '%s\n' original > "$FAKE_STATE/security-group"
   printf '%s\n' present > "$FAKE_STATE/report"
-  unset FAKE_ECR_DIGEST FAKE_TASK_DIGEST FAKE_TASK_EXIT_CODE FAKE_HEAD_ERROR FAKE_HOOK_STATUS FAKE_SNAPSHOT_STATUS
+  unset FAKE_CURL_FAIL FAKE_ECR_DIGEST FAKE_TASK_DIGEST FAKE_TASK_EXIT_CODE FAKE_HEAD_ERROR FAKE_HOOK_STATUS FAKE_SNAPSHOT_STATUS
 }
 
 cutover_args() {
@@ -466,6 +467,14 @@ expect_failure "schema is unknown" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
 [[ "$(<"$FAKE_STATE/security-group")" == barrier ]] || fail "verification failure removed writer barrier"
 assert_order RUN_CONVERSION_TASK ISSUE16_SMOKE SERVICE_ZERO
 pass "post-conversion failure forces and proves zero with protections retained"
+
+new_case health_failure 0
+export FAKE_CURL_FAIL=health
+cutover_args
+expect_failure "schema is unknown" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
+[[ "$(<"$FAKE_STATE/desired")" == 0 ]] || fail "health failure did not force service zero"
+assert_order RUN_CONVERSION_TASK SERVICE_DEPLOY CURL_VERIFY SERVICE_ZERO
+pass "backend health failure propagates and fails closed"
 
 new_case deletion_forbidden 0
 export FAKE_HEAD_ERROR=403

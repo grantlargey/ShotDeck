@@ -697,14 +697,15 @@ PY
 
 verify_backend() {
   echo "[INFO] Verifying backend health"
-  curl -fsS "$API_HEALTH_URL"; echo
+  curl -fsS "$API_HEALTH_URL" || return 1
+  echo
   echo "[INFO] Verifying backend smoke endpoint"
   curl -fsS "$API_SMOKE_URL" | python3 -c '
 import json, sys
 obj = json.load(sys.stdin)
 if not isinstance(obj, list): raise SystemExit("Expected smoke endpoint to return a JSON array.")
 print(f"[INFO] Smoke endpoint returned {len(obj)} item(s)")
-'
+' || return 1
 }
 
 verify_frontend() {
