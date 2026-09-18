@@ -32,6 +32,7 @@ let browser;
 let database;
 let databaseCreated = false;
 let s3Stub;
+let cleanupPromise;
 
 function pass(message) {
   console.log(`PASS ${message}`);
@@ -99,6 +100,33 @@ async function stopChild(child) {
   const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
   await exited;
   clearTimeout(timer);
+}
+
+function cleanup() {
+  if (cleanupPromise) return cleanupPromise;
+  cleanupPromise = (async () => {
+    await browser?.close();
+    for (const child of children.toReversed()) await stopChild(child);
+    await database?.end();
+    if (s3Stub) await new Promise((resolve) => s3Stub.close(resolve));
+    if (databaseCreated) {
+      const admin = new Client({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 5_000 });
+      await admin.connect();
+      try {
+        await admin.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
+        console.log(`Removed throwaway database ${databaseName}.`);
+      } finally {
+        await admin.end();
+      }
+    }
+  })();
+  return cleanupPromise;
+}
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.once(signal, () => {
+    void cleanup().finally(() => process.exit(1));
+  });
 }
 
 async function placeAnchor(page, pageNumber, lineNumber, baseline, key) {
@@ -402,18 +430,5 @@ try {
   assert(s3Requests.length >= 1);
   pass("external sockets are blocked; the signed PDF and S3 traffic use synthetic local stubs");
 } finally {
-  await browser?.close();
-  for (const child of children.toReversed()) await stopChild(child);
-  await database?.end();
-  if (s3Stub) await new Promise((resolve) => s3Stub.close(resolve));
-  if (databaseCreated) {
-    const admin = new Client({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 5_000 });
-    await admin.connect();
-    try {
-      await admin.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
-      console.log(`Removed throwaway database ${databaseName}.`);
-    } finally {
-      await admin.end();
-    }
-  }
+  await cleanup();
 }
