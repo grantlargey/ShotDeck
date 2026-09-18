@@ -41,6 +41,7 @@ let database;
 let databaseCreated = false;
 let s3Stub;
 let cleanupPromise;
+let shuttingDown = false;
 
 function pass(message) {
   console.log(`PASS ${message}`);
@@ -174,7 +175,10 @@ function cleanup() {
 }
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
-  process.once(signal, () => {
+  process.on(signal, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.error(`Received ${signal}; cleaning up browser smoke resources.`);
     void cleanup()
       .catch((error) => console.error(error))
       .finally(() => process.exit(1));
