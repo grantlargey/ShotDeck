@@ -16,7 +16,7 @@ function databaseName(suffix) {
     return name;
 }
 
-export function databaseUrl(suffix) {
+function databaseUrl(suffix) {
     const url = new URL(baseUrl);
     url.pathname = `/${databaseName(suffix)}`;
     url.search = "";

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["test/browser-smoke/run.mjs", "test/browser-smoke/block-external-network.mjs"],
+      "project": ["test/**/*.mjs"]
+    },
+    "client": {
+      "entry": [
+        "src/main.jsx",
+        "src/**/*.{test,spec}.{js,jsx}",
+        "src/test/setup.js",
+        "vite.config.js",
+        "vitest.config.js",
+        "eslint.config.js"
+      ],
+      "project": ["src/**/*.{js,jsx}", "*.config.js"],
+      "paths": {
+        "@/*": ["src/*"],
+        "@server/*": ["../server/src/*"]
+      },
+      "eslint": false,
+      "vite": false,
+      "vitest": false
+    },
+    "server": {
+      "entry": [
+        "src/index.js",
+        "src/admin.js",
+        "src/migrate.js",
+        "src/tools/convert-captured-scenes.js",
+        "src/tools/inventory.js",
+        "test/run.js",
+        "test/**/*.test.js",
+        "eslint.config.js"
+      ],
+      "project": ["src/**/*.js", "test/**/*.js", "eslint.config.js"],
+      "eslint": false
+    }
+  }
+}

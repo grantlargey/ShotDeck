@@ -9,8 +9,8 @@ import { createLineAnchor } from "../model/anchors.js";
  * capture and layout classification all see realistic geometry.
  */
 
-export const PAGE_WIDTH = 612;
-export const PAGE_HEIGHT = 792;
+const PAGE_WIDTH = 612;
+const PAGE_HEIGHT = 792;
 
 const ACTION_X = 108;
 const DIALOGUE_X = 180;
@@ -99,7 +99,7 @@ export const marginShiftPage = positionedPage(
   }))
 );
 
-export function lineAnchor(page, lineIndex) {
+function lineAnchor(page, lineIndex) {
   return createLineAnchor(page, page.lines[lineIndex]);
 }
 

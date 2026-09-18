@@ -112,7 +112,7 @@ export const SCRIPT_TAG_CATEGORIES = [
   ]),
 ];
 
-export const SCRIPT_TAG_LABELS = Object.fromEntries(
+const SCRIPT_TAG_LABELS = Object.fromEntries(
   SCRIPT_TAG_CATEGORIES.flatMap((group) => group.tags.map((tag) => [tag.value, tag.label]))
 );
 

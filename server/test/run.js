@@ -3,13 +3,16 @@
  * database in the local `shotdeck-db-1` container, then always drops it.
  *
  *   TEST_DB_SUFFIX=01 npm test --prefix server              every test file
+ *   DATABASE_URL=postgres://.../shotdeck_test_ci npm test --prefix server
  *   npm test --prefix server -- test/auth.test.js          only these files (relative to server/)
  *   npm test --prefix server -- --test-name-pattern=login  node --test flags, written --flag=value
  *
  * The database is `shotdeck_test_<TEST_DB_SUFFIX>`; give runs that happen at the
  * same time different suffixes. Without one, the suffix is this process's id.
- * A run refuses to start when its database already exists, so it never drops a
- * database it didn't create. It never starts the container either.
+ * With DATABASE_URL, the named shotdeck_test_* database must already exist and
+ * is left for the provider to clean up (for example a CI Postgres service). In
+ * local-container mode, a run refuses to start when its database already exists,
+ * so it never drops a database it didn't create. It never starts the container.
  */
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
@@ -38,6 +41,23 @@ function databaseName() {
         fail(`TEST_DB_SUFFIX must be 1-40 lowercase letters, digits or underscores; got "${suffix}".`);
     }
     return `shotdeck_test_${suffix}`;
+}
+
+function providedDatabaseUrl() {
+    const value = process.env.DATABASE_URL?.trim();
+    if (!value) return null;
+
+    let url;
+    try {
+        url = new URL(value);
+    } catch {
+        fail("DATABASE_URL must be a valid Postgres URL.");
+    }
+    const name = decodeURIComponent(url.pathname.slice(1));
+    if (!name.startsWith("shotdeck_test_")) {
+        fail(`Refusing DATABASE_URL for non-test database "${name}"; its name must start with shotdeck_test_.`);
+    }
+    return value;
 }
 
 // Each test file must run alone in its own process: the files share the database,
@@ -166,14 +186,17 @@ function runNode(args, env) {
     });
 }
 
-const database = databaseName();
+const suppliedUrl = providedDatabaseUrl();
+const database = suppliedUrl ? null : databaseName();
 const args = testArgs(process.argv.slice(2));
-checkContainer();
-createDatabase(database);
+if (!suppliedUrl) {
+    checkContainer();
+    createDatabase(database);
+}
 
 let exitCode = 1;
 try {
-    const env = testEnvironment(`postgres://app:app@127.0.0.1:5432/${database}`);
+    const env = testEnvironment(suppliedUrl ?? `postgres://app:app@127.0.0.1:5432/${database}`);
     exitCode = await runNode(["src/migrate.js"], env);
     if (exitCode !== 0) {
         console.error(`\nApplying the schema to ${database} failed.`);
@@ -181,6 +204,6 @@ try {
         exitCode = await runNode(args, env);
     }
 } finally {
-    if (!dropDatabase(database)) exitCode = exitCode || 1;
+    if (database && !dropDatabase(database)) exitCode = exitCode || 1;
 }
 process.exit(interrupted && exitCode === 0 ? 1 : exitCode);

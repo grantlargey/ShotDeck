@@ -1,10 +1,8 @@
 import js from "@eslint/js";
 import globals from "globals";
-import { defineConfig, globalIgnores } from "eslint/config";
+import { defineConfig } from "eslint/config";
 
 export default defineConfig([
-    // The local-only importer files, which git ignores (see README, "Local-only Importer").
-    globalIgnores(["src/importShotdeckShots.js", "src/annotation-service.js"]),
     {
         files: ["**/*.js"],
         extends: [js.configs.recommended],
