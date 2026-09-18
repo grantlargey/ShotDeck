@@ -3,17 +3,17 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
 import { getStillThumbnail } from "@/entities/annotation/model/still.js";
-import { buildMovieSavePayload, createMovieEditForm } from "@/entities/movie/model/movieForms.js";
+import { createMovieEditForm, saveMovieEdits } from "@/entities/movie/model/movieForms.js";
 import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { listAnnotations } from "@/shared/api/annotations.js";
-import { getMovie, updateMovie } from "@/shared/api/movies.js";
+import { getMovie } from "@/shared/api/movies.js";
 import { getMovieScript, saveScript } from "@/shared/api/scripts.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
-import { formatSecondsToHms, parseTimeInputToMinutes } from "@/shared/lib/time.js";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
@@ -202,15 +202,10 @@ export default function MovieDetailPage() {
     }
   }
 
-  async function saveMovieEdits() {
+  async function submitMovieEdits() {
     setErr("");
     try {
-      const runtimeMinutes = parseTimeInputToMinutes(editForm.runtime_hms);
-      if (runtimeMinutes === null || runtimeMinutes < 1) {
-        throw new ValidationError("Runtime must use HH:MM:SS and be at least 00:01:00.");
-      }
-
-      await updateMovie(id, buildMovieSavePayload(editForm, runtimeMinutes));
+      await saveMovieEdits({ movieId: id, form: editForm });
       await load();
       setEditMode(false);
     } catch (e) {
@@ -277,7 +272,7 @@ export default function MovieDetailPage() {
 
             <div className={styles.panelActions}>
               <Button onClick={cancelMovieEdits}>Cancel</Button>
-              <Button variant="primary" onClick={saveMovieEdits}>
+              <Button variant="primary" onClick={submitMovieEdits}>
                 Save changes
               </Button>
             </div>

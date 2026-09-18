@@ -9,7 +9,7 @@ import styles from "./Dialog.module.css";
  * and the backdrop close it; focus moves to the first field and returns to
  * the opener afterwards.
  */
-export function Dialog({ title, onClose, footer, className, children }) {
+export function Dialog({ title, onClose, footer, className, overlayClassName, renderContent, children }) {
   const titleId = useId();
   const bodyRef = useRef(null);
   const closeRef = useRef(null);
@@ -43,24 +43,37 @@ export function Dialog({ title, onClose, footer, className, children }) {
 
   return (
     <div
-      className={styles.overlay}
+      className={cx(styles.overlay, overlayClassName)}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className={cx(styles.panel, className)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <header className={styles.header}>
-          <h2 id={titleId} className={styles.title}>
-            {title}
-          </h2>
-          <IconButton ref={closeRef} size="sm" label="Close" onClick={onClose}>
-            <CloseIcon size={16} />
-          </IconButton>
-        </header>
-        <div ref={bodyRef} className={styles.body}>
-          {children}
-        </div>
-        {footer && <footer className={styles.footer}>{footer}</footer>}
+      <div className={cx(!renderContent && styles.panel, className)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        {renderContent ? (
+          renderContent({
+            titleId,
+            closeButton: (
+              <IconButton ref={closeRef} size="sm" label="Close" onClick={onClose}>
+                <CloseIcon size={16} />
+              </IconButton>
+            ),
+          })
+        ) : (
+          <>
+            <header className={styles.header}>
+              <h2 id={titleId} className={styles.title}>
+                {title}
+              </h2>
+              <IconButton ref={closeRef} size="sm" label="Close" onClick={onClose}>
+                <CloseIcon size={16} />
+              </IconButton>
+            </header>
+            <div ref={bodyRef} className={styles.body}>
+              {children}
+            </div>
+            {footer && <footer className={styles.footer}>{footer}</footer>}
+          </>
+        )}
       </div>
     </div>
   );

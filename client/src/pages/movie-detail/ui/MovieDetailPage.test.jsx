@@ -56,6 +56,7 @@ const WITHOUT_IMAGE = { id: "a2", movie_id: "m1", time_seconds: 900, image_key: 
 
 const BAD_TIME = "Use HH:MM:SS (or MM:SS) for the timestamp.";
 const PAST_RUNTIME = `The timestamp can't be later than the film's runtime (${RUNTIME_LABEL}).`;
+const BAD_RUNTIME = "Runtime must use HH:MM:SS and be at least 00:01:00.";
 
 let stills;
 
@@ -217,6 +218,50 @@ describe("loading the project's script", () => {
     expect(api.getMovieScript).toHaveBeenCalledWith("m1");
     expect(screen.getByText("Not uploaded")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open script" })).toBeNull();
+  });
+});
+
+describe("editing project details inline", () => {
+  it("shows the shared runtime validation message without sending a request", async () => {
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+    fireEvent.change(screen.getByPlaceholderText("00:00:00"), { target: { value: "not a runtime" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText(BAD_RUNTIME)).toBeTruthy();
+    expect(api.updateMovie).not.toHaveBeenCalled();
+  });
+
+  it("saves through the shared movie-edit implementation and closes the editor", async () => {
+    api.updateMovie.mockResolvedValueOnce({ ...MOVIE });
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(api.updateMovie).toHaveBeenCalledWith("m1", {
+        title: "Night Diner",
+        director: "",
+        writer: null,
+        cinematographer: null,
+        year: null,
+        runtime_minutes: 120,
+      })
+    );
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Edit details" })).toBeNull());
+  });
+
+  it("shows its entry-point failure message and keeps the editor open", async () => {
+    api.updateMovie.mockRejectedValueOnce(new Error("save failed"));
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Failed to save project details.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Edit details" })).toBeTruthy();
   });
 });
 
