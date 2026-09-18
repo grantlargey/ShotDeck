@@ -7,7 +7,7 @@
   "scripts": {
     "setup": "npm ci --prefix server && npm ci --prefix client",
     "check:unused": "knip --include files,exports,nsExports,dependencies,unlisted,unresolved --no-config-hints",
-    "smoke:browser": "exec node test/browser-smoke/run.mjs",
+    "smoke:browser": "node test/browser-smoke/run.mjs",
     "db:up": "docker compose up -d --wait --wait-timeout 60 db",
     "db:stop": "docker compose stop db",
     "db:logs": "docker compose logs -f db",

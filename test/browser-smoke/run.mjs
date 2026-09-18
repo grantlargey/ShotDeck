@@ -43,7 +43,14 @@ let s3Stub;
 let cleanupPromise;
 let shuttingDown = false;
 
+class SmokeShutdown extends Error {}
+
+function throwIfShuttingDown() {
+  if (shuttingDown) throw new SmokeShutdown("Browser smoke interrupted.");
+}
+
 function pass(message) {
+  throwIfShuttingDown();
   console.log(`PASS ${message}`);
 }
 
@@ -56,6 +63,7 @@ async function reservePort() {
   const { port } = server.address();
   const reservation = { port, released: false, server };
   portReservations.push(reservation);
+  throwIfShuttingDown();
   return reservation;
 }
 
@@ -76,6 +84,7 @@ function safeEnvironment(overrides) {
 }
 
 function startChild(name, command, args, options) {
+  throwIfShuttingDown();
   const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "pipe"] });
   child.smokeSpawnError = null;
   child.once("error", (error) => {
@@ -107,6 +116,7 @@ async function waitFor(check, label, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
   while (Date.now() < deadline) {
+    throwIfShuttingDown();
     try {
       if (await check()) return;
     } catch (error) {
@@ -178,14 +188,13 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.error(`Received ${signal}; cleaning up browser smoke resources.`);
-    void cleanup()
-      .catch((error) => console.error(error))
-      .finally(() => process.exit(1));
+    process.exitCode = 1;
+    console.error(`Received ${signal}; requesting browser smoke cleanup.`);
   });
 }
 
 async function placeAnchor(page, pageNumber, lineNumber, baseline, key) {
+  throwIfShuttingDown();
   const frame = page.locator(`#script-page-${pageNumber}`);
   await frame.evaluate((element) => element.scrollIntoView({ block: "center" }));
   const pdfBox = await frame.locator(".react-pdf__Page").boundingBox();
@@ -196,11 +205,14 @@ async function placeAnchor(page, pageNumber, lineNumber, baseline, key) {
   await page.mouse.move(x, y);
   await frame.getByText(`L${lineNumber + 1}`, { exact: true }).waitFor();
   await page.keyboard.press(key);
+  throwIfShuttingDown();
 }
 
 async function setTiming(panel, start, end) {
+  throwIfShuttingDown();
   await panel.getByRole("textbox", { name: "Start", exact: true }).fill(start);
   await panel.getByRole("textbox", { name: "End", exact: true }).fill(end);
+  throwIfShuttingDown();
 }
 
 const movieId = randomUUID();
@@ -230,21 +242,27 @@ try {
     response.end("<Error><Code>NoSuchKey</Code><Message>synthetic smoke stub</Message></Error>");
   });
   await releasePort(s3Reservation);
+  throwIfShuttingDown();
   await new Promise((resolve, reject) => {
     s3Stub.once("error", reject);
     s3Stub.listen(s3Port, "127.0.0.1", resolve);
   });
+  throwIfShuttingDown();
 
   const admin = new Client({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 5_000 });
   await admin.connect();
   try {
+    throwIfShuttingDown();
     const existing = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
+    throwIfShuttingDown();
     assert.equal(existing.rowCount, 0, `throwaway database ${databaseName} does not already exist`);
     await admin.query(`CREATE DATABASE ${databaseName}`);
     databaseCreated = true;
+    throwIfShuttingDown();
   } finally {
     await admin.end();
   }
+  throwIfShuttingDown();
 
   const serverEnvironment = safeEnvironment({
     DATABASE_URL: databaseUrl.toString(),
@@ -266,10 +284,13 @@ try {
     cwd: path.join(root, "server"),
     env: serverEnvironment,
   });
+  throwIfShuttingDown();
 
   database = new Client({ connectionString: databaseUrl.toString(), connectionTimeoutMillis: 5_000 });
   await database.connect();
+  throwIfShuttingDown();
   const { hashPassword } = await import(pathToFileURL(path.join(root, "server/src/utils/passwords.js")));
+  throwIfShuttingDown();
   await database.query(
     "INSERT INTO admin_users(id, email, password_hash) VALUES ($1, $2, $3)",
     [userId, email, await hashPassword(password)]
@@ -287,8 +308,10 @@ try {
     "INSERT INTO annotations(id, movie_id, time_seconds, image_key) VALUES ($1, $2, 1, $3)",
     [stillId, movieId, "annotations/smoke/still.png"]
   );
+  throwIfShuttingDown();
 
   await releasePort(apiReservation);
+  throwIfShuttingDown();
   startChild("api", process.execPath, ["src/index.js"], {
     cwd: path.join(root, "server"),
     env: serverEnvironment,
@@ -299,6 +322,7 @@ try {
   pass("the real API runs on a side port and S3 sends terminate at the loopback stub");
 
   await releasePort(appReservation);
+  throwIfShuttingDown();
   startChild("vite", process.execPath, ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", String(appPort)], {
     cwd: path.join(root, "client"),
     env: safeEnvironment({ VITE_API_BASE: apiOrigin }),
@@ -311,6 +335,7 @@ try {
     handleSIGTERM: false,
     handleSIGHUP: false,
   });
+  throwIfShuttingDown();
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
   context.setDefaultTimeout(30_000);
   const interceptedExternal = [];
@@ -365,6 +390,7 @@ try {
   const viewerUrl = `${appOrigin}/movies/${movieId}/scripts/${scriptId}`;
   const panel = page.getByRole("complementary", { name: "Scene annotator" });
   async function ready() {
+    throwIfShuttingDown();
     await panel.waitFor();
     await page.waitForFunction(
       () =>
@@ -373,6 +399,7 @@ try {
       null,
       { timeout: 60_000 }
     );
+    throwIfShuttingDown();
   }
 
   await page.goto(viewerUrl);
@@ -496,6 +523,8 @@ try {
   assert.deepEqual(consoleErrors, []);
   assert(s3Requests.length >= 1);
   pass("external sockets are blocked; the signed PDF and S3 traffic use synthetic local stubs");
+} catch (error) {
+  if (!shuttingDown) throw error;
 } finally {
   await cleanup();
 }
