@@ -6,6 +6,7 @@
 # migrations run in the same ECS task only after a successful conversion.
 
 set -euo pipefail
+umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -21,6 +22,10 @@ Options:
   --ecs-cluster NAME        ECS cluster override
   --ecs-service NAME        ECS service override
   --task-definition ARN     Task definition to run (required)
+  --expected-image-digest D Require the task definition and task to use sha256 digest D
+  --task-status-file PATH   Save the ECS task status locally before report retrieval
+  --cutover-authorization-file PATH
+                            Internal mode-0600 proof emitted by deploy-prod.sh --cutover
   --report-key KEY          New ops/inventory/*.json S3 key (required)
   --check                   Read-only conversion check
   --migrate-check           Prove the legacy-schema migration refusal
@@ -40,6 +45,9 @@ DEPLOY_REGION=""
 ECS_CLUSTER_OVERRIDE=""
 ECS_SERVICE_OVERRIDE=""
 TASK_DEFINITION=""
+EXPECTED_IMAGE_DIGEST=""
+TASK_STATUS_FILE=""
+CUTOVER_AUTHORIZATION_FILE=""
 REPORT_KEY=""
 MODE=""
 
@@ -49,6 +57,9 @@ while [[ $# -gt 0 ]]; do
     --ecs-cluster) ECS_CLUSTER_OVERRIDE="${2:-}"; shift 2 ;;
     --ecs-service) ECS_SERVICE_OVERRIDE="${2:-}"; shift 2 ;;
     --task-definition) TASK_DEFINITION="${2:-}"; shift 2 ;;
+    --expected-image-digest) EXPECTED_IMAGE_DIGEST="${2:-}"; shift 2 ;;
+    --task-status-file) TASK_STATUS_FILE="${2:-}"; shift 2 ;;
+    --cutover-authorization-file) CUTOVER_AUTHORIZATION_FILE="${2:-}"; shift 2 ;;
     --report-key) REPORT_KEY="${2:-}"; shift 2 ;;
     --check|--migrate-check|--extension-check|--convert-and-migrate)
       if [[ -n "$MODE" ]]; then
@@ -74,19 +85,69 @@ if [[ ! "$REPORT_KEY" =~ ^ops/inventory/[A-Za-z0-9._/-]+\.json$ ]] || [[ "$REPOR
   exit 1
 fi
 
+if [[ "$MODE" == "--convert-and-migrate" ]]; then
+  if [[ -z "$CUTOVER_AUTHORIZATION_FILE" || -z "$EXPECTED_IMAGE_DIGEST" || -z "$TASK_STATUS_FILE" ]]; then
+    echo "--convert-and-migrate is internal to deploy-prod.sh --cutover and requires its authorization, digest and task-status file." >&2
+    exit 1
+  fi
+  python3 - "$CUTOVER_AUTHORIZATION_FILE" "$TASK_DEFINITION" "$EXPECTED_IMAGE_DIGEST" <<'PY'
+import json
+import os
+import stat
+import sys
+
+path, expected_task_definition, expected_digest = sys.argv[1:4]
+mode = stat.S_IMODE(os.stat(path).st_mode)
+if mode != 0o600:
+    raise SystemExit(f"Cutover authorization must have mode 0600, found {mode:04o}.")
+with open(path, encoding="utf-8") as fh:
+    authorization = json.load(fh)
+required = {
+    "explicit_cutover": True,
+    "service_zero_proved": True,
+    "snapshot_completed_proved": True,
+    "ecs_rollback_disabled_proved": True,
+    "writer_barrier_proved": True,
+    "task_definition": expected_task_definition,
+    "image_digest": expected_digest,
+    "consumed": False,
+}
+for key, value in required.items():
+    if authorization.get(key) != value:
+        raise SystemExit(f"Cutover authorization does not prove {key}={value!r}.")
+authorization["consumed"] = True
+temporary = path + ".tmp"
+with open(temporary, "x", encoding="utf-8") as fh:
+    json.dump(authorization, fh, indent=2, sort_keys=True)
+    fh.write("\n")
+os.chmod(temporary, 0o600)
+os.replace(temporary, path)
+PY
+elif [[ -n "$CUTOVER_AUTHORIZATION_FILE" ]]; then
+  echo "--cutover-authorization-file is valid only with --convert-and-migrate." >&2
+  exit 1
+fi
+
 runner_args=()
 if [[ -n "$DEPLOY_REGION" ]]; then runner_args+=(--region "$DEPLOY_REGION"); fi
 if [[ -n "$ECS_CLUSTER_OVERRIDE" ]]; then runner_args+=(--ecs-cluster "$ECS_CLUSTER_OVERRIDE"); fi
 if [[ -n "$ECS_SERVICE_OVERRIDE" ]]; then runner_args+=(--ecs-service "$ECS_SERVICE_OVERRIDE"); fi
+if [[ -n "$EXPECTED_IMAGE_DIGEST" ]]; then
+  runner_args+=(--expected-image-digest "$EXPECTED_IMAGE_DIGEST")
+fi
+if [[ -n "$TASK_STATUS_FILE" ]]; then runner_args+=(--status-file "$TASK_STATUS_FILE"); fi
 
 read -r -d '' task_script <<'SH' || true
-report_file=/tmp/captured-scene-conversion-report.json
+umask 077
+task_dir="$(mktemp -d /tmp/captured-scene-conversion.XXXXXX)"
+trap 'rm -rf "$task_dir"' EXIT
+report_file="$task_dir/report.json"
 if [ "$2" = "--check" ]; then
   node src/tools/convert-captured-scenes.js --check > "$report_file"
   converter_status=$?
 elif [ "$2" = "--migrate-check" ]; then
-  stdout_file=/tmp/captured-scene-migrate.stdout
-  stderr_file=/tmp/captured-scene-migrate.stderr
+  stdout_file="$task_dir/migrate.stdout"
+  stderr_file="$task_dir/migrate.stderr"
   node src/migrate.js > "$stdout_file" 2> "$stderr_file"
   converter_status=$?
   cat "$stdout_file"
