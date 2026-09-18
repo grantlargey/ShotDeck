@@ -16,10 +16,17 @@ const { Client } = requireServer("pg");
 const blockerUrl = pathToFileURL(path.join(here, "block-external-network.mjs")).href;
 const databaseName = `shotdeck_test_16_smoke_${process.pid}_${randomBytes(3).toString("hex")}`;
 const adminUrl = new URL(process.env.SMOKE_DATABASE_ADMIN_URL || "postgres://app:app@127.0.0.1:5432/postgres");
+const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const databaseUrl = new URL(adminUrl);
 databaseUrl.pathname = `/${databaseName}`;
 databaseUrl.search = "";
 
+if (!["postgres:", "postgresql:"].includes(adminUrl.protocol)) {
+  throw new Error("SMOKE_DATABASE_ADMIN_URL must use the postgres protocol.");
+}
+if (!loopbackHosts.has(adminUrl.hostname)) {
+  throw new Error("SMOKE_DATABASE_ADMIN_URL must use a loopback hostname.");
+}
 if (adminUrl.pathname !== "/postgres") {
   throw new Error("SMOKE_DATABASE_ADMIN_URL must name the postgres administrative database.");
 }
@@ -28,6 +35,7 @@ if (!/^shotdeck_test_16_[a-z0-9_]+$/.test(databaseName)) {
 }
 
 const children = [];
+const portReservations = [];
 let browser;
 let database;
 let databaseCreated = false;
@@ -38,15 +46,24 @@ function pass(message) {
   console.log(`PASS ${message}`);
 }
 
-async function availablePort() {
+async function reservePort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
   const { port } = server.address();
-  await new Promise((resolve) => server.close(resolve));
-  return port;
+  const reservation = { port, released: false, server };
+  portReservations.push(reservation);
+  return reservation;
+}
+
+async function releasePort(reservation) {
+  if (reservation.released) return;
+  reservation.released = true;
+  await new Promise((resolve, reject) => {
+    reservation.server.close((error) => (error ? reject(error) : resolve()));
+  });
 }
 
 function safeEnvironment(overrides) {
@@ -59,6 +76,10 @@ function safeEnvironment(overrides) {
 
 function startChild(name, command, args, options) {
   const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "pipe"] });
+  child.smokeSpawnError = null;
+  child.once("error", (error) => {
+    child.smokeSpawnError = error;
+  });
   child.stdout.on("data", (chunk) => {
     process.stdout.write(`[${name}] ${chunk}`);
   });
@@ -71,12 +92,14 @@ function startChild(name, command, args, options) {
 
 async function runChild(name, command, args, options) {
   const child = startChild(name, command, args, options);
-  const code = await new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (exitCode) => resolve(exitCode ?? 1));
+  const result = await new Promise((resolve) => {
+    child.once("error", (error) => resolve({ error }));
+    child.once("exit", (exitCode) => resolve({ code: exitCode ?? 1 }));
   });
-  children.splice(children.indexOf(child), 1);
-  if (code !== 0) throw new Error(`${name} exited with status ${code}.`);
+  const index = children.indexOf(child);
+  if (index >= 0) children.splice(index, 1);
+  if (result.error) throw result.error;
+  if (result.code !== 0) throw new Error(`${name} exited with status ${result.code}.`);
 }
 
 async function waitFor(check, label, timeoutMs = 30_000) {
@@ -94,38 +117,67 @@ async function waitFor(check, label, timeoutMs = 30_000) {
 }
 
 async function stopChild(child) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  const exited = new Promise((resolve) => child.once("exit", resolve));
-  child.kill("SIGTERM");
+  if (child.exitCode !== null || child.signalCode !== null || child.smokeSpawnError || !child.pid) return;
+  const exited = new Promise((resolve) => {
+    child.once("exit", resolve);
+    child.once("close", resolve);
+    child.once("error", resolve);
+  });
+  if (!child.kill("SIGTERM")) return;
   const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
   await exited;
   clearTimeout(timer);
 }
 
+async function attemptCleanup(label, operation, errors) {
+  try {
+    await operation();
+  } catch (error) {
+    errors.push(new Error(`${label}: ${error.message}`, { cause: error }));
+  }
+}
+
 function cleanup() {
   if (cleanupPromise) return cleanupPromise;
   cleanupPromise = (async () => {
-    await browser?.close();
-    for (const child of children.toReversed()) await stopChild(child);
-    await database?.end();
-    if (s3Stub) await new Promise((resolve) => s3Stub.close(resolve));
-    if (databaseCreated) {
-      const admin = new Client({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 5_000 });
-      await admin.connect();
-      try {
-        await admin.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
-        console.log(`Removed throwaway database ${databaseName}.`);
-      } finally {
-        await admin.end();
-      }
+    const errors = [];
+    if (browser) await attemptCleanup("close browser", () => browser.close(), errors);
+    for (const [index, child] of children.toReversed().entries()) {
+      await attemptCleanup(`stop child ${index + 1}`, () => stopChild(child), errors);
     }
+    for (const reservation of portReservations) {
+      await attemptCleanup(`release reserved port ${reservation.port}`, () => releasePort(reservation), errors);
+    }
+    if (database) await attemptCleanup("close application database connection", () => database.end(), errors);
+    if (s3Stub) {
+      await attemptCleanup(
+        "close S3 stub",
+        () => new Promise((resolve, reject) => s3Stub.close((error) => (error ? reject(error) : resolve()))),
+        errors
+      );
+    }
+    if (databaseCreated) {
+      await attemptCleanup("drop throwaway database", async () => {
+        const admin = new Client({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 5_000 });
+        try {
+          await admin.connect();
+          await admin.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
+          console.log(`Removed throwaway database ${databaseName}.`);
+        } finally {
+          await admin.end().catch(() => {});
+        }
+      }, errors);
+    }
+    if (errors.length) throw new AggregateError(errors, "Browser smoke cleanup failed.");
   })();
   return cleanupPromise;
 }
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.once(signal, () => {
-    void cleanup().finally(() => process.exit(1));
+    void cleanup()
+      .catch((error) => console.error(error))
+      .finally(() => process.exit(1));
   });
 }
 
@@ -158,9 +210,12 @@ const pdf = makeSyntheticPdf();
 const s3Requests = [];
 
 try {
-  const appPort = await availablePort();
-  const apiPort = await availablePort();
-  const s3Port = await availablePort();
+  const appReservation = await reservePort();
+  const apiReservation = await reservePort();
+  const s3Reservation = await reservePort();
+  const appPort = appReservation.port;
+  const apiPort = apiReservation.port;
+  const s3Port = s3Reservation.port;
   const appOrigin = `http://127.0.0.1:${appPort}`;
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
   const s3Origin = `http://127.0.0.1:${s3Port}`;
@@ -170,6 +225,7 @@ try {
     response.writeHead(404, { "Content-Type": "application/xml" });
     response.end("<Error><Code>NoSuchKey</Code><Message>synthetic smoke stub</Message></Error>");
   });
+  await releasePort(s3Reservation);
   await new Promise((resolve, reject) => {
     s3Stub.once("error", reject);
     s3Stub.listen(s3Port, "127.0.0.1", resolve);
@@ -228,6 +284,7 @@ try {
     [stillId, movieId, "annotations/smoke/still.png"]
   );
 
+  await releasePort(apiReservation);
   startChild("api", process.execPath, ["src/index.js"], {
     cwd: path.join(root, "server"),
     env: serverEnvironment,
@@ -237,13 +294,19 @@ try {
   assert(s3Requests.every(({ url }) => url.includes("annotations/smoke/still.png")));
   pass("the real API runs on a side port and S3 sends terminate at the loopback stub");
 
+  await releasePort(appReservation);
   startChild("vite", process.execPath, ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", String(appPort)], {
     cwd: path.join(root, "client"),
     env: safeEnvironment({ VITE_API_BASE: apiOrigin }),
   });
   await waitFor(async () => (await fetch(appOrigin)).ok, "the side-port Vite app");
 
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({
+    headless: true,
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false,
+  });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
   context.setDefaultTimeout(30_000);
   const interceptedExternal = [];
