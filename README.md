@@ -244,7 +244,7 @@ npx playwright install chromium
 npm run smoke:browser
 ```
 
-The existing local Postgres must be reachable; the smoke never starts or restarts it. It creates only a uniquely named `shotdeck_test_16_*` database, reserves temporary loopback ports until handing them to the real API, Vite and S3 stub, and attempts every cleanup step even if an earlier one fails. The synthetic PDF and Google Fonts stylesheet are fulfilled inside Playwright, S3 sends terminate at the loopback stub, and child processes reject non-loopback sockets. `SMOKE_DATABASE_ADMIN_URL` can override the default `postgres://app:app@127.0.0.1:5432/postgres` only for a local port or user; it must use the Postgres protocol, a loopback hostname and the `postgres` administrative database.
+The existing local Postgres must be reachable; the smoke never starts or restarts it. It creates only a uniquely named `shotdeck_test_16_*` database, reserves temporary loopback ports until handing them to the real API, Vite and S3 stub, and attempts every cleanup step even if an earlier one fails. The synthetic PDF and Google Fonts stylesheet are fulfilled inside Playwright, S3 sends terminate at the loopback stub, and child processes reject non-loopback sockets. `SMOKE_DATABASE_ADMIN_URL` can override the default `postgres://app:app@127.0.0.1:5432/postgres` only for a local port or user; it must use the Postgres protocol, a loopback hostname and the `postgres` administrative database, with no query parameters or fragment.
 
 ### Server tests and lint
 

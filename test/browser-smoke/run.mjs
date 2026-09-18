@@ -27,6 +27,9 @@ if (!["postgres:", "postgresql:"].includes(adminUrl.protocol)) {
 if (!loopbackHosts.has(adminUrl.hostname)) {
   throw new Error("SMOKE_DATABASE_ADMIN_URL must use a loopback hostname.");
 }
+if (adminUrl.search || adminUrl.hash) {
+  throw new Error("SMOKE_DATABASE_ADMIN_URL must not contain query parameters or a fragment.");
+}
 if (adminUrl.pathname !== "/postgres") {
   throw new Error("SMOKE_DATABASE_ADMIN_URL must name the postgres administrative database.");
 }
