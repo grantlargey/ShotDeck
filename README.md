@@ -206,6 +206,8 @@ From the repository root:
 | Command | Purpose |
 | --- | --- |
 | `npm run setup` | Install locked server and client dependencies after `npm ci` at the root. |
+| `npm run check:unused` | Fail on unused source files, exports, dependencies, or unresolved imports across the client, server, commands, configs, and tests. |
+| `npm run smoke:browser` | Run the canonical captured-scene browser smoke against a throwaway database and side-port services. |
 | `npm run dev` | Start Postgres, wait for readiness, and run the API and client locally. |
 | `npm run db:up` | Start Postgres and wait for readiness. |
 | `npm run db:stop` | Stop Postgres while retaining its data. |
@@ -231,7 +233,18 @@ npm test
 npm run lint
 ```
 
-Client tests run with Vitest and jsdom (`npm test --prefix client`); they currently cover the script viewer's scene draft workflow. There is no CI workflow.
+Client tests run with Vitest and jsdom (`npm test --prefix client`). GitHub Actions runs the unused-code check, client lint/tests/build, and server lint/tests on pushes and pull requests with Node 24.13.1 and a Postgres 16 service.
+
+### Browser smoke
+
+Install the repository's pinned Chromium once after `npm ci`, then run the exact smoke command from the repository root:
+
+```bash
+npx playwright install chromium
+npm run smoke:browser
+```
+
+The existing local Postgres must be reachable; the smoke never starts or restarts it. It creates only a uniquely named `shotdeck_test_16_*` database, starts the real API and Vite on temporary side ports, and always removes the database and processes. The synthetic PDF and Google Fonts stylesheet are fulfilled inside Playwright, S3 sends terminate at a loopback stub, and child processes reject non-loopback sockets. `SMOKE_DATABASE_ADMIN_URL` can override the default `postgres://app:app@127.0.0.1:5432/postgres`, but it must still name the `postgres` administrative database.
 
 ### Server tests and lint
 
@@ -241,6 +254,7 @@ Client tests run with Vitest and jsdom (`npm test --prefix client`); they curren
 - The suffix comes from `TEST_DB_SUFFIX` (lowercase letters, digits and underscores) and defaults to the command's process ID. Runs that happen at the same time need different suffixes. A run refuses to start if its database already exists, and prints the command that drops a leftover one.
 - If the container isn't running, the command fails with a message; start Postgres with `npm run db:up`. The command never starts it.
 - The command sets `DATABASE_URL`, dummy AWS credentials with S3 sends pointed at a closed local port, and an empty `OPENAI_API_KEY` itself, so a `server/.env` can't point the tests at a real database, bucket or OpenAI key. Presigned URLs are signed locally.
+- In CI, setting `DATABASE_URL` to an already-created `shotdeck_test_*` database bypasses `docker exec`; the harness refuses any other database name and leaves provider cleanup to the CI service.
 
 To run part of the suite, pass test files or globs ending in `.js` (relative to `server/`), or `node --test` flags written as `--flag=value`. Each file always runs alone in its own process, so `--test-concurrency` and the test isolation flags are refused:
 
