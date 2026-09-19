@@ -12,10 +12,6 @@ function safeYear(year) {
   return Number.isFinite(n) ? n : null;
 }
 
-export function getMovieCoverUrl(movie) {
-  return movie?.cover_image_url || movie?.cover_url || "";
-}
-
 /** Every distinct person named in one credit field (e.g. "writer") across movies. */
 export function getMovieCreditNames(movies, field) {
   const names = new Set(movies.flatMap((movie) => splitCreditNames(movie[field])));
@@ -31,17 +27,13 @@ export function getMovieYears(movies) {
 }
 
 function getMovieRecencyValue(movie) {
-  const candidates = [movie?.updated_at, movie?.updatedAt, movie?.created_at, movie?.createdAt];
-  for (const value of candidates) {
-    const time = Date.parse(value);
-    if (Number.isFinite(time)) return time;
-  }
-  return 0;
+  const time = Date.parse(movie?.created_at);
+  return Number.isFinite(time) ? time : 0;
 }
 
 /**
- * Picks the homepage preview set from real movie rows. If the backend does not
- * provide timestamps, the original API order remains the tie-breaker.
+ * Picks the homepage preview set: the most recently created movies, with the
+ * API's order breaking ties.
  */
 export function getRecentMovies(movies, limit = 3) {
   return [...(Array.isArray(movies) ? movies : [])]

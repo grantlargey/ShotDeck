@@ -1,7 +1,8 @@
 import { memo, useState } from "react";
 import { Page } from "react-pdf";
-import { findLineAtY } from "@/shared/lib/pdf-text";
-import { formatSecondsToHms } from "@/shared/lib/time";
+import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
+import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./PdfPageFrame.module.css";
 
 const OVERLAY_CONTROL = "[data-overlay-control]";
@@ -13,9 +14,7 @@ function AnchorMarker({ kind, anchor, scale, onRemove }) {
 
   return (
     <div
-      className={`${styles.anchor} ${kind === "start" ? styles.start : styles.end} ${
-        anchor.suggested ? styles.suggested : ""
-      }`}
+      className={`${styles.anchor} ${kind === "start" ? styles.start : styles.end}`}
       style={{ top: y }}
     >
       <span className={styles.anchorRule} />
@@ -23,20 +22,18 @@ function AnchorMarker({ kind, anchor, scale, onRemove }) {
         <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
           <path d={kind === "start" ? "M1 2h8L5 8z" : "M1 8h8L5 2z"} fill="currentColor" />
         </svg>
-        {anchor.suggested ? `Suggested ${label.toLowerCase()}` : label}
-        {!anchor.suggested && (
-          <button
-            type="button"
-            className={styles.anchorRemove}
-            aria-label={`Remove ${kind} anchor`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRemove(kind);
-            }}
-          >
-            ×
-          </button>
-        )}
+        {label}
+        <button
+          type="button"
+          className={styles.anchorRemove}
+          aria-label={`Remove ${kind} anchor`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove(kind);
+          }}
+        >
+          ×
+        </button>
       </span>
     </div>
   );
@@ -157,9 +154,7 @@ export const PdfPageFrame = memo(function PdfPageFrame({
             const top = segment.top === null ? 0 : px(segment.top);
             const bottom = segment.bottom === null ? px(pageIndex.height) : px(segment.bottom);
             const { scene } = segment;
-            const timing = `${formatSecondsToHms(scene.start_time_seconds)}–${formatSecondsToHms(
-              scene.end_time_seconds
-            )}`;
+            const timing = formatFilmTiming(scene);
             return (
               <button
                 key={scene.id}
@@ -168,10 +163,9 @@ export const PdfPageFrame = memo(function PdfPageFrame({
                 className={[
                   styles.sceneBar,
                   scene.id === activeSceneId ? styles.sceneBarActive : "",
-                  segment.approximate ? styles.sceneBarApprox : "",
                 ].join(" ")}
                 style={{ top, height: Math.max(10, bottom - top), right: 8 + segment.lane * 10 }}
-                title={`Scene ${timing}${segment.approximate ? " · page range only" : ""}`}
+                title={`Scene ${timing}`}
                 aria-label={`${readOnly ? "View" : "Edit"} scene ${timing}`}
                 onClick={(event) => {
                   event.stopPropagation();

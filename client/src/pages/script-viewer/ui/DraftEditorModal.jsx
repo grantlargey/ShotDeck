@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
-import { compareWordFidelity, screenplayToPlainText } from "@/shared/lib/screenplay";
-import { ScreenplayView, SegmentedControl } from "@/shared/ui";
-import {
-  SceneDetailModal,
-  SceneModalActions,
-  SceneModalButton,
-  SceneModalPaper,
-} from "@/widgets/scene-detail-modal";
+import { compareWordFidelity } from "@/shared/lib/screenplay/fidelity.js";
+import { screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
+import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
+import { Button } from "@/shared/ui/Button.jsx";
+import { SceneDetailModal, SceneModalPaper } from "@/widgets/scene-detail-modal/ui/SceneDetailModal.jsx";
 import { elementShortcutLabel } from "../lib/platform.js";
 import { ScreenplayEditor } from "./ScreenplayEditor.jsx";
 import styles from "./DraftEditorModal.module.css";
@@ -97,48 +95,43 @@ export function DraftEditorModal({
       meta={meta}
       onClose={onClose}
       footer={
-        <>
-          <div className={styles.footerStart}>
-            <SegmentedControl label="Editor mode" options={MODES} value={mode} onChange={setMode} />
-            <div className={styles.fidelityGroup} aria-live="polite">
-              {draftFidelity ? (
-                <FidelitySummary subject="Draft" fidelity={draftFidelity} />
-              ) : (
-                <p className={styles.fidelityMuted}>The word check runs once text is captured from anchors.</p>
-              )}
-              {proposalFidelity && <FidelitySummary subject="AI proposal" fidelity={proposalFidelity} />}
-              {proposal?.status === "error" && (
-                <p className={styles.proposalError} role="alert">
-                  {proposal.error}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <SceneModalActions>
-            {proposalReady ? (
-              <>
-                <SceneModalButton onClick={onDiscardProposal}>Discard proposal</SceneModalButton>
-                <SceneModalButton variant="primary" onClick={onAcceptProposal}>
-                  Accept proposal
-                </SceneModalButton>
-              </>
+        <div className={styles.footerStart}>
+          <SegmentedControl label="Editor mode" options={MODES} value={mode} onChange={setMode} />
+          <div className={styles.fidelityGroup} aria-live="polite">
+            {draftFidelity ? (
+              <FidelitySummary subject="Draft" fidelity={draftFidelity} />
             ) : (
-              <>
-                {proposal?.status === "error" && (
-                  <SceneModalButton onClick={onDiscardProposal}>Dismiss error</SceneModalButton>
-                )}
-                {recaptureLabel && <SceneModalButton onClick={onRecapture}>{recaptureLabel}</SceneModalButton>}
-                <SceneModalButton variant="ai" onClick={onRequestAi} disabled={proposal?.status === "loading"}>
-                  {proposal?.status === "loading" ? "Formatting…" : "Format with AI"}
-                </SceneModalButton>
-                <SceneModalButton variant="primary" onClick={onClose}>
-                  Done
-                </SceneModalButton>
-              </>
+              <p className={styles.fidelityMuted}>The word check runs once text is captured from anchors.</p>
             )}
-          </SceneModalActions>
-        </>
+            {proposalFidelity && <FidelitySummary subject="AI proposal" fidelity={proposalFidelity} />}
+            {proposal?.status === "error" && (
+              <p className={styles.proposalError} role="alert">
+                {proposal.error}
+              </p>
+            )}
+          </div>
+        </div>
+      }
+      actions={
+        proposalReady ? (
+          <>
+            <Button onClick={onDiscardProposal}>Discard proposal</Button>
+            <Button variant="primary" onClick={onAcceptProposal}>
+              Accept proposal
+            </Button>
+          </>
+        ) : (
+          <>
+            {proposal?.status === "error" && <Button onClick={onDiscardProposal}>Dismiss error</Button>}
+            {recaptureLabel && <Button onClick={onRecapture}>{recaptureLabel}</Button>}
+            <Button variant="ai" onClick={onRequestAi} disabled={proposal?.status === "loading"}>
+              {proposal?.status === "loading" ? "Formatting…" : "Format with AI"}
+            </Button>
+            <Button variant="primary" onClick={onClose}>
+              Done
+            </Button>
+          </>
+        )
       }
     >
       <SceneModalPaper

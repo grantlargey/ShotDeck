@@ -2,8 +2,6 @@ import { act, render, renderHook } from "@testing-library/react";
 import { Component, StrictMode, useLayoutEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  LEGACY_RAW,
-  legacyScene,
   marginShiftPage,
   OTHER_TEXT,
   otherScene,
@@ -11,80 +9,78 @@ import {
   page2,
   page3,
   positionedPage,
-  SAVED_V2_TEXT,
-  savedV2Scene,
+  SAVED_RAW,
+  SAVED_TEXT,
+  savedScene,
   sceneRow,
   SCRIPT_PAGES,
+  scriptLocation,
   textIndexFrom,
-  v2Geometry,
 } from "../test/textIndexFixtures.js";
-import { captureAnchoredRange } from "./captureRange.js";
+import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.js";
 import { useSceneDraft } from "./sceneDraft.js";
 
-/*
- * Interface tests for useSceneDraft, covering what the page characterization
- * suite can't reach or pin precisely: the committed-view contract, identities,
- * capture work, request tokens, and exact save mapping.
- */
-
-// A passthrough spy: capture runs for real; tests only count calls.
 vi.mock("./captureRange.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, captureAnchoredRange: vi.fn(actual.captureAnchoredRange) };
 });
 
-const FULL_INDEX = textIndexFrom(SCRIPT_PAGES, { total: 3, complete: true });
-
+const FULL_INDEX = textIndexFrom(SCRIPT_PAGES, { complete: true });
+const NO_OTHER_SCENES = { runtimeSeconds: 0, scenes: [] };
 const DINER = "INT. DINER - NIGHT";
 const RAIN =
   "Rain streaks the windows of an empty roadside diner at midnight. MAYA, thirties, wipes the counter in slow circles.";
 const BELL = "A bell over the door rings. SAM steps in from the storm, shaking water from a battered canvas coat and hat.";
-const MAYA_SPEECH = "Kitchen closed an hour ago. Coffee is all I can do.";
-/** Captured plain text for p1 lines 1–8, and for p1 lines 1–5. */
-const P1_PLAIN = [DINER, RAIN, BELL, "MAYA", MAYA_SPEECH].join("\n\n");
+const P1_SHORT_MARKDOWN = [`## ${DINER}`, RAIN, BELL].join("\n\n");
 const P1_SHORT_PLAIN = [DINER, RAIN, BELL].join("\n\n");
 
 function renderDraft(index = FULL_INDEX, options = {}) {
-  return renderHook(({ index: current }) => useSceneDraft(current), { initialProps: { index }, ...options });
+  return renderHook(({ currentIndex }) => useSceneDraft(currentIndex), {
+    initialProps: { currentIndex: index },
+    ...options,
+  });
 }
 
-/** The draft view and actions from the latest commit. */
-function current(result) {
+function view(result) {
   const [draft, actions] = result.current;
   return { draft, actions };
 }
 
-/** The editor key for Captured text: its revision, anchor pair, and a fingerprint of the captured text. */
 function capturedEditorKey(revision, anchorPair) {
   return expect.stringMatching(new RegExp(`^${revision}:${anchorPair}#[0-9a-z]+\\.[0-9a-z]+$`));
 }
 
-function lineOf(page, lineIndex) {
-  return page.lines[lineIndex];
-}
-
-function place(result, kind, page, lineIndex) {
-  act(() => current(result).actions.setAnchorAtLine(kind, page.pageNumber, lineOf(page, lineIndex)));
-}
-
-function run(result, step) {
-  let value;
+function run(result, callback) {
+  let answer;
   act(() => {
-    value = step(current(result).actions);
+    answer = callback(view(result).actions);
   });
-  return value;
+  return answer;
 }
 
-function acceptAiText(result, markdown) {
+function place(result, kind, page, line) {
+  run(result, (actions) => actions.setAnchorAtLine(kind, page.pageNumber, page.lines[line]));
+}
+
+function setTiming(result, start = "00:01:00", end = "00:02:00") {
+  run(result, (actions) => actions.setTime("startTime", start));
+  run(result, (actions) => actions.setTime("endTime", end));
+}
+
+function save(result, options = NO_OTHER_SCENES) {
+  return run(result, (actions) => actions.buildSave(options));
+}
+
+function acceptProposal(result, markdown) {
   const request = run(result, (actions) => actions.startProposal());
   run(result, (actions) => actions.proposalReady(request.token, markdown));
   run(result, (actions) => actions.acceptProposal());
+  return request;
 }
 
-/** Renders the hook and throws after it when `discard` is set, so React discards that render. */
 function DraftProbe({ index, discard, onActions }) {
-  const [, draftActions] = useSceneDraft(index);
-  useLayoutEffect(() => onActions(draftActions));
+  const [, actions] = useSceneDraft(index);
+  useLayoutEffect(() => onActions(actions));
   if (discard) throw new Error("This render is discarded.");
   return null;
 }
@@ -108,71 +104,50 @@ beforeEach(() => {
   captureAnchoredRange.mockClear();
 });
 
-describe("committed-view contract", () => {
-  it("lets every action in one act read the draft committed before it", () => {
+describe("committed view and stable interface", () => {
+  it("lets actions in one batch read only the view committed before the batch", () => {
     const { result } = renderDraft();
     place(result, "start", page1, 0);
     place(result, "end", page1, 7);
 
     let request;
     act(() => {
-      const { actions } = current(result);
-      actions.setAnchorAtLine("end", 1, lineOf(page1, 4));
+      const { actions } = view(result);
+      actions.setAnchorAtLine("end", 1, page1.lines[4]);
       request = actions.startProposal();
     });
 
     expect(request.snapshotAnchors.end).toMatchObject({ page: 1, line: 7 });
-    expect(request.capturedText).toContain(MAYA_SPEECH);
-    expect(current(result).draft.anchors.end).toMatchObject({ page: 1, line: 4 });
-    expect(current(result).draft.proposal.status).toBe("loading");
+    expect(request.capturedText).toContain("Coffee is all I can do.");
+    expect(view(result).draft.anchors.end).toMatchObject({ page: 1, line: 4 });
   });
 
-  it("builds each payload from the committed anchors, so a second placement in the same act overrides the first", () => {
+  it("builds from committed timing and normalizes only after the field commits", () => {
     const { result } = renderDraft();
-
+    let pendingSave;
     act(() => {
-      const { actions } = current(result);
-      actions.setAnchorAtLine("start", 1, lineOf(page1, 0));
-      actions.setAnchorAtLine("end", 1, lineOf(page1, 7));
-    });
-
-    expect(current(result).draft.anchors.start).toBeNull();
-    expect(current(result).draft.anchors.end).toMatchObject({ page: 1, line: 7 });
-  });
-
-  it("reads committed times for normalizeTime and buildSave", () => {
-    const { result } = renderDraft();
-
-    let save;
-    act(() => {
-      const { actions } = current(result);
+      const { actions } = view(result);
       actions.setTime("startTime", "1:05");
       actions.normalizeTime("startTime");
-      save = actions.buildSave(0);
+      pendingSave = actions.buildSave(NO_OTHER_SCENES);
     });
-
-    expect(save).toEqual({ error: "Enter a start and an end time for this scene." });
-    expect(current(result).draft.startTime).toBe("1:05");
+    expect(pendingSave).toEqual({ error: "Enter a start and an end time for this scene." });
+    expect(view(result).draft.startTime).toBe("1:05");
     run(result, (actions) => actions.normalizeTime("startTime"));
-    expect(current(result).draft.startTime).toBe("00:01:05");
+    expect(view(result).draft.startTime).toBe("00:01:05");
   });
 
-  it("never lets actions see a render that React discarded", () => {
+  it("never exposes actions from an abandoned concurrent render", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     let actions;
-    const keepActions = (value) => {
-      actions = value;
-    };
     const tree = (index, discard) => (
       <DiscardBoundary>
-        <DraftProbe index={index} discard={discard} onActions={keepActions} />
+        <DraftProbe index={index} discard={discard} onActions={(next) => (actions = next)} />
       </DiscardBoundary>
     );
-    const { rerender } = render(tree(textIndexFrom([], { total: 3 }), false));
-    act(() => actions.loadScene(savedV2Scene));
-
-    // This render has a capture for the saved scene, but it throws and never commits.
-    rerender(tree(FULL_INDEX, true));
+    const rendered = render(tree(textIndexFrom([]), false));
+    act(() => actions.loadScene(savedScene));
+    rendered.rerender(tree(FULL_INDEX, true));
 
     let request;
     act(() => {
@@ -182,1272 +157,635 @@ describe("committed-view contract", () => {
     expect(request.capturedText).toBe("EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.");
     consoleError.mockRestore();
   });
-});
 
-describe("identities", () => {
-  it("keeps draftActions for the life of the hook", () => {
+  it("keeps action, anchor, preview and proposal identities when their inputs do not change", () => {
     const { result, rerender } = renderDraft();
-    const { actions } = current(result);
-
-    place(result, "start", page1, 0);
-    run(result, (a) => a.setTime("startTime", "00:00:05"));
-    rerender({ index: textIndexFrom(SCRIPT_PAGES, { total: 3, complete: true }) });
-    run(result, (a) => a.loadScene(savedV2Scene));
-    run(result, (a) => a.reset());
-
-    expect(current(result).actions).toBe(actions);
-  });
-
-  it("keeps anchors, previewScene and proposal identities while their inputs don't change", () => {
-    const { result, rerender } = renderDraft();
+    const actions = view(result).actions;
     place(result, "start", page1, 0);
     place(result, "end", page1, 7);
-    const { anchors } = current(result).draft;
-    const { start, end } = anchors;
-
-    run(result, (a) => a.setTime("startTime", "00:00:05"));
-    run(result, (a) => a.toggleTag("character-focus:protagonist"));
-    run(result, (a) => a.editText("## INT. DINER - LATER"));
-    const request = run(result, (a) => a.startProposal());
-    const { proposal, previewScene } = current(result).draft;
-    rerender({ index: FULL_INDEX });
-    expect(current(result).draft.proposal).toBe(proposal);
-    expect(current(result).draft.previewScene).toBe(previewScene);
-    // The request token and requested selection stay private.
-    expect(Object.keys(proposal).sort()).toEqual(["capturedPlainText", "error", "markdown", "status"]);
-
-    run(result, (a) => a.proposalReady(request.token, "## AI"));
-    run(result, (a) => a.discardProposal());
-    // Explicit anchors don't depend on the text index.
-    rerender({ index: textIndexFrom(SCRIPT_PAGES, { total: 3, complete: true }) });
-
-    expect(current(result).draft.anchors).toBe(anchors);
-    expect(current(result).draft.anchors.start).toBe(start);
-    expect(current(result).draft.anchors.end).toBe(end);
+    run(result, (next) => next.editText("## EDITED\n\nText."));
+    const request = run(result, (next) => next.startProposal());
+    const before = view(result).draft;
+    rerender({ currentIndex: FULL_INDEX });
+    expect(view(result).actions).toBe(actions);
+    expect(view(result).draft.anchors).toBe(before.anchors);
+    expect(view(result).draft.previewScene).toBe(before.previewScene);
+    expect(view(result).draft.proposal).toBe(before.proposal);
+    expect(Object.keys(before.proposal).sort()).toEqual(["capturedPlainText", "error", "markdown", "status"]);
+    run(result, (next) => next.proposalReady(request.token, "## AI"));
   });
 
-  it("keeps suggested anchors while their inputs don't change", () => {
-    const { result, rerender } = renderDraft();
-    run(result, (a) => a.loadScene(legacyScene));
-    const { anchors } = current(result).draft;
-    expect(current(result).draft.anchorsSuggested).toBe(true);
-
-    run(result, (a) => a.setTime("startTime", "00:02:01"));
-    run(result, (a) => a.toggleTag("character-focus:protagonist"));
-    rerender({ index: FULL_INDEX });
-
-    expect(current(result).draft.anchors).toBe(anchors);
-  });
-});
-
-describe("capture work", () => {
-  it("doesn't capture again for time, tag, text or proposal changes, or a re-render with the same index", () => {
+  it("does not recapture for unrelated draft edits but does for anchor and index changes", () => {
     const { result, rerender } = renderDraft();
     place(result, "start", page1, 0);
     place(result, "end", page1, 7);
     const calls = captureAnchoredRange.mock.calls.length;
-
-    run(result, (a) => a.setTime("startTime", "1:00"));
-    run(result, (a) => a.normalizeTime("startTime"));
-    run(result, (a) => a.toggleTag("character-focus:protagonist"));
-    run(result, (a) => a.editText("## INT. DINER - LATER"));
-    const request = run(result, (a) => a.startProposal());
-    run(result, (a) => a.proposalReady(request.token, "## AI"));
-    run(result, (a) => a.discardProposal());
-    rerender({ index: FULL_INDEX });
-
+    run(result, (actions) => actions.setTime("startTime", "1:00"));
+    run(result, (actions) => actions.toggleTag("tone:dread"));
+    run(result, (actions) => actions.editText("## EDITED\n\nText."));
+    const request = run(result, (actions) => actions.startProposal());
+    run(result, (actions) => actions.proposalFailed(request.token, "failed"));
     expect(captureAnchoredRange.mock.calls.length).toBe(calls);
-  });
-
-  it("captures again, correctly, after an anchor change or a new index", () => {
-    const { result, rerender } = renderDraft();
-    place(result, "start", page1, 0);
-    place(result, "end", page1, 7);
-    run(result, (a) => a.setTime("startTime", "00:01:00"));
-    run(result, (a) => a.setTime("endTime", "00:02:00"));
-
-    let calls = captureAnchoredRange.mock.calls.length;
     place(result, "end", page1, 4);
     expect(captureAnchoredRange.mock.calls.length).toBeGreaterThan(calls);
-    expect(current(result).draft.text).toBe([`## ${DINER}`, RAIN, BELL].join("\n\n"));
-    expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({
-      page_start: 1,
-      page_end: 1,
-      start_offset: 0,
-      end_offset: 242,
-      context_suffix: `MAYA\nKitchen closed an hour ago.\nCoffee is all I can do.`,
-      raw_selected_text: [DINER, RAIN, BELL].join("\n\n"),
-    });
-
-    calls = captureAnchoredRange.mock.calls.length;
-    rerender({ index: textIndexFrom([page1], { total: 3 }) });
-    expect(captureAnchoredRange.mock.calls.length).toBeGreaterThan(calls);
-    expect(current(result).draft.text).toBe([`## ${DINER}`, RAIN, BELL].join("\n\n"));
-    expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({ start_offset: null, end_offset: null });
+    const afterAnchor = captureAnchoredRange.mock.calls.length;
+    rerender({ currentIndex: textIndexFrom([page1]) });
+    expect(captureAnchoredRange.mock.calls.length).toBeGreaterThan(afterAnchor);
   });
 });
 
-describe("[C3] captured text that changes during indexing", () => {
-  // Anchors on p1 line 1 and p2 line 4. Publishing marginShiftPage moves the
-  // estimated action margin from x=108 to x=72, which reclassifies that range.
-  const PARTIAL = textIndexFrom([page1, page2], { total: 4 });
-  const UNRELATED = textIndexFrom([page1, page2, page3], { total: 4 });
-  const SHIFTED = textIndexFrom([page1, page2, page3, marginShiftPage], { total: 4 });
-  const SHIFTED_COMPLETE = textIndexFrom([page1, page2, page3, marginShiftPage], { total: 4, complete: true });
-  // Under the moved margin, action lines are no longer joined.
-  const SHIFTED_LINE = "\n\nRain streaks the windows of an empty roadside diner at\n\n";
-  const AI_TEXT = "## AI HEADING\n\nWords from the formatter.";
-  const SECOND_AI_TEXT = "## SECOND AI HEADING\n\nMore words from the formatter.";
-
-  function anchorP1ToP2(result) {
+describe("capture and canonical save contract", () => {
+  it("captures a complete anchor pair and emits only canonical fields", () => {
+    const { result } = renderDraft();
     place(result, "start", page1, 0);
-    place(result, "end", page2, 3);
-    run(result, (a) => a.setTime("startTime", "00:01:00"));
-    run(result, (a) => a.setTime("endTime", "00:02:00"));
-  }
+    place(result, "end", page1, 4);
+    setTiming(result);
+    run(result, (actions) => actions.toggleTag("tone:dread"));
 
-  function save(result) {
-    return run(result, (a) => a.buildSave(0));
-  }
-
-  it("replaces the editor's source for untouched captured text only when indexing changes that text", () => {
-    const { result, rerender } = renderDraft(PARTIAL);
-    anchorP1ToP2(result);
-    const before = current(result).draft;
-    expect(before.text).not.toContain(SHIFTED_LINE);
-
-    rerender({ index: UNRELATED });
-    expect(current(result).draft.editorKey).toBe(before.editorKey);
-    expect(current(result).draft.text).toBe(before.text);
-
-    rerender({ index: SHIFTED });
-    const shifted = current(result).draft;
-    expect(shifted).toMatchObject({ textOrigin: "capture", textStale: false, editorKey: capturedEditorKey(0, "1:0-2:3") });
-    expect(shifted.text).toContain(SHIFTED_LINE);
-    expect(shifted.editorKey).not.toBe(before.editorKey);
-    expect(shifted.previewScene.formatted_selected_text).toBe(shifted.text);
-    expect(save(result).payload).toMatchObject({
-      selected_text: shifted.text,
-      formatted_selected_text: shifted.text,
-      raw_selected_text: shifted.capturedPlainText,
-      start_offset: null,
-      end_offset: null,
+    const { payload, confirmStaleText } = save(result);
+    expect(payload).toEqual({
+      start_time_seconds: 60,
+      end_time_seconds: 120,
+      script_location: scriptLocation(page1, 0, page1, 4),
+      scene_text: P1_SHORT_MARKDOWN,
+      raw_text: P1_SHORT_PLAIN,
+      tags: ["tone:dread"],
     });
-
-    // Completing the index adds offsets without changing the text or its editor.
-    rerender({ index: SHIFTED_COMPLETE });
-    expect(current(result).draft.editorKey).toBe(shifted.editorKey);
-    expect(current(result).draft.text).toBe(shifted.text);
-    const { payload } = save(result);
-    expect(payload.selected_text).toBe(shifted.text);
-    expect(Number.isInteger(payload.start_offset) && Number.isInteger(payload.end_offset)).toBe(true);
-
-    // Moving an anchor replaces the source as before, under the moved margin.
-    place(result, "end", page2, 4);
-    expect(current(result).draft.editorKey).toEqual(capturedEditorKey(0, "1:0-2:4"));
-    expect(current(result).draft.text).toContain(SHIFTED_LINE);
-    expect(current(result).draft.text).toContain("Maya pours two cups and slides one across the counter.");
+    expect(confirmStaleText).toBe(false);
+    expect(Object.keys(payload).sort()).toEqual([
+      "end_time_seconds",
+      "raw_text",
+      "scene_text",
+      "script_location",
+      "start_time_seconds",
+      "tags",
+    ]);
   });
 
-  it("keeps the editor source on the first edit after re-capture and removing an anchor", () => {
-    const { result } = renderDraft(PARTIAL);
-    anchorP1ToP2(result);
-    run(result, (a) => a.recapture());
-    run(result, (a) => a.removeAnchor("end"));
-    const before = current(result).draft;
-    expect(before).toMatchObject({ textOrigin: "capture", text: "" });
+  it("refuses incomplete anchors and waits for an unfinished range", () => {
+    const { result } = renderDraft(textIndexFrom([page1, page3]));
+    setTiming(result);
+    expect(save(result)).toEqual({ error: "Place a start anchor in the script before saving." });
 
-    const edited = "## INT. DINER - NIGHT\n\nA new line typed without a capture.";
-    run(result, (a) => a.editText(edited));
+    place(result, "start", page1, 0);
+    expect(save(result)).toEqual({ error: "Place an end anchor in the script before saving." });
 
-    expect(current(result).draft).toMatchObject({
-      text: edited,
-      textOrigin: "edited",
-      editorKey: before.editorKey,
-      previewScene: { formatted_selected_text: edited },
+    place(result, "end", page3, 0);
+    expect(save(result)).toEqual({
+      error: "Wait for the pages between the anchors to finish indexing, then save again.",
     });
-    expect(save(result)).toMatchObject({ error: "Place an end anchor in the script before saving." });
+
+    const third = renderDraft(textIndexFrom([], { complete: true }));
+    setTiming(third.result);
+    // No indexed line can be placed, so the draft remains incomplete.
+    expect(save(third.result)).toEqual({ error: "Place a start anchor in the script before saving." });
+  });
+
+  it("reports unreadable after indexing finishes without a required range page", () => {
+    const { result } = renderDraft(textIndexFrom([page1], { complete: true }));
+    run(result, (actions) =>
+      actions.loadScene(
+        sceneRow({
+          id: "missing-page",
+          script_location: scriptLocation(page1, 0, page2, 3),
+          scene_text: "## SAVED\n\nText.",
+          raw_text: "SAVED\n\nText.",
+        })
+      )
+    );
+    expect(save(result)).toEqual({
+      error: "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.",
+    });
+  });
+
+  it("reports unreadable when an indexed anchor page has no resolvable lines", () => {
+    const emptyPage = positionedPage(5, []);
+    const emptyAnchor = { page: 5, line: 0, top: 90, bottom: 102, text: "missing" };
+    const { result } = renderDraft(textIndexFrom([emptyPage], { complete: true }));
+    run(result, (actions) =>
+      actions.loadScene(
+        sceneRow({
+          id: "empty-page",
+          script_location: { start: emptyAnchor, end: emptyAnchor },
+          scene_text: "## SAVED\n\nText.",
+          raw_text: "SAVED\n\nText.",
+        })
+      )
+    );
+    expect(save(result)).toEqual({
+      error: "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.",
+    });
   });
 
   it.each([
-    {
-      when: "after the first edit commits",
-      editThenShift: (result, rerender, markdown) => {
-        run(result, (a) => a.editText(markdown));
-        rerender({ index: SHIFTED });
-      },
-    },
-    {
-      when: "in the same batch as the first edit",
-      editThenShift: (result, rerender, markdown) => {
-        act(() => {
-          current(result).actions.editText(markdown);
-          rerender({ index: SHIFTED });
-        });
-      },
-    },
-  ])("keeps edits and the editor's source when indexing changes the captured text $when", ({ editThenShift }) => {
-    const { result, rerender } = renderDraft(PARTIAL);
-    anchorP1ToP2(result);
-    const { editorKey, text } = current(result).draft;
-    const edited = text.replace(`## ${DINER}`, "## INT. DINER - LATE NIGHT");
-    expect(edited).not.toBe(text);
+    ["page above the contract cap", { end: { page: 100001 } }],
+    ["line above the contract cap", { end: { line: 100001 } }],
+    ["non-string anchor text", { end: { text: null } }],
+    ["non-finite geometry", { end: { top: Number.NaN } }],
+    ["reversed anchors", { start: { page: 3, line: 4 }, end: { page: 3, line: 0 } }],
+  ])("refuses capture for a location with %s", (_, changes) => {
+    const valid = scriptLocation(page3, 0, page3, 4);
+    const invalid = {
+      start: { ...valid.start, ...changes.start },
+      end: { ...valid.end, ...changes.end },
+    };
+    expect(captureAnchoredRange(FULL_INDEX, invalid)).toBeNull();
+    expect(captureUnavailableReason(FULL_INDEX, invalid)).toBe("unreadable");
+  });
 
-    editThenShift(result, rerender, edited);
+  it("rejects a complete range when layout filtering leaves no usable raw text", () => {
+    const artifactPage = positionedPage(7, [{ x: 108, y: 20, text: "7" }]);
+    const { result } = renderDraft(textIndexFrom([artifactPage], { complete: true }));
+    run(result, (actions) =>
+      actions.loadScene(
+        sceneRow({
+          id: "artifact-only",
+          script_location: scriptLocation(artifactPage, 0, artifactPage, 0),
+          scene_text: "## SAVED SCENE",
+          raw_text: "Previous raw text.",
+        })
+      )
+    );
 
-    const draft = current(result).draft;
-    expect(draft).toMatchObject({ text: edited, textOrigin: "edited", textStale: false, editorKey, recaptureOption: "revert" });
-    // The draft's word check follows the reclassified capture.
-    expect(draft.capturedPlainText).toContain(SHIFTED_LINE);
-    expect(save(result)).toMatchObject({
-      payload: { selected_text: edited, formatted_selected_text: edited, raw_selected_text: draft.capturedPlainText },
-      confirmStaleText: false,
+    expect(view(result).draft.text).toBe("## SAVED SCENE");
+    expect(save(result)).toEqual({
+      error: "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.",
+    });
+  });
+
+  it("waits only for pages in the anchored range and then saves before the full script is indexed", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([page1, page3]));
+    place(result, "start", page1, 0);
+    place(result, "end", page3, 3);
+    setTiming(result);
+    expect(save(result)).toEqual({
+      error: "Wait for the pages between the anchors to finish indexing, then save again.",
     });
 
-    run(result, (a) => a.recapture());
-    expect(current(result).draft).toMatchObject({
+    rerender({ currentIndex: textIndexFrom([page1, page2, page3]) });
+    expect(save(result).payload.script_location).toEqual(scriptLocation(page1, 0, page3, 3));
+  });
+
+  it("keeps an edited scene text while raw text follows the current capture", () => {
+    const { result } = renderDraft();
+    place(result, "start", page1, 0);
+    place(result, "end", page1, 4);
+    setTiming(result);
+    run(result, (actions) => actions.editText("## EDITED\n\nHand-written text."));
+
+    expect(save(result)).toMatchObject({
+      confirmStaleText: false,
+      payload: { scene_text: "## EDITED\n\nHand-written text.", raw_text: P1_SHORT_PLAIN },
+    });
+  });
+});
+
+describe("anchors, indexing and editor identity", () => {
+  it("clearing all anchors makes a saved draft unsaveable until undo restores them", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    expect(view(result).draft.dirty).toBe(false);
+
+    run(result, (actions) => actions.clearAnchors());
+    expect(view(result).draft).toMatchObject({ anchors: { start: null, end: null }, dirty: true });
+    expect(save(result)).toEqual({ error: "Place a start anchor in the script before saving." });
+
+    run(result, (actions) => actions.undoAnchors());
+    expect(view(result).draft.anchors).toEqual(savedScene.script_location);
+    expect(save(result).payload.script_location).toEqual(savedScene.script_location);
+  });
+
+  it("swaps anchors to keep the location ordered and records undo history", () => {
+    const { result } = renderDraft();
+    place(result, "start", page2, 3);
+    place(result, "end", page1, 0);
+    expect(view(result).draft.anchors).toEqual(scriptLocation(page1, 0, page2, 3));
+    expect(view(result).draft.canUndoAnchors).toBe(true);
+    run(result, (actions) => actions.undoAnchors());
+    expect(view(result).draft.anchors).toMatchObject({ start: expect.objectContaining({ page: 2, line: 3 }), end: null });
+  });
+
+  it("keeps the editor identity when an index update leaves captured text unchanged", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([page1, page2]));
+    place(result, "start", page1, 0);
+    place(result, "end", page2, 3);
+    const before = view(result).draft;
+
+    rerender({ currentIndex: textIndexFrom([page1, page2, page3], { complete: true }) });
+    expect(view(result).draft.editorKey).toBe(before.editorKey);
+    expect(view(result).draft.text).toBe(before.text);
+  });
+
+  it("replaces captured text and editor identity when indexing changes layout classification", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([page1, page2]));
+    place(result, "start", page1, 0);
+    place(result, "end", page2, 3);
+    const before = view(result).draft;
+
+    rerender({ currentIndex: textIndexFrom([page1, page2, page3, marginShiftPage]) });
+    expect(view(result).draft.editorKey).not.toBe(before.editorKey);
+    expect(view(result).draft.text).not.toBe(before.text);
+  });
+
+  it("preserves edited text across later index updates", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([page1, page2]));
+    place(result, "start", page1, 0);
+    place(result, "end", page2, 3);
+    run(result, (actions) => actions.editText("## EDITED\n\nKeep this."));
+    const key = view(result).draft.editorKey;
+
+    rerender({ currentIndex: textIndexFrom([page1, page2, page3, marginShiftPage], { complete: true }) });
+    expect(view(result).draft).toMatchObject({ text: "## EDITED\n\nKeep this.", editorKey: key, textOrigin: "edited" });
+  });
+});
+
+describe("index publication and proposal races", () => {
+  const PARTIAL = textIndexFrom([page1, page2]);
+  const SHIFTED = textIndexFrom([page1, page2, page3, marginShiftPage]);
+  const AI_TEXT = "## AI HEADING\n\nWords from the formatter.";
+
+  function anchorAcrossPages(result) {
+    place(result, "start", page1, 0);
+    place(result, "end", page2, 3);
+    setTiming(result);
+  }
+
+  it.each([
+    ["after the first edit commits", false],
+    ["in the same React batch as the first edit", true],
+  ])("keeps edited text when capture reclassification publishes %s", (_, sameBatch) => {
+    const { result, rerender } = renderDraft(PARTIAL);
+    anchorAcrossPages(result);
+    const before = view(result).draft;
+    const edited = before.text.replace(`## ${DINER}`, "## INT. DINER - LATE NIGHT");
+
+    if (sameBatch) {
+      act(() => {
+        view(result).actions.editText(edited);
+        rerender({ currentIndex: SHIFTED });
+      });
+    } else {
+      run(result, (actions) => actions.editText(edited));
+      rerender({ currentIndex: SHIFTED });
+    }
+
+    expect(view(result).draft).toMatchObject({
+      text: edited,
+      textOrigin: "edited",
+      textStale: false,
+      editorKey: before.editorKey,
+      recaptureOption: "revert",
+    });
+    expect(save(result)).toMatchObject({
+      confirmStaleText: false,
+      payload: { scene_text: edited, raw_text: view(result).draft.capturedPlainText },
+    });
+    run(result, (actions) => actions.recapture());
+    expect(view(result).draft).toMatchObject({
       textOrigin: "capture",
       recaptureOption: "none",
       editorKey: capturedEditorKey(1, "1:0-2:3"),
     });
-    expect(current(result).draft.text).toContain(SHIFTED_LINE);
   });
 
-  it("keeps accepted AI text, and a pending proposal's word-check baseline, when indexing changes the captured text", () => {
+  it("keeps accepted AI text and a pending request's capture baseline during reclassification", () => {
     const { result, rerender } = renderDraft(PARTIAL);
-    anchorP1ToP2(result);
-    const requestedPlainText = current(result).draft.capturedPlainText;
-    acceptAiText(result, AI_TEXT);
-    const { editorKey } = current(result).draft;
-    expect(editorKey).toBe("1:1:0-2:3");
-    const request = run(result, (a) => a.startProposal());
-    expect(request.capturedText).toBe(requestedPlainText);
+    anchorAcrossPages(result);
+    const requestedPlainText = view(result).draft.capturedPlainText;
+    acceptProposal(result, AI_TEXT);
+    const editorKey = view(result).draft.editorKey;
+    const request = run(result, (actions) => actions.startProposal());
 
-    rerender({ index: SHIFTED });
+    rerender({ currentIndex: SHIFTED });
+    expect(view(result).draft).toMatchObject({ text: AI_TEXT, textOrigin: "ai", textStale: false, editorKey });
+    expect(view(result).draft.capturedPlainText).not.toBe(requestedPlainText);
+    expect(view(result).draft.proposal.capturedPlainText).toBe(requestedPlainText);
 
-    expect(current(result).draft).toMatchObject({ text: AI_TEXT, textOrigin: "ai", textStale: false, editorKey });
-    expect(current(result).draft.capturedPlainText).toContain(SHIFTED_LINE);
-    expect(current(result).draft.proposal.capturedPlainText).toBe(requestedPlainText);
-
-    run(result, (a) => a.proposalReady(request.token, SECOND_AI_TEXT));
-    expect(current(result).draft.proposal.capturedPlainText).toBe(requestedPlainText);
-    run(result, (a) => a.acceptProposal());
-
-    const draft = current(result).draft;
-    expect(draft).toMatchObject({ text: SECOND_AI_TEXT, textOrigin: "ai", textStale: false, editorKey: "2:1:0-2:3" });
+    run(result, (actions) => actions.proposalReady(request.token, "## SECOND AI\n\nMore words."));
+    run(result, (actions) => actions.acceptProposal());
     expect(save(result)).toMatchObject({
-      payload: { selected_text: SECOND_AI_TEXT, raw_selected_text: draft.capturedPlainText },
       confirmStaleText: false,
+      payload: { scene_text: "## SECOND AI\n\nMore words.", raw_text: view(result).draft.capturedPlainText },
     });
   });
-});
 
-describe("AI proposal tokens", () => {
-  it("uses one token per started request under StrictMode and ignores older tokens", () => {
+  it("allocates proposal tokens once under StrictMode and ignores superseded, discarded and previous-draft results", () => {
     const { result } = renderDraft(FULL_INDEX, { wrapper: ({ children }) => <StrictMode>{children}</StrictMode> });
-
-    expect(run(result, (a) => a.startProposal())).toBeNull();
-    expect(current(result).draft.proposal).toBeNull();
-
+    expect(run(result, (actions) => actions.startProposal())).toBeNull();
     place(result, "start", page1, 0);
     place(result, "end", page1, 7);
-    const first = run(result, (a) => a.startProposal());
-    const second = run(result, (a) => a.startProposal());
+    const first = run(result, (actions) => actions.startProposal());
+    const second = run(result, (actions) => actions.startProposal());
     expect([first.token, second.token]).toEqual([1, 2]);
-
-    run(result, (a) => a.proposalReady(first.token, "## OLD"));
-    expect(current(result).draft.proposal).toEqual({ status: "loading", markdown: "", error: "", capturedPlainText: P1_PLAIN });
-
-    run(result, (a) => a.proposalReady(second.token, "## NEW"));
-    expect(current(result).draft.proposal).toEqual({
-      status: "ready",
-      markdown: "## NEW",
-      error: "",
-      capturedPlainText: P1_PLAIN,
-    });
-
-    run(result, (a) => a.proposalFailed(first.token, "stale failure"));
-    expect(current(result).draft.proposal.status).toBe("ready");
-
-    run(result, (a) => a.discardProposal());
-    run(result, (a) => a.proposalReady(second.token, "## AFTER DISCARD"));
-    expect(current(result).draft.proposal).toBeNull();
-
-    const third = run(result, (a) => a.startProposal());
-    expect(third.token).toBe(3);
-    run(result, (a) => a.loadScene(savedV2Scene));
-    run(result, (a) => a.proposalFailed(third.token, "after load"));
-    expect(current(result).draft.proposal).toBeNull();
+    run(result, (actions) => actions.proposalReady(first.token, "## OLD"));
+    expect(view(result).draft.proposal.status).toBe("loading");
+    run(result, (actions) => actions.proposalReady(second.token, "## NEW"));
+    expect(view(result).draft.proposal).toMatchObject({ status: "ready", markdown: "## NEW" });
+    run(result, (actions) => actions.discardProposal());
+    run(result, (actions) => actions.proposalReady(second.token, "## AFTER DISCARD"));
+    expect(view(result).draft.proposal).toBeNull();
+    const third = run(result, (actions) => actions.startProposal());
+    run(result, (actions) => actions.loadScene(savedScene));
+    run(result, (actions) => actions.proposalFailed(third.token, "too late"));
+    expect(view(result).draft.proposal).toBeNull();
   });
 
-  it("returns request data from the committed view, falling back to the saved scene's pages", () => {
-    const { result } = renderDraft(textIndexFrom([], { total: 3 }));
-    run(result, (a) => a.loadScene(savedV2Scene));
-
-    const request = run(result, (a) => a.startProposal());
-
-    expect(request).toEqual({
-      token: 1,
-      capturedText: "EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.",
-      draftMarkdown: savedV2Scene.formatted_selected_text,
+  it("keeps canonical saved-scene proposal provenance when indexing appears after the request", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([]));
+    run(result, (actions) => actions.loadScene(savedScene));
+    const request = run(result, (actions) => actions.startProposal());
+    expect(request).toMatchObject({
+      capturedText: SAVED_RAW,
+      draftMarkdown: SAVED_TEXT,
       pageStart: 3,
       pageEnd: 3,
       snapshotAnchors: null,
     });
+    run(result, (actions) => actions.proposalReady(request.token, AI_TEXT));
+    rerender({ currentIndex: FULL_INDEX });
+    expect(view(result).draft.proposal.capturedPlainText).toBe("");
+    run(result, (actions) => actions.acceptProposal());
+    expect(view(result).draft).toMatchObject({ textOrigin: "ai", textStale: false, recaptureOption: "revert" });
   });
 });
 
-describe("[H2] AI proposal provenance", () => {
-  const AI_TEXT = "## AI HEADING\n\nWords from the formatter.";
-  const PLACE_ANCHORS = "Place start and end anchors in the script to capture the scene text.";
-
-  function anchorP1(result, endLine = 7) {
-    place(result, "start", page1, 0);
-    place(result, "end", page1, endLine);
-  }
-
-  function ready(result, request, markdown = AI_TEXT) {
-    run(result, (a) => a.proposalReady(request.token, markdown));
-  }
-
-  it("accepts a proposal as fresh text when the selection is unchanged", () => {
-    const { result } = renderDraft();
-    anchorP1(result);
-    ready(result, run(result, (a) => a.startProposal()));
-    expect(current(result).draft.proposal).toEqual({
-      status: "ready",
-      markdown: AI_TEXT,
-      error: "",
-      capturedPlainText: P1_PLAIN,
-    });
-
-    run(result, (a) => a.acceptProposal());
-
-    expect(current(result).draft).toMatchObject({
-      text: AI_TEXT,
-      textOrigin: "ai",
-      textStale: false,
-      capturedPlainText: P1_PLAIN,
-      recaptureOption: "revert",
-      editorKey: "1:1:0-1:7",
-      proposal: null,
-    });
-  });
-
+describe("stale text", () => {
   it.each([
-    {
-      when: "while the request is pending",
-      moveAndReady: (result, request) => {
-        place(result, "end", page1, 4);
-        ready(result, request);
-      },
-    },
-    {
-      when: "after the proposal is ready",
-      moveAndReady: (result, request) => {
-        ready(result, request);
-        place(result, "end", page1, 4);
-      },
-    },
-  ])("keeps the requested selection and word check when the anchors move $when", ({ moveAndReady }) => {
+    ["saved", () => {}],
+    ["edited", (result) => run(result, (actions) => actions.editText("## EDITED\n\nText."))],
+    ["AI", (result) => acceptProposal(result, "## AI\n\nText.")],
+  ])("requires confirmation when %s text belongs to the previous anchors", (_, changeText) => {
     const { result } = renderDraft();
-    anchorP1(result);
-    moveAndReady(result, run(result, (a) => a.startProposal()));
+    run(result, (actions) => actions.loadScene(savedScene));
+    changeText(result);
+    place(result, "end", page3, 4);
 
-    // The draft's word check follows the moved capture; the proposal's stays with the text that was sent.
-    expect(current(result).draft.capturedPlainText).toBe(P1_SHORT_PLAIN);
-    expect(current(result).draft.proposal.capturedPlainText).toBe(P1_PLAIN);
-
-    run(result, (a) => a.acceptProposal());
-
-    expect(current(result).draft).toMatchObject({
-      text: AI_TEXT,
-      textOrigin: "ai",
-      textStale: true,
-      capturedPlainText: "",
-      recaptureOption: "recapture",
-      recaptureReplacesEdits: true,
-      editorKey: "1:1:0-1:7",
-    });
-
-    place(result, "end", page1, 7);
-    expect(current(result).draft).toMatchObject({ textStale: false, capturedPlainText: P1_PLAIN, recaptureOption: "revert" });
-  });
-
-  it("keeps the requested selection when the anchors are cleared, without changing what saving needs", () => {
-    const { result } = renderDraft();
-    anchorP1(result);
-    run(result, (a) => a.setTime("startTime", "00:01:00"));
-    run(result, (a) => a.setTime("endTime", "00:02:00"));
-    ready(result, run(result, (a) => a.startProposal()));
-    run(result, (a) => a.clearAnchors());
-
-    run(result, (a) => a.acceptProposal());
-
-    // Without a capture the text can't be stale, and a new draft still has no script location.
-    expect(current(result).draft).toMatchObject({
-      text: AI_TEXT,
-      textOrigin: "ai",
-      textStale: false,
-      recaptureOption: "none",
-      editorKey: "1:1:0-1:7",
-    });
-    expect(run(result, (a) => a.buildSave(0))).toEqual({ error: PLACE_ANCHORS });
-
-    anchorP1(result, 4);
-    expect(current(result).draft.textStale).toBe(true);
-    place(result, "end", page1, 7);
-    expect(current(result).draft).toMatchObject({ textStale: false, capturedPlainText: P1_PLAIN });
-    expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({
-      formatted_selected_text: AI_TEXT,
-      raw_selected_text: P1_PLAIN,
-      page_start: 1,
-      page_end: 1,
+    expect(view(result).draft.textStale).toBe(true);
+    expect(save(result)).toMatchObject({
+      confirmStaleText: true,
+      payload: { script_location: scriptLocation(page3, 0, page3, 4) },
     });
   });
 
+  it("stops requiring confirmation when anchors return to the text's pair", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    place(result, "end", page3, 4);
+    expect(save(result).confirmStaleText).toBe(true);
+    run(result, (actions) => actions.undoAnchors());
+    expect(save(result).confirmStaleText).toBe(false);
+  });
+
+  it("re-capture replaces stale text with the current anchored capture", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    place(result, "end", page3, 4);
+    run(result, (actions) => actions.recapture());
+    expect(view(result).draft).toMatchObject({ textOrigin: "capture", textStale: false, recaptureOption: "none" });
+    expect(save(result).confirmStaleText).toBe(false);
+  });
+});
+
+describe("re-capture, editor identity and anchor history", () => {
   it.each([
-    { kind: "legacy", scene: legacyScene, textStale: true, recaptureOption: "recapture" },
-    { kind: "anchored", scene: savedV2Scene, textStale: false, recaptureOption: "revert" },
-  ])(
-    "keys a proposal requested before any capture to the $kind saved text's selection",
-    ({ scene, textStale, recaptureOption }) => {
-      const { result, rerender } = renderDraft(textIndexFrom([], { total: 3 }));
-      run(result, (a) => a.loadScene(scene));
-      ready(result, run(result, (a) => a.startProposal()));
-      rerender({ index: FULL_INDEX });
-      // A capture that appears later doesn't become the proposal's word check.
-      expect(current(result).draft.proposal.capturedPlainText).toBe("");
-
-      run(result, (a) => a.acceptProposal());
-
-      expect(current(result).draft).toMatchObject({
-        text: AI_TEXT,
-        textOrigin: "ai",
-        textStale,
-        legacyText: false,
-        recaptureOption,
-      });
-      expect(run(result, (a) => a.buildSave(0)).payload).toMatchObject({
-        formatted_selected_text: AI_TEXT,
-        page_start: scene.page_start,
-      });
+    ["fresh edited", "edited", false, "revert", true],
+    ["stale edited", "edited", true, "recapture", true],
+    ["fresh AI", "ai", false, "revert", true],
+    ["stale AI", "ai", true, "recapture", true],
+    ["stale saved", "saved", true, "recapture", false],
+  ])("derives the re-capture contract for %s text", (_, origin, stale, option, replaces) => {
+    const { result } = renderDraft();
+    if (origin === "saved") {
+      run(result, (actions) => actions.loadScene(savedScene));
+    } else {
+      place(result, "start", page1, 0);
+      place(result, "end", page1, 7);
+      if (origin === "edited") run(result, (actions) => actions.editText("## EDITED\n\nText."));
+      else acceptProposal(result, "## AI\n\nText.");
     }
-  );
+    if (stale) {
+      if (origin === "saved") place(result, "end", page3, 4);
+      else place(result, "end", page1, 4);
+    }
 
-  it("takes the selection from the latest request, not a superseded one", () => {
-    const { result } = renderDraft();
-    anchorP1(result);
-    const first = run(result, (a) => a.startProposal());
-    place(result, "end", page1, 4);
-    const second = run(result, (a) => a.startProposal());
-    ready(result, first, "## OLD");
-    ready(result, second);
-    expect(current(result).draft.proposal).toEqual({
-      status: "ready",
-      markdown: AI_TEXT,
-      error: "",
-      capturedPlainText: P1_SHORT_PLAIN,
+    const before = view(result).draft;
+    expect(before).toMatchObject({
+      textOrigin: origin,
+      textStale: stale,
+      recaptureOption: option,
+      recaptureReplacesEdits: replaces,
     });
-
-    // Back on the superseded request's selection, the latest proposal's text is stale.
-    place(result, "end", page1, 7);
-    run(result, (a) => a.acceptProposal());
-
-    expect(current(result).draft).toMatchObject({ text: AI_TEXT, textStale: true, editorKey: "1:1:0-1:4" });
+    run(result, (actions) => actions.recapture());
+    expect(view(result).draft).toMatchObject({ textOrigin: "capture", textStale: false, recaptureOption: "none" });
+    expect(view(result).draft.editorKey).not.toBe(before.editorKey);
   });
 
-  it("leaves nothing of a discarded request to accept", () => {
+  it("keeps an editor key through edits and anchor movement, then replaces it for re-capture, AI, load and reset", () => {
     const { result } = renderDraft();
-    anchorP1(result);
-    run(result, (a) => a.editText("## EDITED\n\nTyped by hand."));
-    const discarded = run(result, (a) => a.startProposal());
-    run(result, (a) => a.discardProposal());
-    place(result, "end", page1, 4);
-    ready(result, discarded);
-    run(result, (a) => a.acceptProposal());
-
-    expect(current(result).draft).toMatchObject({
-      textOrigin: "edited",
-      textStale: true,
-      editorKey: capturedEditorKey(0, "1:0-1:7"),
-      proposal: null,
-    });
-
-    // A new request formats the current capture, so its accepted text is fresh.
-    ready(result, run(result, (a) => a.startProposal()));
-    expect(current(result).draft.proposal.capturedPlainText).toBe(P1_SHORT_PLAIN);
-    run(result, (a) => a.acceptProposal());
-    expect(current(result).draft).toMatchObject({ text: AI_TEXT, textOrigin: "ai", textStale: false, editorKey: "1:1:0-1:4" });
-  });
-});
-
-describe("re-capture options", () => {
-  const withAnchors = (result) => {
     place(result, "start", page1, 0);
     place(result, "end", page1, 7);
-  };
-  const moveEnd = (result) => place(result, "end", page1, 4);
-  const edit = (result) => run(result, (a) => a.editText("## EDITED HEADING\n\nWords typed by hand."));
-  const acceptAi = (result) => acceptAiText(result, "## AI HEADING\n\nWords from the formatter.");
-  const loadSaved = (result) => run(result, (a) => a.loadScene(savedV2Scene));
-  const EMPTY_INDEX = textIndexFrom([], { total: 3 });
-
-  const cases = [
-    { capture: "none", origin: "capture", index: EMPTY_INDEX, setup: () => {}, option: "none", replaces: false },
-    { capture: "none", origin: "saved", index: EMPTY_INDEX, setup: loadSaved, option: "none", replaces: false },
-    { capture: "none", origin: "edited", index: EMPTY_INDEX, setup: edit, option: "none", replaces: false },
-    { capture: "none", origin: "ai", index: EMPTY_INDEX, setup: (r) => (edit(r), acceptAi(r)), option: "none", replaces: false },
-    { capture: "fresh", origin: "capture", setup: withAnchors, option: "none", replaces: false },
-    { capture: "fresh", origin: "saved", setup: loadSaved, option: "revert", replaces: false },
-    {
-      capture: "fresh",
-      origin: "edited",
-      setup: (r) => (withAnchors(r), edit(r)),
-      option: "revert",
-      replaces: true,
-    },
-    { capture: "fresh", origin: "ai", setup: (r) => (withAnchors(r), acceptAi(r)), option: "revert", replaces: true },
-    // Captured text is never stale: its origin always follows the live capture.
-    { capture: "stale", origin: "saved", setup: (r) => (loadSaved(r), place(r, "end", page3, 4)), option: "recapture", replaces: false },
-    {
-      capture: "stale",
-      origin: "edited",
-      setup: (r) => (withAnchors(r), edit(r), moveEnd(r)),
-      option: "recapture",
-      replaces: true,
-    },
-    {
-      capture: "stale",
-      origin: "ai",
-      setup: (r) => (withAnchors(r), acceptAi(r), moveEnd(r)),
-      option: "recapture",
-      replaces: true,
-    },
-  ];
-
-  it.each(cases)(
-    "capture $capture, origin $origin → $option, replaces edits: $replaces",
-    ({ capture, origin, index = FULL_INDEX, setup, option, replaces }) => {
-      const { result } = renderDraft(index);
-      setup(result);
-      const { draft } = current(result);
-
-      expect(draft.textOrigin).toBe(origin);
-      expect(draft.textStale).toBe(capture === "stale");
-      expect(draft.recaptureOption).toBe(option);
-      expect(draft.recaptureReplacesEdits).toBe(replaces);
-      expect(Boolean(draft.capturedPlainText)).toBe(capture === "fresh");
-
-      run(result, (a) => a.recapture());
-      const after = current(result).draft;
-      if (capture === "none") {
-        expect(after.editorKey).toBe(draft.editorKey);
-        expect(after.text).toBe(draft.text);
-        expect(after.textOrigin).toBe(origin);
-      } else {
-        expect(after.textOrigin).toBe("capture");
-        expect(after.editorKey).not.toBe(draft.editorKey);
-        expect(after.recaptureOption).toBe("none");
-      }
-    }
-  );
-});
-
-describe("editorKey", () => {
-  it("follows the captured text while Captured, keeps the key on edits, and bumps the revision on replacement", () => {
-    const { result } = renderDraft();
-    const key = () => current(result).draft.editorKey;
-
-    expect(key()).toBe("0:");
-    place(result, "start", page1, 0);
-    expect(key()).toBe("0:");
-    place(result, "end", page1, 7);
-    expect(key()).toEqual(capturedEditorKey(0, "1:0-1:7"));
-    const captured = key();
-
-    run(result, (a) => a.setTime("startTime", "00:00:05"));
-    run(result, (a) => a.toggleTag("character-focus:protagonist"));
-    const request = run(result, (a) => a.startProposal());
-    run(result, (a) => a.proposalFailed(request.token, "failed"));
-    run(result, (a) => a.discardProposal());
-    expect(key()).toBe(captured);
-
-    run(result, (a) => a.editText("## INT. DINER - LATER"));
-    expect(key()).toBe(captured);
+    const captured = view(result).draft.editorKey;
+    expect(captured).toEqual(capturedEditorKey(0, "1:0-1:7"));
+    run(result, (actions) => actions.editText("## EDITED\n\nText."));
     place(result, "end", page1, 4);
-    expect(key()).toBe(captured);
-
-    run(result, (a) => a.recapture());
-    expect(key()).toEqual(capturedEditorKey(1, "1:0-1:4"));
-    const recaptured = key();
-
-    const discarded = run(result, (a) => a.startProposal());
-    run(result, (a) => a.proposalReady(discarded.token, "## AI"));
-    run(result, (a) => a.discardProposal());
-    expect(key()).toBe(recaptured);
-
-    acceptAiText(result, "## AI HEADING\n\nWords from the formatter.");
-    expect(key()).toBe("2:1:0-1:4");
-
-    run(result, (a) => a.loadScene(savedV2Scene));
-    expect(key()).toBe("3:3:0-3:3");
-
-    run(result, (a) => a.reset());
-    expect(key()).toBe("4:");
+    expect(view(result).draft.editorKey).toBe(captured);
+    run(result, (actions) => actions.recapture());
+    expect(view(result).draft.editorKey).toEqual(capturedEditorKey(1, "1:0-1:4"));
+    acceptProposal(result, "## AI\n\nText.");
+    expect(view(result).draft.editorKey).toBe("2:1:0-1:4");
+    run(result, (actions) => actions.loadScene(savedScene));
+    expect(view(result).draft.editorKey).toBe("3:3:0-3:3");
+    run(result, (actions) => actions.reset());
+    expect(view(result).draft.editorKey).toBe("4:");
   });
-});
 
-describe("anchor undo", () => {
-  it("keeps at most 50 anchor pairs of history", () => {
+  it("caps undo history at 50 distinct anchor states and ignores same-line placement", () => {
     const { result } = renderDraft();
     for (let placement = 1; placement <= 60; placement += 1) {
       place(result, "start", page1, placement % 2);
     }
+    for (let undo = 1; undo <= 50; undo += 1) run(result, (actions) => actions.undoAnchors());
+    expect(view(result).draft.canUndoAnchors).toBe(false);
+    expect(view(result).draft.anchors.start).toMatchObject({ page: 1, line: 0 });
 
-    for (let undo = 1; undo <= 49; undo += 1) run(result, (a) => a.undoAnchors());
-    expect(current(result).draft.canUndoAnchors).toBe(true);
-    run(result, (a) => a.undoAnchors());
-    expect(current(result).draft.canUndoAnchors).toBe(false);
-    // The oldest ten entries (back to no anchors) were dropped.
-    expect(current(result).draft.anchors.start).toMatchObject({ page: 1, line: 0 });
-  });
-
-  it("doesn't add history when an anchor is placed again on the same line", () => {
-    const { result } = renderDraft();
-    place(result, "start", page1, 0);
-    place(result, "start", page1, 0);
-
-    run(result, (a) => a.undoAnchors());
-
-    expect(current(result).draft.anchors.start).toBeNull();
-    expect(current(result).draft.canUndoAnchors).toBe(false);
-  });
-
-  it("[A6] swaps start and end when the end would come first", () => {
-    const { result } = renderDraft();
-    place(result, "start", page1, 7);
-    place(result, "end", page1, 0);
-    expect(current(result).draft.anchors).toMatchObject({ start: { line: 0 }, end: { line: 7 } });
-
-    place(result, "start", page2, 1);
-    expect(current(result).draft.anchors).toMatchObject({ start: { page: 1, line: 7 }, end: { page: 2, line: 1 } });
-  });
-
-  it("[A8] ignores lines on unindexed pages and missing lines", () => {
-    const { result } = renderDraft(textIndexFrom([page1], { total: 3 }));
-    place(result, "start", page3, 0);
-    run(result, (a) => a.setAnchorAtLine("end", 1, null));
-
-    expect(current(result).draft.anchors).toEqual({ start: null, end: null });
-    expect(current(result).draft.canUndoAnchors).toBe(false);
-  });
-
-  it("[A4] clearing suggested anchors dismisses them without adding history", () => {
-    const { result } = renderDraft();
-    run(result, (a) => a.loadScene(legacyScene));
-    expect(current(result).draft.anchorsSuggested).toBe(true);
-
-    run(result, (a) => a.clearAnchors());
-
-    expect(current(result).draft.anchorsSuggested).toBe(false);
-    expect(current(result).draft.anchors).toEqual({ start: null, end: null });
-    expect(current(result).draft.canUndoAnchors).toBe(false);
+    const second = renderDraft();
+    place(second.result, "start", page1, 0);
+    place(second.result, "start", page1, 0);
+    run(second.result, (actions) => actions.undoAnchors());
+    expect(view(second.result).draft).toMatchObject({ anchors: { start: null, end: null }, canUndoAnchors: false });
   });
 });
 
-describe("persistence completions", () => {
-  it("acknowledges a save without replacing newer text or remounting its editor", () => {
+describe("AI proposal provenance", () => {
+  it("returns the canonical selection context without mutating the draft", () => {
     const { result } = renderDraft();
-    run(result, a => a.loadScene(savedV2Scene));
-    const save = run(result, a => a.buildSave(0));
-    run(result, a => a.editText("## NEWER TEXT\n\nStill editing."));
-    const editorKey = current(result).draft.editorKey;
-    const saved = { ...savedV2Scene, ...save.payload };
-    act(() => save.applySaved(saved));
-    expect(current(result).draft.savedScene).toBe(saved);
-    expect(current(result).draft.text).toBe("## NEWER TEXT\n\nStill editing.");
-    expect(current(result).draft.editorKey).toBe(editorKey);
-    expect(current(result).draft.dirty).toBe(true);
+    run(result, (actions) => actions.loadScene(savedScene));
+    const before = view(result).draft;
+    const request = run(result, (actions) => actions.startProposal());
+
+    expect(request).toMatchObject({
+      capturedText: expect.stringContaining("EXT. PARKING LOT"),
+      draftMarkdown: SAVED_TEXT,
+      pageStart: 3,
+      pageEnd: 3,
+      snapshotAnchors: savedScene.script_location,
+    });
+    expect(view(result).draft.text).toBe(before.text);
+    expect(view(result).draft.proposal.status).toBe("loading");
   });
 
-  it("preserves edits queued before a save response in the same React batch", () => {
+  it("keeps a proposal's requested selection when anchors are cleared without making the draft saveable", () => {
     const { result } = renderDraft();
-    run(result, a => a.loadScene(savedV2Scene));
-    const save = run(result, a => a.buildSave(0));
-    act(() => {
-      current(result).actions.setTime("endTime", "00:11:30");
-      save.applySaved({ ...savedV2Scene, ...save.payload });
-    });
-    expect(current(result).draft.endTime).toBe("00:11:30");
-    expect(current(result).draft.dirty).toBe(true);
-  });
+    run(result, (actions) => actions.loadScene(savedScene));
+    const request = run(result, (actions) => actions.startProposal());
+    run(result, (actions) => actions.clearAnchors());
+    run(result, (actions) => actions.proposalReady(request.token, "## AI\n\nProposal."));
+    run(result, (actions) => actions.acceptProposal());
 
-  it("ignores a save response after a reset queued in the same React batch", () => {
-    const { result } = renderDraft();
-    run(result, a => a.loadScene(savedV2Scene));
-    const save = run(result, a => a.buildSave(0));
-    act(() => {
-      current(result).actions.reset();
-      save.applySaved({ ...savedV2Scene, ...save.payload });
-    });
-    expect(current(result).draft.savedScene).toBeNull();
-    expect(current(result).draft.text).toBe("");
-  });
-
-  it("detaches newer edits from a deleted row and invalidates its pending save", () => {
-    const { result } = renderDraft();
-    run(result, a => a.loadScene(savedV2Scene));
-    const save = run(result, a => a.buildSave(0));
-    const deleted = run(result, a => a.prepareDelete(savedV2Scene.id));
-    act(() => {
-      current(result).actions.editText("## UNSAVED\n\nKeep this text.");
-      deleted();
-      save.applySaved({ ...savedV2Scene, ...save.payload });
-    });
-    expect(current(result).draft.savedScene).toBeNull();
-    expect(current(result).draft.text).toBe("## UNSAVED\n\nKeep this text.");
-    expect(current(result).draft.dirty).toBe(true);
-  });
-});
-
-describe("buildSave", () => {
-  const PLACE_ANCHORS = "Place start and end anchors in the script to capture the scene text.";
-
-  it("[B1] checks film timing, then text, then script location", () => {
-    const { result } = renderDraft(textIndexFrom([], { total: 3 }));
-    const save = (runtime = 0) => run(result, (a) => a.buildSave(runtime));
-
-    expect(save()).toEqual({ error: "Enter a start and an end time for this scene." });
-    run(result, (a) => a.setTime("startTime", "abc"));
-    expect(save()).toEqual({ error: "Use HH:MM:SS (or MM:SS) for the start and end times." });
-    run(result, (a) => a.setTime("startTime", "00:02:00"));
-    run(result, (a) => a.setTime("endTime", "00:01:00"));
-    expect(save()).toEqual({ error: "The end time must be at or after the start time." });
-    run(result, (a) => a.setTime("startTime", "00:00:10"));
-    run(result, (a) => a.setTime("endTime", "00:01:00"));
-    expect(save(30)).toEqual({ error: "Times can't be later than the film's runtime (00:00:30)." });
-    // A runtime of 0 means unknown.
-    expect(save(0)).toEqual({ error: PLACE_ANCHORS });
-
-    run(result, (a) => a.editText("## HEADING\n\nWords with nowhere to go."));
-    expect(save(0)).toEqual({ error: PLACE_ANCHORS });
-  });
-
-  it("[B2, B3, B7] maps a capture with explicit anchors", () => {
-    const { result } = renderDraft(textIndexFrom([page1, page2], { total: 3 }));
-    place(result, "start", page1, 1);
-    place(result, "end", page1, 7);
-    run(result, (a) => a.setTime("startTime", "00:01:00"));
-    run(result, (a) => a.setTime("endTime", "00:02:30"));
-    run(result, (a) => a.toggleTag("mood:tense"));
-    run(result, (a) => a.toggleTag("character-focus:protagonist"));
-
-    const markdown = [RAIN, BELL, "### MAYA", `> ${MAYA_SPEECH}`].join("\n\n");
-    expect(run(result, (a) => a.buildSave(7200))).toEqual({
-      applySaved: expect.any(Function),
-      confirmStaleText: false,
-      payload: {
-        start_time_seconds: 60,
-        end_time_seconds: 150,
-        selected_text: markdown,
-        raw_selected_text: [RAIN, BELL, "MAYA", MAYA_SPEECH].join("\n\n"),
-        formatted_selected_text: markdown,
-        page_start: 1,
-        page_end: 1,
-        start_offset: null,
-        end_offset: null,
-        context_prefix: DINER,
-        // An empty capture context is saved as null.
-        context_suffix: null,
-        anchor_geometry: [
-          {
-            kind: "start",
-            version: 2,
-            unit: "pt",
-            page: 1,
-            line: 1,
-            top: 110.2,
-            bottom: 122.9,
-            text: "Rain streaks the windows of an empty roadside diner at",
-          },
-          { kind: "end", version: 2, unit: "pt", page: 1, line: 7, top: 206.2, bottom: 218.9, text: "Coffee is all I can do." },
-        ],
-        tags: ["mood:tense", "character-focus:protagonist"],
-      },
-    });
-  });
-
-  it("[B2, B3] keeps a saved scene's stored fields, turning missing ones into null and non-array geometry into []", () => {
-    const scene = {
-      id: "scene-stored",
-      start_time_seconds: 60,
-      end_time_seconds: 90,
-      tags: ["mood:tense"],
-      page_start: 4,
-      selected_text: "",
-      raw_selected_text: "",
-      formatted_selected_text: "## HEADING\n\nWords here.",
-      context_prefix: "",
-      anchor_geometry: null,
-    };
-    const { result } = renderDraft(textIndexFrom([], { total: 3 }));
-    run(result, (a) => a.loadScene(scene));
-
-    expect(run(result, (a) => a.buildSave(0))).toEqual({
-      applySaved: expect.any(Function),
-      confirmStaleText: false,
-      payload: {
-        start_time_seconds: 60,
-        end_time_seconds: 90,
-        selected_text: "## HEADING\n\nWords here.",
-        // Stored raw text is empty, so it is derived from the scene text.
-        raw_selected_text: "HEADING\n\nWords here.",
-        formatted_selected_text: "## HEADING\n\nWords here.",
-        page_start: 4,
-        page_end: null,
-        start_offset: null,
-        end_offset: null,
-        // A stored empty context stays empty.
-        context_prefix: "",
-        context_suffix: null,
-        anchor_geometry: [],
-        tags: ["mood:tense"],
-      },
-    });
-  });
-
-  it("[B4] copies a legacy scene's non-version-2 geometry as stored", () => {
-    const pixelRects = [{ page: 1, x: 72, y: 90, width: 400, height: 14 }];
-    const scene = sceneRow({ ...legacyScene, id: "scene-pixels", anchor_geometry: pixelRects });
-    const { result } = renderDraft();
-    run(result, (a) => a.loadScene(scene));
-    expect(current(result).draft.anchorsSuggested).toBe(true);
-
-    const { payload } = run(result, (a) => a.buildSave(0));
-
-    expect(payload.anchor_geometry).toBe(scene.anchor_geometry);
-    expect(payload.raw_selected_text).toBe(legacyScene.raw_selected_text);
-    expect(payload.page_start).toBe(1);
-  });
-});
-
-describe("[B5] explicit anchors need a capture to save", () => {
-  const PLACE_START = "Place a start anchor in the script before saving.";
-  const PLACE_END = "Place an end anchor in the script before saving.";
-  const WAIT_FOR_INDEX = "Wait for the pages between the anchors to finish indexing, then save again.";
-  const UNREADABLE = "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.";
-  const save = (result) => run(result, (a) => a.buildSave(0));
-
-  function setTiming(result) {
-    run(result, (a) => a.setTime("startTime", "00:01:00"));
-    run(result, (a) => a.setTime("endTime", "00:02:00"));
-  }
-
-  it("asks for the missing anchor after checking timing and before checking for empty text", () => {
-    const { result } = renderDraft();
-    place(result, "start", page1, 0);
-    expect(save(result)).toEqual({ error: "Enter a start and an end time for this scene." });
-
-    setTiming(result);
-    expect(current(result).draft.text).toBe("");
-    expect(save(result)).toEqual({ error: PLACE_END });
-
-    place(result, "end", page1, 7);
-    run(result, (a) => a.removeAnchor("start"));
-    expect(save(result)).toEqual({ error: PLACE_START });
-  });
-
-  it("refuses a saved scene with a removed anchor, keeps the draft, and saves the capture once the anchor is back", () => {
-    const EDITED = "## EDITED\n\nKeep this text.";
-    const { result } = renderDraft();
-    run(result, (a) => a.loadScene(savedV2Scene));
-    run(result, (a) => a.editText(EDITED));
-    run(result, (a) => a.removeAnchor("end"));
-
-    expect(save(result)).toEqual({ error: PLACE_END });
-    expect(current(result).draft).toMatchObject({
-      text: EDITED,
-      textOrigin: "edited",
-      anchors: { start: { page: 3, line: 0 }, end: null },
-      startTime: "00:10:00",
-      dirty: true,
-    });
-
-    place(result, "end", page3, 3);
-    expect(save(result).payload).toMatchObject({
-      formatted_selected_text: EDITED,
-      page_start: 3,
-      page_end: 3,
-      start_offset: 419,
-      context_prefix: null,
-      anchor_geometry: savedV2Scene.anchor_geometry,
-    });
-  });
-
-  it("asks to wait while the range's pages index, then saves before the whole script is indexed", () => {
-    const { result, rerender } = renderDraft(textIndexFrom([page1], { total: 3 }));
-    run(result, (a) => a.loadScene(savedV2Scene));
-
-    expect(save(result)).toEqual({ error: WAIT_FOR_INDEX });
-    expect(current(result).draft).toMatchObject({ textOrigin: "saved", text: savedV2Scene.formatted_selected_text, dirty: false });
-
-    rerender({ index: textIndexFrom([page1, page3], { total: 3 }) });
-    expect(save(result).payload).toMatchObject({
-      formatted_selected_text: savedV2Scene.formatted_selected_text,
-      page_start: 3,
-      page_end: 3,
-      start_offset: null,
-      end_offset: null,
-      anchor_geometry: savedV2Scene.anchor_geometry,
-    });
-  });
-
-  it("stops asking to wait once indexing has finished without a page in the range", () => {
-    const { result, rerender } = renderDraft(textIndexFrom([page1, page3], { total: 3 }));
-    place(result, "start", page1, 0);
-    place(result, "end", page3, 3);
-    setTiming(result);
-    expect(save(result)).toEqual({ error: WAIT_FOR_INDEX });
-
-    // Page 2 never produced text, as with a scanned page.
-    rerender({ index: textIndexFrom([page1, page3], { total: 3, complete: true }) });
-    expect(save(result)).toEqual({ error: UNREADABLE });
-  });
-
-  it("doesn't ask to wait when an indexed page has no line for an anchor", () => {
-    const { result } = renderDraft(textIndexFrom([page1, positionedPage(3, [])], { total: 3 }));
-    run(result, (a) => a.loadScene(savedV2Scene));
-
-    expect(save(result)).toEqual({ error: UNREADABLE });
-  });
-
-  it.each([
-    { when: "before its pages are indexed", index: textIndexFrom([], { total: 3 }), suggested: false },
-    { when: "with suggested anchors and their capture", index: FULL_INDEX, suggested: true },
-  ])("still saves a legacy scene's stored location $when", ({ index, suggested }) => {
-    const { result } = renderDraft(index);
-    run(result, (a) => a.loadScene(legacyScene));
-    expect(current(result).draft.anchorsSuggested).toBe(suggested);
-
-    expect(save(result).payload).toMatchObject({
-      raw_selected_text: legacyScene.raw_selected_text,
-      page_start: 1,
-      page_end: 2,
-      anchor_geometry: [],
-    });
-  });
-});
-
-describe("[B6] stale text under explicit anchors needs confirmation to save", () => {
-  const EDITED = "## EDITED HEADING\n\nWords typed by hand.";
-  const AI_TEXT = "## AI HEADING\n\nWords from the formatter.";
-  const PLACE_ANCHORS = "Place start and end anchors in the script to capture the scene text.";
-  /** Captured plain text for p3 lines 1–5. */
-  const P3_PLAIN = [
-    "EXT. PARKING LOT - NIGHT",
-    "Headlights sweep across the gravel as a truck pulls in slow. Its engine ticks in the cold while the wipers keep going.",
-    "Inside the cab, a figure watches the diner window and waits. Nobody gets out, and nobody in the diner seems to notice.",
-  ].join("\n\n");
-  /** The raw text and script location captured from p1 lines 1–5. */
-  const P1_SHORT_CAPTURE = {
-    raw_selected_text: P1_SHORT_PLAIN,
-    page_start: 1,
-    page_end: 1,
-    start_offset: 0,
-    end_offset: 242,
-    context_prefix: null,
-    context_suffix: `MAYA\nKitchen closed an hour ago.\nCoffee is all I can do.`,
-    anchor_geometry: v2Geometry(page1, 0, page1, 4),
-  };
-  const save = (result) => run(result, (a) => a.buildSave(0));
-
-  function setTiming(result) {
-    run(result, (a) => a.setTime("startTime", "00:01:00"));
-    run(result, (a) => a.setTime("endTime", "00:02:00"));
-  }
-
-  function anchorP1(result, endLine = 7) {
-    place(result, "start", page1, 0);
-    place(result, "end", page1, endLine);
-  }
-
-  /** What building a save, and so confirming or canceling it, must leave alone. */
-  function draftState(result) {
-    const { draft } = current(result);
-    const { text, textOrigin, textStale, legacyText, editorKey, dirty, anchors, savedScene, recaptureOption } = draft;
-    return { text, textOrigin, textStale, legacyText, editorKey, dirty, anchors, savedScene, recaptureOption };
-  }
-
-  it.each([
-    {
-      origin: "saved",
-      setup: (result) => {
-        run(result, (a) => a.loadScene(savedV2Scene));
-        place(result, "end", page3, 4);
-      },
-      payload: {
-        start_time_seconds: 600,
-        end_time_seconds: 660,
-        selected_text: SAVED_V2_TEXT,
-        raw_selected_text: P3_PLAIN,
-        formatted_selected_text: SAVED_V2_TEXT,
-        page_start: 3,
-        page_end: 3,
-        start_offset: 419,
-        end_offset: 681,
-        context_prefix: null,
-        context_suffix: null,
-        anchor_geometry: v2Geometry(page3, 0, page3, 4),
-        tags: savedV2Scene.tags,
-      },
-    },
-    {
-      origin: "edited",
-      setup: (result) => {
-        anchorP1(result);
-        setTiming(result);
-        run(result, (a) => a.editText(EDITED));
-        place(result, "end", page1, 4);
-      },
-      payload: {
-        start_time_seconds: 60,
-        end_time_seconds: 120,
-        selected_text: EDITED,
-        formatted_selected_text: EDITED,
-        ...P1_SHORT_CAPTURE,
-        tags: [],
-      },
-    },
-    {
-      origin: "ai",
-      setup: (result) => {
-        anchorP1(result);
-        setTiming(result);
-        acceptAiText(result, AI_TEXT);
-        place(result, "end", page1, 4);
-      },
-      payload: {
-        start_time_seconds: 60,
-        end_time_seconds: 120,
-        selected_text: AI_TEXT,
-        formatted_selected_text: AI_TEXT,
-        ...P1_SHORT_CAPTURE,
-        tags: [],
-      },
-    },
-  ])("asks to confirm stale $origin text, mapped with the current capture, without changing the draft", ({ origin, setup, payload }) => {
-    const { result } = renderDraft();
-    setup(result);
-    const before = draftState(result);
-    expect(before).toMatchObject({ textOrigin: origin, textStale: true, recaptureOption: "recapture" });
-
-    expect(save(result)).toEqual({ payload, applySaved: expect.any(Function), confirmStaleText: true });
-    expect(draftState(result)).toEqual(before);
-  });
-
-  it("doesn't ask for fresh text of any origin, including stale text whose anchors return", () => {
-    const { result } = renderDraft();
-    anchorP1(result);
-    setTiming(result);
-    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { raw_selected_text: P1_PLAIN } });
-
-    run(result, (a) => a.editText(EDITED));
-    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { formatted_selected_text: EDITED } });
-    place(result, "end", page1, 4);
-    expect(save(result).confirmStaleText).toBe(true);
-    place(result, "end", page1, 7);
-    expect(save(result)).toMatchObject({
-      confirmStaleText: false,
-      payload: { formatted_selected_text: EDITED, raw_selected_text: P1_PLAIN },
-    });
-
-    acceptAiText(result, AI_TEXT);
-    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { formatted_selected_text: AI_TEXT } });
-
-    run(result, (a) => a.loadScene(savedV2Scene));
-    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { formatted_selected_text: SAVED_V2_TEXT } });
-  });
-
-  it("doesn't ask without explicit anchors, and asks once suggested anchors become explicit", () => {
-    const { result } = renderDraft();
-    run(result, (a) => a.loadScene(legacyScene));
-    expect(current(result).draft).toMatchObject({ anchorsSuggested: true, textStale: true, legacyText: true });
-    expect(save(result)).toMatchObject({
-      confirmStaleText: false,
-      payload: { raw_selected_text: LEGACY_RAW, page_start: 1, page_end: 2, anchor_geometry: [] },
-    });
-
-    place(result, "end", page2, 4);
-    expect(current(result).draft).toMatchObject({ anchorsSuggested: false, textStale: true, textOrigin: "saved" });
-    const explicit = save(result);
-    expect(explicit).toMatchObject({
-      confirmStaleText: true,
-      payload: { selected_text: LEGACY_RAW, page_start: 1, page_end: 2, anchor_geometry: v2Geometry(page1, 0, page2, 4) },
-    });
-    expect(explicit.payload.raw_selected_text).not.toBe(LEGACY_RAW);
-
-    // Clearing every anchor on a saved scene still keeps its stored location, without asking.
-    run(result, (a) => a.loadScene(savedV2Scene));
-    place(result, "end", page3, 4);
-    run(result, (a) => a.clearAnchors());
-    expect(save(result)).toMatchObject({
-      confirmStaleText: false,
-      payload: { raw_selected_text: savedV2Scene.raw_selected_text, anchor_geometry: savedV2Scene.anchor_geometry },
-    });
-  });
-
-  it("returns validation errors before asking: timing, then a missing capture, then blank text", () => {
-    const { result } = renderDraft();
-    anchorP1(result);
-    run(result, (a) => a.editText(EDITED));
-    place(result, "end", page1, 4);
-    expect(current(result).draft.textStale).toBe(true);
-    expect(save(result)).toEqual({ error: "Enter a start and an end time for this scene." });
-
-    setTiming(result);
-    run(result, (a) => a.removeAnchor("end"));
-    expect(save(result)).toEqual({ error: "Place an end anchor in the script before saving." });
-
-    run(result, (a) => a.undoAnchors());
-    run(result, (a) => a.editText("   "));
-    expect(current(result).draft.textStale).toBe(true);
-    expect(save(result)).toEqual({ error: PLACE_ANCHORS });
-
-    run(result, (a) => a.editText(EDITED));
-    expect(save(result).confirmStaleText).toBe(true);
-  });
-
-  it("decides again for each save, so a confirmed payload never covers later edits", () => {
-    const NEWER = "## NEWER HEADING\n\nTyped after the prompt.";
-    const { result } = renderDraft();
-    anchorP1(result);
-    setTiming(result);
-    run(result, (a) => a.editText(EDITED));
-    place(result, "end", page1, 4);
-
-    const confirmed = save(result);
-    expect(confirmed.confirmStaleText).toBe(true);
-
-    run(result, (a) => a.editText(NEWER));
-    expect(save(result)).toMatchObject({ confirmStaleText: true, payload: { formatted_selected_text: NEWER } });
-    expect(confirmed.payload.formatted_selected_text).toBe(EDITED);
-
-    run(result, (a) => a.recapture());
-    expect(save(result)).toMatchObject({
-      confirmStaleText: false,
-      payload: { formatted_selected_text: [`## ${DINER}`, RAIN, BELL].join("\n\n"), raw_selected_text: P1_SHORT_PLAIN },
-    });
-  });
-
-  it("asks again after a response for a draft that changed during the save, but not once the response reloads it", () => {
-    const { result } = renderDraft();
-    anchorP1(result);
-    setTiming(result);
-    acceptAiText(result, AI_TEXT);
-    place(result, "end", page1, 4);
-
-    const confirmed = save(result);
-    expect(confirmed.confirmStaleText).toBe(true);
-    const { editorKey } = current(result).draft;
-    run(result, (a) => a.setTime("endTime", "00:02:30"));
-    const created = sceneRow({ ...confirmed.payload, id: "scene-created" });
-    act(() => confirmed.applySaved(created));
-
-    expect(current(result).draft).toMatchObject({
-      savedScene: created,
-      text: AI_TEXT,
+    expect(request.snapshotAnchors).toEqual(savedScene.script_location);
+    expect(view(result).draft).toMatchObject({
+      anchors: { start: null, end: null },
       textOrigin: "ai",
-      textStale: true,
-      editorKey,
-      endTime: "00:02:30",
-      dirty: true,
+      text: "## AI\n\nProposal.",
     });
-    const next = save(result);
-    expect(next).toMatchObject({ confirmStaleText: true, payload: { end_time_seconds: 150, formatted_selected_text: AI_TEXT } });
-
-    act(() => next.applySaved({ ...created, ...next.payload }));
-    expect(current(result).draft).toMatchObject({ textOrigin: "saved", textStale: false, dirty: false });
-    expect(save(result)).toMatchObject({ confirmStaleText: false, payload: { formatted_selected_text: AI_TEXT } });
+    expect(save(result)).toEqual({ error: "Place a start anchor in the script before saving." });
   });
 
-  it("asks for a draft opened during a confirmed save only by that draft's own text and anchors", () => {
+  it("ignores superseded responses and supports failure and dismissal", () => {
     const { result } = renderDraft();
-    run(result, (a) => a.loadScene(savedV2Scene));
-    place(result, "end", page3, 4);
-    const confirmed = save(result);
-    expect(confirmed.confirmStaleText).toBe(true);
-
-    run(result, (a) => a.loadScene(otherScene));
-    expect(save(result).confirmStaleText).toBe(false);
-    act(() => confirmed.applySaved({ ...savedV2Scene, ...confirmed.payload }));
-    expect(current(result).draft.savedScene).toBe(otherScene);
-    expect(save(result).confirmStaleText).toBe(false);
-
-    place(result, "end", page2, 4);
-    expect(save(result)).toMatchObject({ confirmStaleText: true, payload: { formatted_selected_text: OTHER_TEXT } });
+    run(result, (actions) => actions.loadScene(savedScene));
+    const first = run(result, (actions) => actions.startProposal());
+    const second = run(result, (actions) => actions.startProposal());
+    run(result, (actions) => actions.proposalReady(first.token, "## OLD"));
+    expect(view(result).draft.proposal.status).toBe("loading");
+    run(result, (actions) => actions.proposalFailed(second.token, "Formatter unavailable."));
+    expect(view(result).draft.proposal).toMatchObject({ status: "error", error: "Formatter unavailable." });
+    run(result, (actions) => actions.discardProposal());
+    expect(view(result).draft.proposal).toBeNull();
   });
 });
 
-describe("suggested anchors and saved scene keys", () => {
-  it("[A1] suggests nothing with fewer than 3 comparable words, or when the start would follow the end", () => {
-    const tooShort = sceneRow({ id: "scene-short", page_start: 1, page_end: 2, raw_selected_text: "INT. DINER" });
-    const reversed = sceneRow({
-      id: "scene-reversed",
-      page_start: 2,
-      page_end: 1,
-      raw_selected_text: "Then coffee. And the booth by the window. Coffee is all I can do.",
-    });
-
-    for (const scene of [tooShort, reversed]) {
-      const { result, unmount } = renderDraft();
-      run(result, (a) => a.loadScene(scene));
-      expect(current(result).draft.anchorsSuggested).toBe(false);
-      expect(current(result).draft.anchors).toEqual({ start: null, end: null });
-      unmount();
-    }
-  });
-
-  it("[A1] suggests anchors once a later index includes the saved pages", () => {
-    const { result, rerender } = renderDraft(textIndexFrom([page1], { total: 3 }));
-    run(result, (a) => a.loadScene(legacyScene));
-    expect(current(result).draft.anchorsSuggested).toBe(false);
-
-    rerender({ index: FULL_INDEX });
-
-    const { draft } = current(result);
-    expect(draft.anchorsSuggested).toBe(true);
-    expect(draft.anchors.start).toMatchObject({ page: 1, line: 0, suggested: true });
-    expect(draft.anchors.end).toMatchObject({ page: 2, line: 5, suggested: true });
-    expect(draft).toMatchObject({ textStale: true, legacyText: true, recaptureOption: "recapture", dirty: false });
-    expect(draft.canUndoAnchors).toBe(false);
-  });
-
-  it("[D7] keys saved text by page and line only", () => {
-    const moved = savedV2Scene.anchor_geometry.map((entry) => ({ ...entry, top: entry.top + 1.5, text: "retyped" }));
-    const scene = sceneRow({ ...savedV2Scene, id: "scene-shifted", anchor_geometry: moved });
+describe("persistence races", () => {
+  it("applies an unchanged save as the new baseline", () => {
     const { result } = renderDraft();
-    run(result, (a) => a.loadScene(scene));
+    run(result, (actions) => actions.loadScene(savedScene));
+    run(result, (actions) => actions.editText("## EDITED\n\nSaved."));
+    const pending = save(result);
+    const response = sceneRow({ ...savedScene, ...pending.payload, updated_at: "later" });
+    act(() => pending.applySaved(response));
 
-    expect(current(result).draft).toMatchObject({ textOrigin: "saved", textStale: false, legacyText: false, dirty: false });
-    expect(current(result).draft.capturedPlainText).toContain("Headlights sweep across the gravel");
+    expect(view(result).draft).toMatchObject({ savedScene: response, text: response.scene_text, dirty: false });
   });
 
-  it("previews a scene from the draft, taking pages from the capture, else the saved scene", () => {
-    const { result } = renderDraft(textIndexFrom([], { total: 3 }));
-    run(result, (a) => a.loadScene(savedV2Scene));
-    run(result, (a) => a.setTime("endTime", "11:xx"));
+  it("keeps edits made while a save is pending and acknowledges the returned id", () => {
+    const { result } = renderDraft();
+    place(result, "start", page1, 0);
+    place(result, "end", page1, 4);
+    setTiming(result);
+    const pending = save(result);
+    run(result, (actions) => actions.editText("## NEWER\n\nNot in the response."));
+    const response = sceneRow({ id: "created", ...pending.payload });
+    act(() => pending.applySaved(response));
 
-    expect(current(result).draft.previewScene).toEqual({
-      start_time_seconds: 600,
-      end_time_seconds: null,
-      page_start: 3,
-      page_end: 3,
-      tags: savedV2Scene.tags,
-      formatted_selected_text: savedV2Scene.formatted_selected_text,
+    expect(view(result).draft).toMatchObject({ text: "## NEWER\n\nNot in the response.", savedScene: response, dirty: true });
+    expect(save(result).payload.scene_text).toBe("## NEWER\n\nNot in the response.");
+  });
+
+  it("preserves an edit queued before the save response in the same React batch", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const pending = save(result);
+    const response = sceneRow({ ...savedScene, ...pending.payload });
+    act(() => {
+      view(result).actions.setTime("endTime", "00:11:30");
+      pending.applySaved(response);
     });
+    expect(view(result).draft).toMatchObject({ savedScene: response, endTime: "00:11:30", dirty: true });
+  });
 
-    run(result, (a) => a.reset());
-    expect(current(result).draft.previewScene).toMatchObject({ page_start: null, page_end: null, formatted_selected_text: "" });
+  it("ignores a save response after reset even when both are queued in the same React batch", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const pending = save(result);
+    act(() => {
+      view(result).actions.reset();
+      pending.applySaved(sceneRow({ ...savedScene, ...pending.payload }));
+    });
+    expect(view(result).draft).toMatchObject({ savedScene: null, text: "", dirty: false });
+  });
+
+  it("ignores a save response after another scene loads", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const pending = save(result);
+    run(result, (actions) => actions.loadScene(otherScene));
+    act(() => pending.applySaved({ ...savedScene, ...pending.payload }));
+    expect(view(result).draft.savedScene.id).toBe(otherScene.id);
+    expect(view(result).draft.text).toBe(OTHER_TEXT);
+  });
+
+  it("preserves newer edits as a new draft when delete completes", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const complete = run(result, (actions) => actions.prepareDelete(savedScene.id));
+    run(result, (actions) => actions.editText("## KEEP\n\nThis work."));
+    act(() => complete());
+
+    expect(view(result).draft).toMatchObject({ savedScene: null, textOrigin: "edited", text: "## KEEP\n\nThis work.", dirty: true });
+  });
+
+  it("deletion detaches newer edits and invalidates an older pending save in the same batch", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const pendingSave = save(result);
+    const completeDelete = run(result, (actions) => actions.prepareDelete(savedScene.id));
+    act(() => {
+      view(result).actions.editText("## UNSAVED\n\nKeep this text.");
+      completeDelete();
+      pendingSave.applySaved(sceneRow({ ...savedScene, ...pendingSave.payload }));
+    });
+    expect(view(result).draft).toMatchObject({
+      savedScene: null,
+      textOrigin: "edited",
+      text: "## UNSAVED\n\nKeep this text.",
+      dirty: true,
+    });
+  });
+
+  it("leaves a different draft alone when an earlier delete completes", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    const complete = run(result, (actions) => actions.prepareDelete(savedScene.id));
+    run(result, (actions) => actions.loadScene(otherScene));
+    act(() => complete());
+    expect(view(result).draft.savedScene.id).toBe(otherScene.id);
+  });
+});
+
+describe("preview and overlap", () => {
+  it("uses the stored-scene shape for the draft preview", () => {
+    const { result } = renderDraft();
+    place(result, "start", page1, 0);
+    place(result, "end", page2, 3);
+    setTiming(result);
+    expect(view(result).draft.previewScene).toEqual({
+      start_time_seconds: 60,
+      end_time_seconds: 120,
+      script_location: scriptLocation(page1, 0, page2, 3),
+      tags: [],
+      scene_text: expect.any(String),
+    });
+  });
+
+  it("refuses a script-location overlap but excludes the draft's own saved row", () => {
+    const { result } = renderDraft();
+    run(result, (actions) => actions.loadScene(savedScene));
+    expect(save(result, { runtimeSeconds: 0, scenes: [savedScene] }).payload).toBeTruthy();
+
+    place(result, "start", page2, 0);
+    place(result, "end", page2, 3);
+    expect(save(result, { runtimeSeconds: 0, scenes: [savedScene, otherScene] })).toEqual({
+      error: "These anchors share lines with the scene at 00:05:00 – 00:06:00. Move the anchors so the scenes don't overlap.",
+    });
   });
 });

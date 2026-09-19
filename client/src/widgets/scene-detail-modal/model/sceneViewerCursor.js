@@ -1,4 +1,9 @@
-import { findFirstStillInScene, findSceneAtTime, getSceneFirstStill } from "@/entities/script-scene";
+import { momentSeconds } from "@/entities/script-scene/model/filmTiming.js";
+import {
+  findFirstStillInScene,
+  findSceneAtTime,
+  getSceneFirstStill,
+} from "@/entities/script-scene/model/sceneStill.js";
 
 /**
  * Navigation state for the shared scene viewer.
@@ -16,12 +21,6 @@ import { findFirstStillInScene, findSceneAtTime, getSceneFirstStill } from "@/en
  * side its timing falls.
  */
 
-function toSeconds(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const seconds = Number(value);
-  return Number.isFinite(seconds) ? seconds : null;
-}
-
 function findById(rows, id) {
   if (!id || !Array.isArray(rows)) return null;
   return rows.find((row) => row.id === id) || null;
@@ -29,7 +28,7 @@ function findById(rows, id) {
 
 function findNearestStill(stills, seconds) {
   if (seconds === null || !Array.isArray(stills) || stills.length === 0) return null;
-  const distance = (still) => Math.abs((toSeconds(still.time_seconds) ?? Infinity) - seconds);
+  const distance = (still) => Math.abs((momentSeconds(still.time_seconds) ?? Infinity) - seconds);
   return stills.reduce((nearest, still) => (distance(still) < distance(nearest) ? still : nearest));
 }
 
@@ -45,7 +44,7 @@ export function createSceneViewerCursor({ view, sceneId = null, stillId = null, 
     lead: sceneId ? "scene" : "still",
     sceneId,
     stillId: sceneId ? null : stillId,
-    stillTime: still ? toSeconds(still.time_seconds) : null,
+    stillTime: still ? momentSeconds(still.time_seconds) : null,
     anchorSceneId: sceneId,
     context: {
       movieId: scene?.movie_id ?? context.movieId ?? null,
@@ -85,7 +84,7 @@ export function stepSceneViewerToStill(cursor, still, { scenes, scriptScenes }) 
     lead: "still",
     sceneId: null,
     stillId: still.id,
-    stillTime: toSeconds(still.time_seconds),
+    stillTime: momentSeconds(still.time_seconds),
     anchorSceneId: listed ? listed.id : cursor.anchorSceneId,
   };
 }
@@ -114,7 +113,7 @@ function getSceneNeighbors(scenes, scene, anchorSceneId) {
   if (anchorIndex < 0) return { index: -1, prev: null, next: null };
 
   const anchor = scenes[anchorIndex];
-  const isLater = (toSeconds(scene.start_time_seconds) ?? 0) >= (toSeconds(anchor.start_time_seconds) ?? 0);
+  const isLater = (momentSeconds(scene.start_time_seconds) ?? 0) >= (momentSeconds(anchor.start_time_seconds) ?? 0);
   return isLater
     ? { index: -1, prev: anchor, next: scenes[anchorIndex + 1] || null }
     : { index: -1, prev: scenes[anchorIndex - 1] || null, next: anchor };

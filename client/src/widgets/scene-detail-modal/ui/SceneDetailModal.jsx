@@ -1,11 +1,9 @@
-import { useEffect, useRef } from "react";
-import { cx } from "@/shared/lib/cx";
-import { Button, ChevronLeftIcon, ChevronRightIcon, CloseIcon, IconButton } from "@/shared/ui";
+import { useEffect } from "react";
+import { cx } from "@/shared/lib/cx.js";
+import { isTypingTarget } from "@/shared/lib/keyboard.js";
+import { Dialog } from "@/shared/ui/Dialog.jsx";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/shared/ui/icons.jsx";
 import styles from "./SceneDetailModal.module.css";
-
-function isTypingTarget(target) {
-  return target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
-}
 
 /**
  * Full-screen dialog frame shared by the scene viewer and the draft editor: a
@@ -23,93 +21,79 @@ export function SceneDetailModal({
   onClose,
   stageKey,
   footer,
+  actions,
   children,
 }) {
-  const closeRef = useRef(null);
-
-  // Lock page scroll while open and hand focus back to the opener on close.
-  useEffect(() => {
-    const previousFocus = document.activeElement;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeRef.current?.focus();
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      previousFocus?.focus?.();
-    };
-  }, []);
-
   useEffect(() => {
     function onKeyDown(event) {
       if (event.defaultPrevented) return;
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
       if (!onStep || isTypingTarget(event.target)) return;
       if (event.key === "ArrowLeft" && hasPrev) onStep(-1);
       else if (event.key === "ArrowRight" && hasNext) onStep(1);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hasPrev, hasNext, onClose, onStep]);
+  }, [hasPrev, hasNext, onStep]);
 
   return (
-    <div
-      className={styles.overlay}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="scene-detail-title">
-        <header className={styles.header}>
-          <div className={styles.heading}>
-            <h2 id="scene-detail-title" className={styles.title}>
-              {title}
-            </h2>
-            {meta && <p className={styles.meta}>{meta}</p>}
+    <Dialog
+      title={title}
+      onClose={onClose}
+      className={styles.modal}
+      overlayClassName={styles.sceneOverlay}
+      renderContent={({ titleId, closeButton }) => (
+        <>
+          <header className={styles.header}>
+            <div className={styles.heading}>
+              <h2 id={titleId} className={styles.title}>
+                {title}
+              </h2>
+              {meta && <p className={styles.meta}>{meta}</p>}
+            </div>
+            {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
+            {counter && <span className={styles.counter}>{counter}</span>}
+            {closeButton}
+          </header>
+
+          <div className={cx(styles.stage, !onStep && styles.stageSolo)}>
+            {onStep && (
+              <button
+                type="button"
+                className={styles.stepButton}
+                onClick={() => onStep(-1)}
+                disabled={!hasPrev}
+                aria-label="Previous"
+              >
+                <ChevronLeftIcon size={18} strokeWidth={2.4} />
+              </button>
+            )}
+
+            <div key={stageKey} className={styles.stageBody}>
+              {children}
+            </div>
+
+            {onStep && (
+              <button
+                type="button"
+                className={styles.stepButton}
+                onClick={() => onStep(1)}
+                disabled={!hasNext}
+                aria-label="Next"
+              >
+                <ChevronRightIcon size={18} strokeWidth={2.4} />
+              </button>
+            )}
           </div>
-          {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
-          {counter && <span className={styles.counter}>{counter}</span>}
-          <IconButton ref={closeRef} label="Close" onClick={onClose}>
-            <CloseIcon size={18} strokeWidth={2.2} />
-          </IconButton>
-        </header>
 
-        <div className={cx(styles.stage, !onStep && styles.stageSolo)}>
-          {onStep && (
-            <button
-              type="button"
-              className={styles.stepButton}
-              onClick={() => onStep(-1)}
-              disabled={!hasPrev}
-              aria-label="Previous"
-            >
-              <ChevronLeftIcon size={18} strokeWidth={2.4} />
-            </button>
+          {(footer || actions) && (
+            <footer className={styles.footer}>
+              {footer}
+              {actions && <div className={styles.actions}>{actions}</div>}
+            </footer>
           )}
-
-          <div key={stageKey} className={styles.stageBody}>
-            {children}
-          </div>
-
-          {onStep && (
-            <button
-              type="button"
-              className={styles.stepButton}
-              onClick={() => onStep(1)}
-              disabled={!hasNext}
-              aria-label="Next"
-            >
-              <ChevronRightIcon size={18} strokeWidth={2.4} />
-            </button>
-          )}
-        </div>
-
-        {footer && <footer className={styles.footer}>{footer}</footer>}
-      </div>
-    </div>
+        </>
+      )}
+    />
   );
 }
 
@@ -123,13 +107,4 @@ export function SceneModalPaper({ label = "Scene text", heading, toolbar, childr
       </div>
     </section>
   );
-}
-
-export function SceneModalActions({ children }) {
-  return <div className={styles.actions}>{children}</div>;
-}
-
-/** Footer action; a shared Button that stretches to fill the row on phones. */
-export function SceneModalButton({ variant = "secondary", className, ...props }) {
-  return <Button variant={variant} className={cx(styles.actionButton, className)} {...props} />;
 }

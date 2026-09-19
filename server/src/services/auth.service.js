@@ -36,13 +36,13 @@ function decoyHash() {
     return decoyHashPromise;
 }
 
-export function normalizeEmail(value) {
+function normalizeEmail(value) {
     if (typeof value !== "string") return null;
     const email = value.trim().toLowerCase();
     return EMAIL_PATTERN.test(email) && email.length <= 254 ? email : null;
 }
 
-export function hashSessionToken(token) {
+function hashSessionToken(token) {
     return createHash("sha256").update(token).digest("hex");
 }
 

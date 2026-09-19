@@ -1,12 +1,16 @@
 import { useState } from "react";
 import {
   displayScriptSceneText,
-  formatScriptScenePages,
-  groupScriptTagsByCategory,
-} from "@/entities/script-scene";
-import { useSignedMediaUrl } from "@/shared/lib/media";
-import { formatSecondsToHms } from "@/shared/lib/time";
-import { ImageIcon, ScreenplayView, ScriptIcon, SegmentedControl } from "@/shared/ui";
+} from "@/entities/script-scene/model/capturedScene.js";
+import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
+import { formatScenePages } from "@/entities/script-scene/model/scriptLocation.js";
+import { groupScriptTagsByCategory } from "@server/domain/script-tags.js";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
+import { Button } from "@/shared/ui/Button.jsx";
+import { ImageIcon, ScriptIcon } from "@/shared/ui/icons.jsx";
+import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import {
   createSceneViewerCursor,
   resolveSceneViewerCursor,
@@ -15,7 +19,7 @@ import {
   stepSceneViewerToStill,
 } from "../model/sceneViewerCursor.js";
 import { useSceneViewerData } from "../model/useSceneViewerData.js";
-import { SceneDetailModal, SceneModalActions, SceneModalButton, SceneModalPaper } from "./SceneDetailModal.jsx";
+import { SceneDetailModal, SceneModalPaper } from "./SceneDetailModal.jsx";
 import styles from "./SceneDetailModal.module.css";
 
 // Why a tab is unavailable; shown as its tooltip and in an empty stage.
@@ -40,19 +44,17 @@ const STILL_SCENE_NOTES = {
   none: "No captured scene covers this still yet.",
 };
 
-function formatSceneTiming(scene) {
-  return `${formatSecondsToHms(scene.start_time_seconds)} – ${formatSecondsToHms(scene.end_time_seconds)}`;
-}
-
 /**
  * The site's one expanded scene viewer, shared by Script Search, the project
  * page, and the script viewer. It shows a moment of a film as a captured
  * scene's script or as a film still, with arrows on both tabs; the tab not
  * being stepped follows along (see sceneViewerCursor.js).
  *
- * - `scenes`: what the script tab's arrows walk (defaults to the script's scenes).
- * - `scriptScenes` / `stills`: the whole script and the film's stills, when the
- *   page already has them; otherwise they're fetched.
+ * - `scenes`: what the script tab's arrows walk and, when `scriptId` identifies
+ *   them as the whole script, the list used to match stills. Otherwise the
+ *   script's scenes are fetched.
+ * - `stills`: the film's stills, when the page already has them; otherwise
+ *   they're fetched.
  * - `movie` / `scriptId`: the title and script to use when opening on a still.
  * - `renderActions({ view, scene, still })` adds page-specific footer buttons;
  *   `renderStillTools(still)` renders above the still, e.g. an edit form.
@@ -62,7 +64,6 @@ export function SceneViewerModal({
   initialSceneId = null,
   initialStillId = null,
   scenes,
-  scriptScenes,
   stills,
   movie,
   scriptId = null,
@@ -79,7 +80,7 @@ export function SceneViewerModal({
       view: initialView,
       sceneId: initialSceneId,
       stillId: initialStillId,
-      scenes: scenes || scriptScenes,
+      scenes,
       stills,
       context: { movieId: movie?.id, scriptId, movieTitle: movie?.title },
     })
@@ -89,7 +90,7 @@ export function SceneViewerModal({
     movieId: context.movieId,
     scriptId: context.scriptId,
     stills: movie?.id && movie.id === context.movieId ? stills : undefined,
-    scriptScenes: scriptId && scriptId === context.scriptId ? scriptScenes : undefined,
+    scriptScenes: scriptId && scriptId === context.scriptId ? scenes : undefined,
   });
   const stepScenes = scenes || data.scriptScenes || [];
   const current = resolveSceneViewerCursor(cursor, {
@@ -117,12 +118,12 @@ export function SceneViewerModal({
   let meta = "Script";
   if (showStill) {
     meta = still
-      ? [`Film still · ${formatSecondsToHms(still.time_seconds)}`, scene && formatScriptScenePages(scene)]
+      ? [`Film still · ${formatSecondsToHms(still.time_seconds)}`, scene && formatScenePages(scene)]
           .filter(Boolean)
           .join(" · ")
       : "Film still";
   } else if (scene) {
-    meta = `${formatScriptScenePages(scene)} · ${formatSceneTiming(scene)}`;
+    meta = [formatScenePages(scene), formatFilmTiming(scene)].filter(Boolean).join(" · ");
   }
 
   let counter = null;
@@ -163,25 +164,25 @@ export function SceneViewerModal({
       onClose={onClose}
       stageKey={showStill ? `still:${still?.id}` : `scene:${scene?.id}`}
       footer={
+        scene ? (
+          <SceneTags scene={scene} onSelectTag={onSelectTag} />
+        ) : (
+          <p className={styles.noTags}>{showStill ? STILL_SCENE_NOTES[current.sceneStatus] : ""}</p>
+        )
+      }
+      actions={
         <>
-          {scene ? (
-            <SceneTags scene={scene} onSelectTag={onSelectTag} />
-          ) : (
-            <p className={styles.noTags}>{showStill ? STILL_SCENE_NOTES[current.sceneStatus] : ""}</p>
+          {renderActions?.({ view: cursor.view, scene, still })}
+          {onOpenStill && still && (
+            <Button onClick={() => onOpenStill(still, context.movieId)}>
+              {cursor.lead === "scene" ? "Open first still" : "Open still in project"}
+            </Button>
           )}
-          <SceneModalActions>
-            {renderActions?.({ view: cursor.view, scene, still })}
-            {onOpenStill && still && (
-              <SceneModalButton onClick={() => onOpenStill(still, context.movieId)}>
-                {cursor.lead === "scene" ? "Open first still" : "Open still in project"}
-              </SceneModalButton>
-            )}
-            {onOpenScene && scene && (
-              <SceneModalButton variant="primary" onClick={() => onOpenScene(scene)}>
-                {openSceneLabel}
-              </SceneModalButton>
-            )}
-          </SceneModalActions>
+          {onOpenScene && scene && (
+            <Button variant="primary" onClick={() => onOpenScene(scene)}>
+              {openSceneLabel}
+            </Button>
+          )}
         </>
       }
     >

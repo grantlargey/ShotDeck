@@ -39,10 +39,3 @@ export function scrollPageInWrap(wrap, pageElement, behavior = "auto", offsetPx 
   const maxTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
   wrap.scrollTo({ top: Math.min(maxTop, Math.max(0, targetTop)), behavior });
 }
-
-export function isTypingTarget(target) {
-  return (
-    target instanceof Element &&
-    Boolean(target.closest("input, textarea, select, [contenteditable='true'], [role='dialog']"))
-  );
-}

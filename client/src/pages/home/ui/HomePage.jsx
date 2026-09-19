@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getRecentMovies, MovieCard, MovieCardGrid, MovieCardSkeleton } from "@/entities/movie";
-import { useSession } from "@/entities/session";
-import { api } from "@/shared/api";
-import { useDocumentTitle } from "@/shared/lib/document-title";
-import { getErrorMessage } from "@/shared/lib/errors";
-import {
-  Button,
-  Callout,
-  ChevronRightIcon,
-  EmptyState,
-  Input,
-  SearchIcon,
-  SectionHeading,
-} from "@/shared/ui";
-import { SiteFooter } from "@/widgets/site-footer";
+import { getRecentMovies } from "@/entities/movie/model/movieFilters.js";
+import { MovieCard, MovieCardGrid, MovieCardSkeleton } from "@/entities/movie/ui/MovieCard.jsx";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { listMovies } from "@/shared/api/movies.js";
+import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
+import { Button } from "@/shared/ui/Button.jsx";
+import { Callout } from "@/shared/ui/Callout.jsx";
+import { EmptyState } from "@/shared/ui/EmptyState.jsx";
+import { ChevronRightIcon, SearchIcon } from "@/shared/ui/icons.jsx";
+import { Input } from "@/shared/ui/Input.jsx";
+import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
+import SiteFooter from "@/widgets/site-footer/ui/SiteFooter.jsx";
 import styles from "./HomePage.module.css";
 
 const RECENT_PROJECT_LIMIT = 5;
@@ -35,7 +33,7 @@ export default function HomePage() {
       setErr("");
       setLoading(true);
       try {
-        const data = await api.listMovies();
+        const data = await listMovies();
         if (!cancelled) setMovies(Array.isArray(data) ? data : []);
       } catch (e) {
         if (!cancelled) setErr(getErrorMessage(e, "Failed to load recent projects."));

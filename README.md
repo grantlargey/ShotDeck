@@ -10,19 +10,20 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 - `client/src/app/` - Frontend app entry composition, routing, and global styles.
 - `client/src/pages/` - Page slices such as `movies-list`, `movie-detail`, and `script-viewer`.
 - `client/src/widgets/` - Reusable app-level UI blocks such as the site header.
-- `client/src/features/` - User-action workflows such as movie saves, uploads, annotation writes, and script scene mutations.
-- `client/src/entities/` - Business entity helpers for movies, annotations, scripts, and script scenes.
-- `client/src/shared/` - Shared API domain clients, upload helpers, generic UI primitives, and reusable libraries.
+- `client/src/features/` - User-action UI that isn't tied to one page, such as the change-password dialog.
+- `client/src/entities/` - Domain models and single-entity UI for movies, stills, captured scenes, and the admin session.
+- `client/src/shared/` - API operations by backend domain, generic UI primitives, and reusable libraries.
 - `server/` - Node.js backend package.
 - `server/src/index.js` - Small server entrypoint that imports the app and listens on `PORT`.
-- `server/src/app.js` - Express composition root: middleware, CORS, route mounting, and error middleware.
-- `server/src/routes/` - Public API route declarations.
-- `server/src/controllers/` - Express request/response handlers.
-- `server/src/services/` - Business rules, transactions, and orchestration.
-- `server/src/repositories/` - SQL queries and database persistence boundaries.
-- `server/src/serializers/` - API response shaping, including signed S3 view URLs.
-- `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code.
-- `server/sql/schema.sql` - Postgres schema.
+- `server/src/app.js` - Express composition root: middleware, CORS, the health check, router mounting, and error middleware.
+- `server/src/routes/` - One router per API domain, holding the domain's paths, sign-in guards, and HTTP handlers.
+- `server/src/services/` - The domain module behind each router: validation, rules, SQL, and response shaping. `thumbnails.service.js` makes still thumbnails in the background.
+- `server/src/repositories/` - Persistence files private to one domain module: admin accounts and sessions.
+- `server/src/domain/` - Domain data shared by the server and client, currently the captured-scene tag taxonomy.
+- `server/src/tools/` - Maintenance commands for captured-scene inventory and conversion.
+- `server/src/db.js`, `server/src/s3.js` - The shared Postgres pool; S3 object keys, uploads, and signed URLs.
+- `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code: CORS, the sign-in guards, the Origin check, the error handler, and small helpers.
+- `server/sql/migrations/` - Numbered Postgres schema migrations.
 - `package.json` - Root development and database commands.
 - `.nvmrc` - Pinned local Node.js version, matching the server Docker image.
 - `docker-compose.yml` - Local Postgres and an optional containerized API.
@@ -30,26 +31,22 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 
 ## Backend Architecture
 
-The backend follows a route/controller/service/repository structure:
+Each API domain has one router, with one domain module behind it:
 
 ```text
 HTTP request
-  -> route
-  -> controller
-  -> service
-  -> repository
-  -> Postgres
+  -> app.js: compression, CORS, the Origin check, JSON body parsing
+  -> router (routes/<domain>.routes.js): sign-in guard and HTTP handler
+  -> domain module (services/<domain>.service.js): validation, rules, SQL, and response shape
+  -> Postgres and S3
 ```
 
-The layers have separate responsibilities:
+The domains are auth, movies, scripts, captured scenes, stills, uploads, and the AI formatter.
 
-- Routes define URL paths and HTTP methods.
-- Controllers translate Express `req`/`res` into service calls and HTTP responses.
-- Services own application rules, such as validation decisions, overlap checks, transactions, and S3 orchestration.
-- Repositories own application queries. Services issue transaction commands, and the migration runner owns schema/data migration SQL.
-- Serializers convert database rows into API response shapes expected by the frontend.
-
-This keeps `index.js` readable and makes the backend easier to change without hunting through one large file.
+- A router declares its paths with their guards: `requireAdmin` on every route that changes data, and `requireOwner` on account management. Its handlers read the request's parameters, query, and body, call the domain module, and choose the response status. The AI formatter's router parses its own larger JSON body, so `app.js` mounts it before the app-wide parser.
+- A domain module is its domain's only interface. It validates one JSON shape for each write, runs the domain's SQL, and shapes responses, including signed S3 view URLs. It reports failures as `HttpError`, which the single error handler in `middleware/error-handler.js` turns into responses. A module that needs another domain's rule imports that domain's module, as scripts and stills do for the movie-existence check in `movies.service.js`.
+- When a domain's persistence is large enough for its own file, the file sits in `repositories/` and only its domain module imports it. The admin CLI (`src/admin.js`) goes through the auth module too.
+- The migration runner (`src/migrate.js`) owns schema and data migration SQL.
 
 ## Frontend Architecture
 
@@ -64,13 +61,13 @@ In practice:
 - `app` wires routing and global application concerns.
 - `pages` contain route-level screens and page-local UI.
 - `widgets` contain larger reusable UI blocks.
-- `features` contain reusable user actions that combine API calls and upload steps.
-- `entities` contain business-domain constants and pure helpers.
-- `shared` contains reusable infrastructure such as domain API clients, uploads, UI primitives, and time formatting.
+- `features` contain user-action UI that isn't tied to one page, such as the change-password dialog.
+- `entities` contain domain models (constants and pure helpers) and the UI that renders one entity, such as a movie or scene card.
+- `shared` contains reusable infrastructure: API operations (`shared/api/<domain>.js`), UI primitives (`shared/ui/`), and libraries such as time formatting and the screenplay grammar (`shared/lib/`).
 
-Each page slice exposes a small public API through its `index.js` file. Higher layers import from those public APIs rather than reaching into another slice's internal `ui` files.
+Every operation, helper and component has one owning module, and callers import it directly from that file, for example `import { getMovie } from "@/shared/api/movies.js"` or `import { Button } from "@/shared/ui/Button.jsx"`. A workflow that combines requests, such as uploading a file and then saving the record that points to it, remains one operation in its API owner, for example `saveScript` in `shared/api/scripts.js`.
 
-The script-viewer route is loaded on demand so the PDF renderer and editor are kept out of the initial application bundle.
+The script-viewer and admin routes are loaded on demand from their page modules, so the PDF renderer and editor are kept out of the initial application bundle.
 
 See the [script viewer architecture guide](docs/architecture/script-viewer.md) for draft ownership, saved text and location rules, and where to change viewer behavior.
 
@@ -138,12 +135,10 @@ Common settings include:
 - `DATABASE_URL` - Postgres connection string.
 - `PORT` - API port, defaults to `4000` when unset.
 - `AWS_REGION` - AWS region for S3 operations.
-- `S3_BUCKET` - Bucket used for covers, scripts, and annotation images.
+- `S3_BUCKET` - Bucket used for covers, scripts, and film stills.
 - `ALLOWED_ORIGINS` - Comma-separated list of additional browser origins allowed by CORS.
 - `OPENAI_API_KEY` - Optional, enables AI formatting proposals. Without it, manual editing and PDF capture remain available.
-- `OPENAI_SCREENPLAY_MODEL` - Model used for screenplay proposals; falls back to `OPENAI_FORMAT_MODEL`, then `gpt-5-nano`.
 - `OPENAI_SCREENPLAY_TIMEOUT_MS` - Screenplay formatter request timeout in milliseconds, defaults to `90000`.
-- `OPENAI_FORMAT_MODEL` - Fallback model for screenplay formatting when `OPENAI_SCREENPLAY_MODEL` is unset.
 
 Admin sign-in needs no configuration: sessions are stored in Postgres and the cookie is marked `Secure` automatically when the API is reached over HTTPS.
 
@@ -152,7 +147,6 @@ The AWS SDK needs credentials in the environment where the API runs. A host's AW
 Client configuration:
 
 - `VITE_API_BASE` - Public API base URL, defaults to `http://localhost:4000`.
-- `VITE_API_URL` - Retained fallback alias used only when `VITE_API_BASE` is unset or empty. Prefer `VITE_API_BASE` for new configurations.
 
 Restart the Vite dev server after changing client environment files, or rebuild for a deployed frontend. Vite embeds these values in browser assets, so they must not contain secrets.
 
@@ -170,14 +164,14 @@ postgres://app:app@127.0.0.1:5432/shotdeck
 
 ## Database
 
-The schema lives in `server/sql/schema.sql`. Start Postgres and apply it from the repository root:
+The schema is built by the numbered files in `server/sql/migrations/`. Start Postgres and apply pending migrations from the repository root:
 
 ```bash
 npm run db:up
 npm run db:migrate
 ```
 
-The migration script reads `DATABASE_URL` from the shell or `server/.env`; use the local connection string above when targeting the Compose database. It applies the schema and incremental alterations, and imports unmatched legacy script annotations through the shared Postgres pool. It currently has no migration-history ledger, so changes to legacy migration behavior require checking existing database state.
+The migration runner reads `DATABASE_URL` from the shell or `server/.env`; use the local connection string above when targeting the Compose database. It applies the numbered files in `server/sql/migrations/` in order and records them in `schema_migrations`. It refuses a database that still contains the retired captured-scene tables instead of trying to convert it implicitly.
 
 ## Admin Access
 
@@ -214,11 +208,13 @@ From the repository root:
 | Command | Purpose |
 | --- | --- |
 | `npm run setup` | Install locked server and client dependencies after `npm ci` at the root. |
+| `npm run check:unused` | Fail on unused source files, exports, dependencies, or unresolved imports across the client, server, commands, configs, and tests. |
+| `npm run smoke:browser` | Run the canonical captured-scene browser smoke against a throwaway database and side-port services. |
 | `npm run dev` | Start Postgres, wait for readiness, and run the API and client locally. |
 | `npm run db:up` | Start Postgres and wait for readiness. |
 | `npm run db:stop` | Stop Postgres while retaining its data. |
 | `npm run db:logs` | Follow Postgres logs. |
-| `npm run db:migrate` | Apply the schema and existing migration logic using `DATABASE_URL`. |
+| `npm run db:migrate` | Apply pending numbered migrations using `DATABASE_URL`. |
 | `npm run admin -- <command>` | Manage admin accounts: `hash`, `create-owner`, `reset-password`, `list`. See [Admin Access](#admin-access). |
 
 Client (from `client/`, or append `--prefix client` from the root):
@@ -235,28 +231,46 @@ Server (from `server/`, or append `--prefix server` from the root):
 
 ```bash
 npm run dev
+npm test
+npm run lint
 ```
 
-Client tests run with Vitest and jsdom (`npm test --prefix client`); they currently cover the script viewer's scene draft workflow. The server's `test` script is still an unimplemented placeholder, and there is no CI workflow.
+Client tests run with Vitest and jsdom (`npm test --prefix client`). GitHub Actions runs the unused-code check, client lint/tests/build, and server lint/tests on pushes and pull requests with Node 24.13.1 and a Postgres 16 service.
 
-## Local-only Importer
+### Browser smoke
 
-The ShotDeck importer and its compatibility shim are intentionally untracked local tools, so they are not installed by cloning this repository. The public package no longer advertises an importer npm command that depends on those absent files.
-
-An existing local installation containing both `server/src/importShotdeckShots.js` and `server/src/annotation-service.js` can still invoke the CLI directly from `server/`:
+Install the repository's pinned Chromium once after `npm ci`, then run the exact smoke command from the repository root:
 
 ```bash
-node src/importShotdeckShots.js --help
+npx playwright install chromium
+npm run smoke:browser
 ```
 
-In API mode the importer signs in first with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from the environment (for example from `server/.env.remote`); the account must be an admin, since every write requires one.
+The existing local Postgres must be reachable; the smoke never starts or restarts it. It creates only a uniquely named `shotdeck_test_16_*` database, reserves temporary loopback ports until handing them to the real API, Vite and S3 stub, and attempts every cleanup step even if an earlier one fails. The synthetic PDF and Google Fonts stylesheet are fulfilled inside Playwright, S3 sends terminate at the loopback stub, and child processes reject non-loopback sockets. `SMOKE_DATABASE_ADMIN_URL` can override the default `postgres://app:app@127.0.0.1:5432/postgres` only for a local port or user; it must use the Postgres protocol, a loopback hostname and the `postgres` administrative database, with no query parameters or fragment.
 
-Those local files and the repository/S3 helpers they call have been preserved. The importer's deduplication contract still needs to be reconciled with the current annotation API before relying on repeat imports.
+### Server tests and lint
+
+`npm test --prefix server` runs the API's tests with `node --test`. They start the Express app on a free port and call it over HTTP, pinning the current HTTP contract of each route, against a throwaway Postgres database:
+
+- The command creates `shotdeck_test_<suffix>` in the running `shotdeck-db-1` container with `docker exec`, applies the schema with `src/migrate.js`, and runs the test files one at a time. It drops the database afterwards, including when tests fail, you press Ctrl+C, or the terminal closes.
+- The suffix comes from `TEST_DB_SUFFIX` (lowercase letters, digits and underscores) and defaults to the command's process ID. Runs that happen at the same time need different suffixes. A run refuses to start if its database already exists, and prints the command that drops a leftover one.
+- If the container isn't running, the command fails with a message; start Postgres with `npm run db:up`. The command never starts it.
+- The command sets `DATABASE_URL`, dummy AWS credentials with S3 sends pointed at a closed local port, and an empty `OPENAI_API_KEY` itself, so a `server/.env` can't point the tests at a real database, bucket or OpenAI key. Presigned URLs are signed locally.
+- In CI, setting `DATABASE_URL` to an already-created `shotdeck_test_*` database bypasses `docker exec`; the harness refuses any other database name and leaves provider cleanup to the CI service.
+
+To run part of the suite, pass test files or globs ending in `.js` (relative to `server/`), or `node --test` flags written as `--flag=value`. Each file always runs alone in its own process, so `--test-concurrency` and the test isolation flags are refused:
+
+```bash
+TEST_DB_SUFFIX=01 npm test --prefix server -- test/auth.test.js
+npm test --prefix server -- --test-name-pattern="signing in"
+```
+
+`npm run lint --prefix server` checks the server and its tests with ESLint.
 
 ## Notes
 
 - Large uploads should go through the app's presigned S3 flow rather than through the API as request bodies.
-- The API makes an 800px WebP thumbnail for each film still in a `thumbs/` folder beside the original, in the background: when a still is saved or listed, and at startup for any still without one. Grids, timeline previews, and scene cards use it; the hero and scene viewer keep the full image. Run `npm run db:migrate` after pulling so the `annotations.thumb_key` column exists.
-- `npm run db:migrate` also creates the `admin_users` and `admin_sessions` tables; run it before the first sign-in.
-- Local env files, data imports, generated task definition snapshots, and local reference notes are ignored by git.
+- The API makes an 800px WebP thumbnail for each film still in a `thumbs/` folder beside the original, in the background: when a still is saved or listed, and at startup for any still without one. Grids, timeline previews, and scene cards use it; the hero and scene viewer keep the full image.
+- Run `npm run db:migrate` after pulling and before the first sign-in so the database has every numbered migration.
+- Local env files, generated task definition snapshots, and local reference notes are ignored by git.
 - Production deployment details are intentionally not documented in this public README.

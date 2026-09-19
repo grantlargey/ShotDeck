@@ -1,5 +1,5 @@
 // client/src/shared/api/uploads.js
-import { ApiError, ValidationError } from "@/shared/lib/errors";
+import { ApiError, ValidationError } from "@/shared/lib/errors.js";
 import { req } from "./request.js";
 
 function presignUpload({ movieId, type, contentType }) {
@@ -61,8 +61,8 @@ async function uploadToS3(uploadUrl, file) {
 }
 
 /**
- * Higher-level direct-to-S3 upload helper used by feature actions.
- * Returns the stable object key that should be saved in the database.
+ * Uploads a file straight to S3 through a presigned URL. Returns the stable
+ * object key that should be saved in the database.
  */
 export async function uploadMediaFile({ movieId, type, file }) {
   if (!file) throw new ValidationError("Please choose a file to upload.");
@@ -77,11 +77,7 @@ export async function uploadMediaFile({ movieId, type, file }) {
   return key;
 }
 
-/**
- * Shared validation for the app's script upload controls.
- */
-export function assertPdfFile(file) {
-  if (file && file.type !== "application/pdf") {
-    throw new ValidationError("Please choose a PDF file.");
-  }
+/** A short-lived signed URL for viewing a stored media key. */
+export function getViewUrlForKey(key) {
+  return req(`/uploads/view-url?key=${encodeURIComponent(key)}`);
 }

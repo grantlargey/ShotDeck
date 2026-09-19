@@ -1,13 +1,5 @@
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
+.sceneOverlay {
   padding: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-scrim);
-  color: var(--color-text);
 }
 
 /* Nearly full-screen, like a document viewer, so the script has room. */
@@ -265,7 +257,7 @@
 }
 
 @media (max-width: 600px) {
-  .overlay {
+  .sceneOverlay {
     padding: 0;
   }
 
@@ -328,7 +320,7 @@
     margin-left: 0;
   }
 
-  .actionButton {
+  .actions > * {
     flex: 1;
   }
 }

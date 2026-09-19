@@ -42,16 +42,9 @@ export function sceneRowFromPayload(id, payload) {
     start_time_seconds: payload.start_time_seconds,
     end_time_seconds: payload.end_time_seconds,
     tags: payload.tags,
-    page_start: payload.page_start,
-    page_end: payload.page_end,
-    selected_text: payload.selected_text,
-    raw_selected_text: payload.raw_selected_text,
-    formatted_selected_text: payload.formatted_selected_text,
-    context_prefix: payload.context_prefix,
-    context_suffix: payload.context_suffix,
-    start_offset: payload.start_offset,
-    end_offset: payload.end_offset,
-    anchor_geometry: payload.anchor_geometry,
+    script_location: payload.script_location,
+    scene_text: payload.scene_text,
+    raw_text: payload.raw_text,
     updated_at: "2026-09-14T00:00:00.000Z",
   });
 }
@@ -66,6 +59,21 @@ export const fakeApi = {
   formatScreenplaySelection: vi.fn(),
   getViewUrlForKey: vi.fn(),
   listAnnotations: vi.fn(),
+};
+
+/** The same doubles, grouped by the API module that owns each operation, for the suite's vi.mock factories. */
+export const apiModules = {
+  annotations: { listAnnotations: fakeApi.listAnnotations },
+  movies: { getMovie: fakeApi.getMovie },
+  screenplayFormat: { formatScreenplaySelection: fakeApi.formatScreenplaySelection },
+  scriptScenes: {
+    listScriptScenes: fakeApi.listScriptScenes,
+    createScriptScene: fakeApi.createScriptScene,
+    updateScriptScene: fakeApi.updateScriptScene,
+    deleteScriptScene: fakeApi.deleteScriptScene,
+  },
+  scripts: { getScript: fakeApi.getScript },
+  uploads: { getViewUrlForKey: fakeApi.getViewUrlForKey },
 };
 
 function installApi() {
@@ -123,7 +131,7 @@ export function loadedPdfDocument() {
 
 // ---------- Text index ----------
 
-const EMPTY_INDEX = { doc: null, pages: new Map(), complete: false, actionMargin: null, pageOffsets: null };
+const EMPTY_INDEX = { doc: null, pages: new Map(), complete: false, actionMargin: null };
 const indexListeners = new Set();
 let currentIndex = EMPTY_INDEX;
 
@@ -272,8 +280,13 @@ function LocationProbe() {
 /**
  * Renders the viewer route for movie m1 / script s1 and waits until the PDF
  * pages have mounted. Scenes, stills and the session are set before loading.
+ * Pass `awaitPages: false` when the load is meant to render no pages at all,
+ * such as a failed one; the test then waits for what it expects instead.
  */
-export async function renderViewer(ScriptViewerRoute, { scenes = [], stills = [], numPages = 3, sceneId = "", admin = true } = {}) {
+export async function renderViewer(
+  ScriptViewerRoute,
+  { scenes = [], stills = [], numPages = 3, sceneId = "", admin = true, awaitPages = true } = {}
+) {
   scenario.scenes = scenes;
   scenario.stills = stills;
   session.isAdmin = admin;
@@ -293,7 +306,7 @@ export async function renderViewer(ScriptViewerRoute, { scenes = [], stills = []
       )
     )
   );
-  await waitFor(() => expect(frameProps(numPages)).not.toBeNull());
+  if (awaitPages) await waitFor(() => expect(frameProps(numPages)).not.toBeNull());
 }
 
 export function currentLocation() {

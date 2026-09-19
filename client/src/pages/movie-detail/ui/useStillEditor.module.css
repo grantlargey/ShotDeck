@@ -1,0 +1,51 @@
+.editRow {
+  padding: 16px;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.timeField {
+  flex: 0 1 160px;
+}
+
+.imageField {
+  flex: 1 1 240px;
+}
+
+.editActions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.addForm {
+  display: grid;
+  gap: 16px;
+}
+
+.addDrop {
+  aspect-ratio: 16 / 9;
+}
+
+.formError {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 600px) {
+  .editActions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .editActions > * {
+    flex: 1;
+  }
+}

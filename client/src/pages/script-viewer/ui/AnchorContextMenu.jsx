@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { formatSecondsToHms } from "@/shared/lib/time";
+import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { undoShortcutLabel } from "../lib/platform.js";
 import styles from "./AnchorContextMenu.module.css";
 
@@ -125,9 +125,7 @@ export function AnchorContextMenu({
           {menu.scenes.map((scene) => (
             <MenuItem
               key={scene.id}
-              label={`Edit scene ${formatSecondsToHms(scene.start_time_seconds)}–${formatSecondsToHms(
-                scene.end_time_seconds
-              )}`}
+              label={`Edit scene ${formatFilmTiming(scene)}`}
               onSelect={run(() => onSelectScene(scene))}
             />
           ))}

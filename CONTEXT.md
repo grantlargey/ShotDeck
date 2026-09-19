@@ -15,23 +15,23 @@ A saved scene from a script, made up of its script location, scene text, raw tex
 _Avoid_: Scene annotation, script annotation, script scene
 
 **Script location**:
-Where a captured scene sits in its script: its pages and, when recorded, its scene anchors, text offsets, and surrounding text.
+Where a captured scene sits in its script: its required start and end scene anchors.
 _Avoid_: Anchor (for the whole location), selection
 
 **Film timing**:
 The start and end time within the film that a captured scene covers.
 _Avoid_: Time range, timestamps
 
-**Legacy scene**:
-A captured scene whose script location has no usable pair of scene anchors, such as one saved before anchors existed.
-_Avoid_: Old scene, unanchored scene
+**Overlapping scenes**:
+Captured scenes of the same script whose film timings share any moment besides the point where one ends and the other begins, or whose script locations share a line. Scenes can't overlap; scenes that only touch are fine.
+_Avoid_: Conflicting scenes, time collision
 
 **Scene text**:
-The screenplay-formatted text shown for a captured scene. A captured scene without it currently shows its raw text or older stored text instead.
+The screenplay-formatted text shown for a captured scene.
 _Avoid_: Formatted text, selected text, markdown
 
 **Raw text**:
-Plain text stored alongside the scene text. It is usually the words of the captured text. Without captured text from the current anchors, saving keeps the captured scene's existing raw text when it has some, and otherwise derives it from the scene text.
+Plain text captured from the script between a captured scene's anchors and stored alongside its scene text.
 _Avoid_: Verbatim text, PDF text, original text
 
 ### Capturing a scene
@@ -43,10 +43,6 @@ _Avoid_: Annotation, scene form, draft scene
 **Scene anchor**:
 The first line (start anchor) or last line (end anchor) of a scene in its script.
 _Avoid_: Marker, selection handle
-
-**Suggested anchors**:
-Scene anchors proposed by matching a saved scene's text against its script. They are shown on a scene draft but are not part of it until the admin changes the anchors or re-captures.
-_Avoid_: Automatic anchors, guessed anchors
 
 **Captured text**:
 The text between a scene draft's anchors, read from the script and laid out as screenplay text.
@@ -61,9 +57,15 @@ Where a scene draft's text came from: Captured, Edited, Saved, or AI formatted.
 _Avoid_: Text source, text status
 
 **Stale text**:
-Scene draft text whose scene anchors no longer match the current ones, such as after the anchors move without a re-capture, or a legacy scene's text once suggested anchors appear.
+Scene draft text that came from a different anchor pair than the draft's current complete, readable anchor pair.
 _Avoid_: Stale capture, outdated capture
 
 **AI proposal**:
 Screenplay text the AI formatter suggests for a scene draft; it changes nothing until the admin accepts it.
 _Avoid_: AI format, AI suggestion, formatting result
+
+### Films
+
+**Still**:
+An image from a film, placed at one moment of the film.
+_Avoid_: Annotation, image annotation

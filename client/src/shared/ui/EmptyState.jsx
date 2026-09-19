@@ -1,4 +1,4 @@
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import styles from "./EmptyState.module.css";
 
 export function EmptyState({ title, children, action, compact = false, className }) {

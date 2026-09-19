@@ -3,11 +3,13 @@ import {
   cycleScreenplayType,
   getScreenplayElement,
   NEXT_SCREENPLAY_TYPE,
-  parseScreenplayMarkdown,
   SCREENPLAY_ELEMENTS,
+} from "@/shared/lib/screenplay/elements.js";
+import {
+  parseScreenplayMarkdown,
   serializeScreenplayMarkdown,
-} from "@/shared/lib/screenplay";
-import { ScreenplayElementIcon } from "@/shared/ui";
+} from "@/shared/lib/screenplay/grammar.js";
+import { ScreenplayElementIcon } from "@/shared/ui/ScreenplayElementIcon.jsx";
 import { elementShortcutLabel } from "../lib/platform.js";
 import styles from "./ScreenplayEditor.module.css";
 

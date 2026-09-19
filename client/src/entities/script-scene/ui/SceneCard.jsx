@@ -1,25 +1,21 @@
-import { cx } from "@/shared/lib/cx";
-import { useSignedMediaUrl } from "@/shared/lib/media";
-import { getScreenplaySceneHeading } from "@/shared/lib/screenplay";
-import { formatSecondsToHms } from "@/shared/lib/time";
-import { Badge, ImageIcon, ScreenplayView, Skeleton } from "@/shared/ui";
+import { cx } from "@/shared/lib/cx.js";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { getScreenplaySceneHeading } from "@/shared/lib/screenplay/grammar.js";
+import { Badge } from "@/shared/ui/Badge.jsx";
+import { ImageIcon } from "@/shared/ui/icons.jsx";
+import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
+import { Skeleton } from "@/shared/ui/Skeleton.jsx";
 import {
   displayScriptSceneText,
-  formatScriptScenePages,
   safeScriptSceneTags,
-} from "../model/scriptSceneText.js";
-import { getScriptTagLabel } from "../model/scriptTagCategories.js";
+} from "../model/capturedScene.js";
+import { formatFilmTiming } from "../model/filmTiming.js";
+import { formatScenePages } from "../model/scriptLocation.js";
+import { getScriptTagLabel } from "@server/domain/script-tags.js";
 import styles from "./SceneCard.module.css";
 
 const MAX_CARD_TAGS = 3;
 const MAX_PREVIEW_ELEMENTS = 14;
-
-function formatTiming(scene) {
-  const start = scene?.start_time_seconds;
-  const end = scene?.end_time_seconds;
-  if (!Number.isFinite(start) && !Number.isFinite(end)) return "No timing yet";
-  return `${formatSecondsToHms(start)} – ${formatSecondsToHms(end)}`;
-}
 
 /**
  * Scene preview card: a slice of script paper in screenplay layout above
@@ -50,7 +46,7 @@ export function SceneCard({
   const imageKey = still?.thumb_key || still?.image_key || null;
   const imageUrl = useSignedMediaUrl(imageKey);
   const cardTitle = title ?? (scene?.movie_title || "Unknown title");
-  const pages = formatScriptScenePages(scene);
+  const pages = formatScenePages(scene);
 
   function handleKeyDown(event) {
     if (event.target !== event.currentTarget) return;
@@ -96,10 +92,10 @@ export function SceneCard({
       <div className={styles.meta}>
         <div className={styles.titleRow}>
           <span className={styles.title}>{cardTitle}</span>
-          <span className={styles.pages}>{pages}</span>
+          {pages && <span className={styles.pages}>{pages}</span>}
         </div>
         <div className={styles.subRow}>
-          <span>{formatTiming(scene)}</span>
+          <span>{formatFilmTiming(scene)}</span>
           {status && <Badge tone="success">{status}</Badge>}
         </div>
         {tags.length > 0 && (

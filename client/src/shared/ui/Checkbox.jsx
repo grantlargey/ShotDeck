@@ -1,4 +1,4 @@
-import { cx } from "@/shared/lib/cx";
+import { cx } from "@/shared/lib/cx.js";
 import styles from "./Checkbox.module.css";
 
 export function Checkbox({ className, ...props }) {

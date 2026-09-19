@@ -1,495 +1,379 @@
 import { v4 as uuidv4 } from "uuid";
-import { createPresignedGetUrl } from "../s3.js";
-import { findScriptForMovie } from "../repositories/scripts.repository.js";
-import * as repository from "../repositories/script-scenes.repository.js";
-import { mapScriptSceneRow } from "../serializers/script-scenes.serializer.js";
+import { SCRIPT_TAG_CATEGORIES } from "../domain/script-tags.js";
 import { HttpError } from "../utils/http-error.js";
-import {
-    isFiniteInt,
-    normalizeAnchorGeometry,
-    normalizeOptionalInt,
-    normalizeTags,
-} from "../utils/normalize.js";
 
-function conflictError(conflictingRow) {
-    return new HttpError(409, "Scene time range overlaps an existing scene in this script.", {
-        conflict_scene_id: conflictingRow.id,
-        conflict_start_time_seconds: conflictingRow.start_time_seconds,
-        conflict_end_time_seconds: conflictingRow.end_time_seconds,
+/*
+ * Captured scenes: the module behind routes/script-scenes.routes.js. Its
+ * interface is one canonical write and response shape; the implementation
+ * owns validation, overlap rules, SQL, locking and response shaping.
+ */
+
+const SCENE_NOT_FOUND = "Script scene annotation not found";
+const SEARCH_RESULT_LIMIT = 500;
+const MAX_INT = 2_147_483_647;
+const MAX_PAGE_OR_LINE = 100_000;
+const TAXONOMY_TAGS = new Set(SCRIPT_TAG_CATEGORIES.flatMap((category) => category.tags.map((tag) => tag.value)));
+
+const INVALID_BODY = {
+    filmTiming:
+        "Invalid body. start_time_seconds and end_time_seconds must be integers between 0 and 2147483647 where end >= start.",
+    scriptLocation: "Invalid body. script_location must contain start and end scene anchors.",
+    sceneAnchor:
+        "Invalid body. Each scene anchor needs a whole page from 1 to 100000, a whole line from 0 to 100000, finite top and bottom, and text.",
+    reversedPair: "Invalid body. The start anchor must come before or on the same line as the end anchor.",
+    sceneText: "Invalid body. scene_text must be a non-empty string.",
+    rawText: "Invalid body. raw_text must be a non-empty string.",
+    tags: "Invalid body. tags must be an array of strings.",
+};
+
+const CONFLICT_MESSAGES = {
+    film_timing: "This scene's film timing overlaps another scene in this script.",
+    script_location: "This scene's script location shares lines with another scene in this script.",
+};
+
+/** Creates a scene when `sceneId` is null, and otherwise replaces that saved scene. */
+export async function saveScriptScene(pool, { movieId, scriptId, sceneId = null, body }) {
+    const input = readSceneBody(body);
+    try {
+        return await withTransaction(pool, async (client) => {
+            await lockScriptScenes(client, scriptId);
+            const saved = sceneId ? await findSavedScene(client, { movieId, scriptId, sceneId }) : null;
+            if (sceneId && !saved) throw new HttpError(404, SCENE_NOT_FOUND);
+            if (!sceneId && !(await scriptExists(client, { movieId, scriptId }))) {
+                throw new HttpError(404, "Script not found");
+            }
+
+            const conflict = await findConflict(client, { scriptId, sceneId, input });
+            if (conflict) throw conflict;
+
+            const savedId = await writeScene(client, { scriptId, sceneId: saved?.id, input });
+            return sceneFromRow(await fetchSceneRow(client, { movieId, scriptId, sceneId: savedId }));
+        });
+    } catch (error) {
+        if (error?.code !== "23P01") throw error;
+        const kind = constraintConflictKind(error.constraint);
+        if (!kind) throw error;
+        throw new HttpError(409, CONFLICT_MESSAGES[kind], {
+            conflict_kind: kind,
+            conflict_scene_id: null,
+            conflict_start_time_seconds: null,
+            conflict_end_time_seconds: null,
+        });
+    }
+}
+
+export async function listScriptScenes(db, { movieId, scriptId }) {
+    const result = await db.query(
+        `${SCENE_SELECT_SQL}
+         WHERE s.movie_id = $1 AND sc.script_id = $2
+         ORDER BY sc.start_page, sc.start_line, sc.id`,
+        [movieId, scriptId]
+    );
+    return result.rows.map(sceneFromRow);
+}
+
+export async function deleteScriptScene(pool, { movieId, scriptId, sceneId }) {
+    await withTransaction(pool, async (client) => {
+        await lockScriptScenes(client, scriptId);
+        const result = await client.query(
+            `DELETE FROM captured_scenes sc
+             USING scripts s
+             WHERE sc.script_id = s.id AND sc.id = $1 AND s.movie_id = $2 AND sc.script_id = $3`,
+            [sceneId, movieId, scriptId]
+        );
+        if (result.rowCount === 0) throw new HttpError(404, SCENE_NOT_FOUND);
     });
 }
 
-function validatePageRange(pageStartParsed, pageEndParsed) {
-    return !(
-        Number.isNaN(pageStartParsed) ||
-        Number.isNaN(pageEndParsed) ||
-        (pageStartParsed !== undefined && pageStartParsed !== null && pageStartParsed < 1) ||
-        (pageEndParsed !== undefined && pageEndParsed !== null && pageEndParsed < 1) ||
-        (pageStartParsed !== undefined &&
-            pageStartParsed !== null &&
-            pageEndParsed !== undefined &&
-            pageEndParsed !== null &&
-            pageEndParsed < pageStartParsed)
+/** Scenes in every script with all of `tags`, or any of them when `match` is "any". */
+export async function searchScriptScenes(db, { tags, match }) {
+    const anyTag = match === "any";
+    const filter = tags.length === 0 ? "" : anyTag ? "WHERE sc.tags ?| $1::text[]" : "WHERE sc.tags @> $1::jsonb";
+    const values = tags.length === 0 ? [] : [anyTag ? tags : JSON.stringify(tags)];
+    const result = await db.query(
+        `SELECT ${SCENE_COLUMNS_SQL}, m.title AS movie_title
+         ${SCENE_FROM_SQL}
+         JOIN movies m ON m.id = s.movie_id
+         ${filter}
+         ORDER BY sc.updated_at DESC
+         LIMIT ${SEARCH_RESULT_LIMIT}`,
+        values
     );
+    return result.rows.map((row) => ({ ...sceneFromRow(row), movie_title: row.movie_title }));
 }
 
-function validateOffsetRange(startOffsetParsed, endOffsetParsed) {
-    return !(
-        Number.isNaN(startOffsetParsed) ||
-        Number.isNaN(endOffsetParsed) ||
-        (startOffsetParsed !== undefined && startOffsetParsed !== null && startOffsetParsed < 0) ||
-        (endOffsetParsed !== undefined && endOffsetParsed !== null && endOffsetParsed < 0) ||
-        (startOffsetParsed !== undefined &&
-            startOffsetParsed !== null &&
-            endOffsetParsed !== undefined &&
-            endOffsetParsed !== null &&
-            endOffsetParsed < startOffsetParsed)
-    );
-}
-
-function buildCreateInput(body) {
-    const {
-        start_time_seconds,
-        end_time_seconds,
-        selected_text,
-        raw_selected_text,
-        formatted_selected_text,
-        page_start,
-        page_end,
-        context_prefix,
-        context_suffix,
-        start_offset,
-        end_offset,
-        anchor_geometry,
-        tags,
-    } = body || {};
-
-    const startTime = Number(start_time_seconds);
-    const endTime = Number(end_time_seconds);
-
-    if (!isFiniteInt(startTime) || !isFiniteInt(endTime) || startTime < 0 || endTime < startTime) {
-        throw new HttpError(
-            400,
-            "Invalid body. start_time_seconds and end_time_seconds must be integers where end >= start and start >= 0."
-        );
-    }
-
-    const pageStartParsed = page_start === null ? null : normalizeOptionalInt(page_start);
-    const pageEndParsed = page_end === null ? null : normalizeOptionalInt(page_end);
-
-    if (!validatePageRange(pageStartParsed, pageEndParsed)) {
-        throw new HttpError(
-            400,
-            "Invalid body. page_start/page_end must be positive integers and page_end >= page_start."
-        );
-    }
-
+function readSceneBody(body) {
+    const fields = body ?? {};
+    const startTime = fields.start_time_seconds;
+    const endTime = fields.end_time_seconds;
     if (
-        (context_prefix !== undefined && context_prefix !== null && typeof context_prefix !== "string") ||
-        (context_suffix !== undefined && context_suffix !== null && typeof context_suffix !== "string")
+        !Number.isInteger(startTime) ||
+        !Number.isInteger(endTime) ||
+        startTime < 0 ||
+        endTime < startTime ||
+        startTime > MAX_INT ||
+        endTime > MAX_INT
     ) {
-        throw new HttpError(
-            400,
-            "Invalid body. context_prefix/context_suffix must be strings when provided."
-        );
+        throw invalidBody(INVALID_BODY.filmTiming);
     }
 
-    const startOffsetParsed = start_offset === null ? null : normalizeOptionalInt(start_offset);
-    const endOffsetParsed = end_offset === null ? null : normalizeOptionalInt(end_offset);
-
-    if (!validateOffsetRange(startOffsetParsed, endOffsetParsed)) {
-        throw new HttpError(
-            400,
-            "Invalid body. start_offset/end_offset must be integers where end_offset >= start_offset >= 0."
-        );
+    const location = fields.script_location;
+    if (!isPlainObject(location) || !isPlainObject(location.start) || !isPlainObject(location.end)) {
+        throw invalidBody(INVALID_BODY.scriptLocation);
     }
-
-    const rawSelectedText =
-        typeof raw_selected_text === "string"
-            ? raw_selected_text
-            : typeof selected_text === "string"
-                ? selected_text
-                : "";
-    const formattedSelectedText =
-        typeof formatted_selected_text === "string"
-            ? formatted_selected_text
-            : formatted_selected_text === null
-                ? null
-                : null;
-
-    if (!rawSelectedText.trim()) {
-        throw new HttpError(400, "Invalid body. raw_selected_text must be a non-empty string.");
-    }
-
-    const selectedTextToStore =
-        typeof selected_text === "string" && selected_text.trim()
-            ? selected_text
-            : formattedSelectedText && formattedSelectedText.trim()
-                ? formattedSelectedText
-                : rawSelectedText;
-
-    const tagsNorm = normalizeTags(tags);
-    if (tagsNorm === "__INVALID__") {
-        throw new HttpError(
-            400,
-            "Invalid body. tags must be an array of strings or comma-separated string."
-        );
-    }
-
-    const anchorGeometryNorm = normalizeAnchorGeometry(anchor_geometry);
-    if (anchorGeometryNorm === "__INVALID__") {
-        throw new HttpError(400, "Invalid body. anchor_geometry must be a JSON array when provided.");
-    }
+    const start = readAnchor(location.start);
+    const end = readAnchor(location.end);
+    if (compareLines(start, end) > 0) throw invalidBody(INVALID_BODY.reversedPair);
+    if (!isNonBlankString(fields.scene_text)) throw invalidBody(INVALID_BODY.sceneText);
+    if (!isNonBlankString(fields.raw_text)) throw invalidBody(INVALID_BODY.rawText);
 
     return {
         startTime,
         endTime,
-        pageStart: pageStartParsed === undefined ? null : pageStartParsed,
-        pageEnd: pageEndParsed === undefined ? null : pageEndParsed,
-        selectedText: selectedTextToStore,
-        rawSelectedText,
-        formattedSelectedText,
-        contextPrefix: context_prefix === undefined ? null : context_prefix,
-        contextSuffix: context_suffix === undefined ? null : context_suffix,
-        startOffset: startOffsetParsed === undefined ? null : startOffsetParsed,
-        endOffset: endOffsetParsed === undefined ? null : endOffsetParsed,
-        anchorGeometry: anchorGeometryNorm === undefined ? [] : anchorGeometryNorm,
-        tags: tagsNorm === undefined ? [] : tagsNorm,
+        start,
+        end,
+        sceneText: fields.scene_text,
+        rawText: fields.raw_text,
+        tags: readTags(fields.tags),
     };
 }
 
-function buildUpdateInput(existingRow, body) {
-    const startTimeParsed = normalizeOptionalInt(body.start_time_seconds);
-    const endTimeParsed = normalizeOptionalInt(body.end_time_seconds);
-    if (Number.isNaN(startTimeParsed) || Number.isNaN(endTimeParsed)) {
-        throw new HttpError(400, "start_time_seconds/end_time_seconds must be integers when provided.");
-    }
-
-    const nextStartTime =
-        startTimeParsed === undefined ? existingRow.start_time_seconds : startTimeParsed;
-    const nextEndTime =
-        endTimeParsed === undefined ? existingRow.end_time_seconds : endTimeParsed;
-    if (!isFiniteInt(nextStartTime) || !isFiniteInt(nextEndTime) || nextStartTime < 0 || nextEndTime < nextStartTime) {
-        throw new HttpError(400, "Invalid time range. end_time_seconds must be >= start_time_seconds >= 0.");
-    }
-
-    const pageStartParsed =
-        body.page_start === undefined
-            ? undefined
-            : body.page_start === null
-                ? null
-                : normalizeOptionalInt(body.page_start);
-    const pageEndParsed =
-        body.page_end === undefined
-            ? undefined
-            : body.page_end === null
-                ? null
-                : normalizeOptionalInt(body.page_end);
-    if (Number.isNaN(pageStartParsed) || Number.isNaN(pageEndParsed)) {
-        throw new HttpError(400, "page_start/page_end must be integers when provided.");
-    }
-    const nextPageStart = pageStartParsed === undefined ? existingRow.page_start : pageStartParsed;
-    const nextPageEnd = pageEndParsed === undefined ? existingRow.page_end : pageEndParsed;
+function readAnchor(value) {
     if (
-        (nextPageStart !== null && nextPageStart !== undefined && nextPageStart < 1) ||
-        (nextPageEnd !== null && nextPageEnd !== undefined && nextPageEnd < 1) ||
-        (nextPageStart !== null &&
-            nextPageStart !== undefined &&
-            nextPageEnd !== null &&
-            nextPageEnd !== undefined &&
-            nextPageEnd < nextPageStart)
+        !Number.isInteger(value.page) ||
+        value.page < 1 ||
+        value.page > MAX_PAGE_OR_LINE ||
+        !Number.isInteger(value.line) ||
+        value.line < 0 ||
+        value.line > MAX_PAGE_OR_LINE ||
+        !Number.isFinite(value.top) ||
+        !Number.isFinite(value.bottom) ||
+        typeof value.text !== "string"
     ) {
-        throw new HttpError(
-            400,
-            "Invalid page range. page_start/page_end must be positive and page_end >= page_start."
-        );
+        throw invalidBody(INVALID_BODY.sceneAnchor);
     }
-
-    const startOffsetParsed =
-        body.start_offset === undefined
-            ? undefined
-            : body.start_offset === null
-                ? null
-                : normalizeOptionalInt(body.start_offset);
-    const endOffsetParsed =
-        body.end_offset === undefined
-            ? undefined
-            : body.end_offset === null
-                ? null
-                : normalizeOptionalInt(body.end_offset);
-    if (Number.isNaN(startOffsetParsed) || Number.isNaN(endOffsetParsed)) {
-        throw new HttpError(400, "start_offset/end_offset must be integers when provided.");
-    }
-    const nextStartOffset =
-        startOffsetParsed === undefined ? existingRow.start_offset : startOffsetParsed;
-    const nextEndOffset =
-        endOffsetParsed === undefined ? existingRow.end_offset : endOffsetParsed;
-    if (
-        (nextStartOffset !== null && nextStartOffset !== undefined && nextStartOffset < 0) ||
-        (nextEndOffset !== null && nextEndOffset !== undefined && nextEndOffset < 0) ||
-        (nextStartOffset !== null &&
-            nextStartOffset !== undefined &&
-            nextEndOffset !== null &&
-            nextEndOffset !== undefined &&
-            nextEndOffset < nextStartOffset)
-    ) {
-        throw new HttpError(
-            400,
-            "Invalid offsets. start_offset/end_offset must be >= 0 and end_offset >= start_offset."
-        );
-    }
-
-    if (
-        (body.selected_text !== undefined && body.selected_text !== null && typeof body.selected_text !== "string") ||
-        (body.raw_selected_text !== undefined &&
-            body.raw_selected_text !== null &&
-            typeof body.raw_selected_text !== "string") ||
-        (body.formatted_selected_text !== undefined &&
-            body.formatted_selected_text !== null &&
-            typeof body.formatted_selected_text !== "string") ||
-        (body.context_prefix !== undefined &&
-            body.context_prefix !== null &&
-            typeof body.context_prefix !== "string") ||
-        (body.context_suffix !== undefined &&
-            body.context_suffix !== null &&
-            typeof body.context_suffix !== "string")
-    ) {
-        throw new HttpError(
-            400,
-            "Invalid body. Text fields must be strings when provided (or null where supported)."
-        );
-    }
-
-    const tagsNorm = body.tags === undefined ? undefined : normalizeTags(body.tags);
-    if (tagsNorm === "__INVALID__") {
-        throw new HttpError(
-            400,
-            "Invalid body. tags must be an array of strings or comma-separated string."
-        );
-    }
-
-    const anchorGeometryNorm =
-        body.anchor_geometry === undefined ? undefined : normalizeAnchorGeometry(body.anchor_geometry);
-    if (anchorGeometryNorm === "__INVALID__") {
-        throw new HttpError(400, "Invalid body. anchor_geometry must be a JSON array when provided.");
-    }
-
-    const nextRawSelectedText =
-        body.raw_selected_text === undefined
-            ? existingRow.raw_selected_text
-            : body.raw_selected_text === null
-                ? ""
-                : body.raw_selected_text;
-    const nextFormattedSelectedText =
-        body.formatted_selected_text === undefined
-            ? existingRow.formatted_selected_text
-            : body.formatted_selected_text;
-    const selectedTextCandidate =
-        body.selected_text === undefined
-            ? existingRow.selected_text
-            : body.selected_text === null
-                ? ""
-                : body.selected_text;
-    const nextSelectedText =
-        typeof selectedTextCandidate === "string" && selectedTextCandidate.trim()
-            ? selectedTextCandidate
-            : typeof nextFormattedSelectedText === "string" && nextFormattedSelectedText.trim()
-                ? nextFormattedSelectedText
-                : nextRawSelectedText;
-
-    if (!nextRawSelectedText.trim()) {
-        throw new HttpError(400, "raw_selected_text must remain a non-empty string.");
-    }
-
-    return {
-        startTime: nextStartTime,
-        endTime: nextEndTime,
-        pageStart: nextPageStart ?? null,
-        pageEnd: nextPageEnd ?? null,
-        selectedText: nextSelectedText,
-        rawSelectedText: nextRawSelectedText,
-        formattedSelectedText: nextFormattedSelectedText ?? null,
-        contextPrefix: body.context_prefix === undefined ? existingRow.context_prefix : body.context_prefix,
-        contextSuffix: body.context_suffix === undefined ? existingRow.context_suffix : body.context_suffix,
-        startOffset: nextStartOffset ?? null,
-        endOffset: nextEndOffset ?? null,
-        tags: tagsNorm === undefined ? existingRow.tags : tagsNorm,
-        anchorGeometry: anchorGeometryNorm === undefined ? existingRow.anchor_geometry : anchorGeometryNorm,
-    };
+    return { page: value.page, line: value.line, top: value.top, bottom: value.bottom, text: value.text };
 }
 
-export async function createScriptScene(pool, { movieId, scriptId, body }) {
-    const input = buildCreateInput(body);
-
-    const script = await findScriptForMovie(pool, { movieId, scriptId });
-    if (!script) throw new HttpError(404, "Script not found");
-
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
-
-        const conflictingRow = await repository.findOverlappingScriptScene(client, {
-            movieId,
-            scriptId,
-            startTimeSeconds: input.startTime,
-            endTimeSeconds: input.endTime,
-        });
-        if (conflictingRow) {
-            await client.query("ROLLBACK");
-            throw conflictError(conflictingRow);
-        }
-
-        const anchorId = uuidv4();
-        const sceneId = uuidv4();
-
-        await repository.insertScriptSceneAnchor(client, {
-            anchorId,
-            movieId,
-            scriptId,
-            pageStart: input.pageStart,
-            pageEnd: input.pageEnd,
-            selectedText: input.selectedText,
-            rawSelectedText: input.rawSelectedText,
-            formattedSelectedText: input.formattedSelectedText,
-            contextPrefix: input.contextPrefix,
-            contextSuffix: input.contextSuffix,
-            startOffset: input.startOffset,
-            endOffset: input.endOffset,
-            anchorGeometry: input.anchorGeometry,
-        });
-
-        await repository.insertScriptSceneAnnotation(client, {
-            sceneId,
-            anchorId,
-            movieId,
-            scriptId,
-            startTimeSeconds: input.startTime,
-            endTimeSeconds: input.endTime,
-            tags: input.tags,
-        });
-
-        const createdRow = await repository.fetchScriptSceneRow(client, { sceneId, movieId, scriptId });
-        await client.query("COMMIT");
-        return mapScriptSceneRow(createdRow);
-    } catch (err) {
-        try {
-            await client.query("ROLLBACK");
-        } catch {
-            // Ignore rollback failures; the original error is more useful.
-        }
-        throw err;
-    } finally {
-        client.release();
+function readTags(value) {
+    if (!Array.isArray(value) || !value.every((tag) => typeof tag === "string")) {
+        throw invalidBody(INVALID_BODY.tags);
     }
+    const tags = [...new Set(value.map((tag) => tag.trim()).filter(Boolean))];
+    const unknown = tags.find((tag) => !TAXONOMY_TAGS.has(tag));
+    if (unknown) throw invalidBody(`Invalid body. Unknown script tag: ${unknown}`);
+    return tags;
 }
 
-export async function listScriptScenes(db, { movieId, scriptId, rawTags, match }) {
-    const tagsNorm = normalizeTags(rawTags);
-    if (tagsNorm === "__INVALID__") throw new HttpError(400, "Invalid tags query parameter.");
+function isPlainObject(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
-    const rows = await repository.listScriptSceneRows(db, {
-        movieId,
+function isNonBlankString(value) {
+    return typeof value === "string" && value.trim() !== "";
+}
+
+function invalidBody(message) {
+    return new HttpError(400, message);
+}
+
+function compareLines(a, b) {
+    return a.page - b.page || a.line - b.line;
+}
+
+async function lockScriptScenes(db, scriptId) {
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended('captured-scenes:' || $1::uuid::text, 0))", [
         scriptId,
-        tags: tagsNorm,
-        match,
-    });
-    return rows.map(mapScriptSceneRow);
+    ]);
 }
 
-export async function updateScriptScene(pool, { movieId, scriptId, sceneId, body }) {
-    if (!sceneId) throw new HttpError(400, "Missing scene annotation id.");
-
-    const existingRow = await repository.fetchScriptSceneRow(pool, { sceneId, movieId, scriptId });
-    if (!existingRow) throw new HttpError(404, "Script scene annotation not found");
-
-    const input = buildUpdateInput(existingRow, body || {});
-
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
-
-        const conflictingRow = await repository.findOverlappingScriptScene(client, {
-            movieId,
-            scriptId,
-            startTimeSeconds: input.startTime,
-            endTimeSeconds: input.endTime,
-            excludeSceneId: sceneId,
-        });
-        if (conflictingRow) {
-            await client.query("ROLLBACK");
-            throw conflictError(conflictingRow);
-        }
-
-        await repository.updateScriptSceneAnchor(client, {
-            anchorId: existingRow.anchor_id,
-            pageStart: input.pageStart,
-            pageEnd: input.pageEnd,
-            selectedText: input.selectedText,
-            rawSelectedText: input.rawSelectedText,
-            formattedSelectedText: input.formattedSelectedText,
-            contextPrefix: input.contextPrefix ?? null,
-            contextSuffix: input.contextSuffix ?? null,
-            startOffset: input.startOffset,
-            endOffset: input.endOffset,
-            anchorGeometry: Array.isArray(input.anchorGeometry) ? input.anchorGeometry : [],
-        });
-
-        await repository.updateScriptSceneAnnotation(client, {
-            sceneId,
-            startTimeSeconds: input.startTime,
-            endTimeSeconds: input.endTime,
-            tags: Array.isArray(input.tags) ? input.tags : [],
-        });
-
-        const updatedRow = await repository.fetchScriptSceneRow(client, { sceneId, movieId, scriptId });
-        await client.query("COMMIT");
-        return mapScriptSceneRow(updatedRow);
-    } catch (err) {
-        try {
-            await client.query("ROLLBACK");
-        } catch {
-            // Ignore rollback failures; the original error is more useful.
-        }
-        throw err;
-    } finally {
-        client.release();
-    }
-}
-
-export async function deleteScriptScene(db, { movieId, scriptId, sceneId }) {
-    if (!sceneId) throw new HttpError(400, "Missing scene annotation id.");
-
-    const deleted = await repository.deleteScriptSceneRow(db, { movieId, scriptId, sceneId });
-    if (!deleted) throw new HttpError(404, "Script scene annotation not found");
-}
-
-export async function searchScriptScenes(db, { rawTags, match, movieId, scriptId, queryText, limit }) {
-    const tagsNorm = normalizeTags(rawTags);
-    if (tagsNorm === "__INVALID__") throw new HttpError(400, "Invalid tags query parameter.");
-
-    const rows = await repository.searchScriptSceneRows(db, {
-        movieId,
-        scriptId,
-        tags: tagsNorm,
-        match,
-        queryText,
-        limit,
-    });
-
-    const urlCache = new Map();
-    const rowsWithUrls = await Promise.all(
-        rows.map(async (row) => {
-            if (!row.s3_key) return { ...row, script_url: null };
-            if (urlCache.has(row.s3_key)) return { ...row, script_url: urlCache.get(row.s3_key) };
-            try {
-                const { url } = await createPresignedGetUrl({ key: row.s3_key });
-                urlCache.set(row.s3_key, url);
-                return { ...row, script_url: url };
-            } catch {
-                return { ...row, script_url: null };
-            }
-        })
+async function findConflict(db, { scriptId, sceneId, input }) {
+    const result = await db.query(
+        `SELECT id, start_time_seconds, end_time_seconds,
+                start_page, start_line, end_page, end_line
+         FROM captured_scenes
+         WHERE script_id = $1 AND id IS DISTINCT FROM $2
+         ORDER BY start_time_seconds, end_time_seconds, id`,
+        [scriptId, sceneId]
     );
+    const timing = result.rows.find(
+        (other) => other.start_time_seconds < input.endTime && input.startTime < other.end_time_seconds
+    );
+    if (timing) return conflictError("film_timing", timing);
 
-    return rowsWithUrls.map(mapScriptSceneRow);
+    const location = result.rows.find(
+        (other) =>
+            compareLines(input.start, { page: other.end_page, line: other.end_line }) <= 0 &&
+            compareLines({ page: other.start_page, line: other.start_line }, input.end) <= 0
+    );
+    return location ? conflictError("script_location", location) : null;
+}
+
+function conflictError(kind, scene) {
+    return new HttpError(409, CONFLICT_MESSAGES[kind], {
+        conflict_kind: kind,
+        conflict_scene_id: scene.id,
+        conflict_start_time_seconds: scene.start_time_seconds,
+        conflict_end_time_seconds: scene.end_time_seconds,
+    });
+}
+
+function constraintConflictKind(constraint) {
+    if (constraint === "captured_scenes_no_film_timing_overlap") return "film_timing";
+    if (constraint === "captured_scenes_no_script_location_overlap") return "script_location";
+    return null;
+}
+
+const SCENE_COLUMNS_SQL = `
+      sc.id, sc.script_id, s.movie_id,
+      sc.start_time_seconds, sc.end_time_seconds,
+      sc.start_page, sc.start_line, sc.start_top, sc.start_bottom, sc.start_text,
+      sc.end_page, sc.end_line, sc.end_top, sc.end_bottom, sc.end_text,
+      sc.scene_text, sc.raw_text, sc.tags, sc.created_at, sc.updated_at,
+      first_image.id AS first_image_annotation_id,
+      first_image.time_seconds AS first_image_annotation_time_seconds,
+      first_image.image_key AS first_image_annotation_image_key,
+      first_image.thumb_key AS first_image_annotation_thumb_key,
+      first_image.created_at AS first_image_annotation_created_at`;
+
+const SCENE_FROM_SQL = `
+    FROM captured_scenes sc
+    JOIN scripts s ON s.id = sc.script_id
+    LEFT JOIN LATERAL (
+      SELECT ann.id, ann.time_seconds, ann.image_key, ann.thumb_key, ann.created_at
+      FROM annotations ann
+      WHERE ann.movie_id = s.movie_id
+        AND COALESCE(ann.image_key, '') <> ''
+        AND ann.time_seconds >= sc.start_time_seconds
+        AND ann.time_seconds <= sc.end_time_seconds
+      ORDER BY ann.time_seconds, ann.created_at, ann.id
+      LIMIT 1
+    ) first_image ON TRUE`;
+
+const SCENE_SELECT_SQL = `SELECT ${SCENE_COLUMNS_SQL} ${SCENE_FROM_SQL}`;
+
+function sceneFromRow(row) {
+    return {
+        id: row.id,
+        script_id: row.script_id,
+        movie_id: row.movie_id,
+        start_time_seconds: row.start_time_seconds,
+        end_time_seconds: row.end_time_seconds,
+        script_location: {
+            start: {
+                page: row.start_page,
+                line: row.start_line,
+                top: row.start_top,
+                bottom: row.start_bottom,
+                text: row.start_text,
+            },
+            end: {
+                page: row.end_page,
+                line: row.end_line,
+                top: row.end_top,
+                bottom: row.end_bottom,
+                text: row.end_text,
+            },
+        },
+        scene_text: row.scene_text,
+        raw_text: row.raw_text,
+        tags: Array.isArray(row.tags) ? row.tags : [],
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        first_image_annotation: row.first_image_annotation_id
+            ? {
+                  id: row.first_image_annotation_id,
+                  time_seconds: row.first_image_annotation_time_seconds,
+                  image_key: row.first_image_annotation_image_key,
+                  thumb_key: row.first_image_annotation_thumb_key ?? null,
+                  created_at: row.first_image_annotation_created_at,
+              }
+            : null,
+    };
+}
+
+async function fetchSceneRow(db, { movieId, scriptId, sceneId }) {
+    const result = await db.query(
+        `${SCENE_SELECT_SQL} WHERE sc.id = $1 AND s.movie_id = $2 AND sc.script_id = $3`,
+        [sceneId, movieId, scriptId]
+    );
+    return result.rows[0];
+}
+
+async function findSavedScene(db, { movieId, scriptId, sceneId }) {
+    const result = await db.query(
+        `SELECT sc.id
+         FROM captured_scenes sc
+         JOIN scripts s ON s.id = sc.script_id
+         WHERE sc.id = $1 AND s.movie_id = $2 AND sc.script_id = $3`,
+        [sceneId, movieId, scriptId]
+    );
+    return result.rows[0] ?? null;
+}
+
+async function scriptExists(db, { movieId, scriptId }) {
+    const result = await db.query("SELECT 1 FROM scripts WHERE id = $1 AND movie_id = $2", [scriptId, movieId]);
+    return result.rowCount > 0;
+}
+
+async function writeScene(db, { scriptId, sceneId, input }) {
+    const values = [
+        scriptId,
+        input.startTime,
+        input.endTime,
+        input.start.page,
+        input.start.line,
+        input.start.top,
+        input.start.bottom,
+        input.start.text,
+        input.end.page,
+        input.end.line,
+        input.end.top,
+        input.end.bottom,
+        input.end.text,
+        input.sceneText,
+        input.rawText,
+        JSON.stringify(input.tags),
+    ];
+    if (sceneId) {
+        await db.query(
+            `UPDATE captured_scenes SET
+               script_id = $2, start_time_seconds = $3, end_time_seconds = $4,
+               start_page = $5, start_line = $6, start_top = $7, start_bottom = $8, start_text = $9,
+               end_page = $10, end_line = $11, end_top = $12, end_bottom = $13, end_text = $14,
+               scene_text = $15, raw_text = $16, tags = $17::jsonb, updated_at = NOW()
+             WHERE id = $1`,
+            [sceneId, ...values]
+        );
+        return sceneId;
+    }
+
+    const id = uuidv4();
+    await db.query(
+        `INSERT INTO captured_scenes (
+           id, script_id, start_time_seconds, end_time_seconds,
+           start_page, start_line, start_top, start_bottom, start_text,
+           end_page, end_line, end_top, end_bottom, end_text,
+           scene_text, raw_text, tags
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb
+         )`,
+        [id, ...values]
+    );
+    return id;
+}
+
+async function withTransaction(pool, work) {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        const result = await work(client);
+        await client.query("COMMIT");
+        return result;
+    } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw error;
+    } finally {
+        client.release();
+    }
 }

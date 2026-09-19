@@ -1,10 +1,27 @@
 import { v4 as uuidv4 } from "uuid";
+import { createPresignedGetUrl } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
-import { ensureMovieExists } from "../repositories/annotations.repository.js";
-import * as scriptsRepository from "../repositories/scripts.repository.js";
-import * as scriptScenesRepository from "../repositories/script-scenes.repository.js";
-import { withScriptViewUrl } from "../serializers/scripts.serializer.js";
+import { ensureMovieExists } from "./movies.service.js";
 
+/*
+ * Scripts: the screenplay PDF attached to a movie, one per movie. This module
+ * owns script validation, the script SQL and the script response shape.
+ */
+
+/** The script row, with a signed view URL for its PDF or null when signing fails. */
+async function withScriptViewUrl(row) {
+    if (!row.s3_key) return { ...row, script_url: null };
+
+    try {
+        const { url } = await createPresignedGetUrl({ key: row.s3_key });
+        return { ...row, script_url: url };
+    } catch (err) {
+        console.error("Failed to sign script URL:", row.s3_key, err?.message);
+        return { ...row, script_url: null };
+    }
+}
+
+/** Saving a movie's script replaces the file of the movie's one script row. */
 export async function saveScript(db, movieId, body) {
     const { s3_key } = body || {};
     const trimmedKey = typeof s3_key === "string" ? s3_key.trim() : "";
@@ -13,65 +30,32 @@ export async function saveScript(db, movieId, body) {
         throw new HttpError(400, "Invalid body. Expected { s3_key:string }");
     }
 
-    const movie = await ensureMovieExists(db, movieId);
-    if (!movie) throw new HttpError(404, "Movie not found");
+    await ensureMovieExists(db, movieId);
 
-    const row = await scriptsRepository.upsertScriptForMovie(db, {
-        id: uuidv4(),
-        movieId,
-        s3Key: trimmedKey,
-    });
-    return withScriptViewUrl(row);
+    const result = await db.query(
+        `
+        INSERT INTO scripts (id, movie_id, s3_key)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (movie_id)
+        DO UPDATE SET s3_key = EXCLUDED.s3_key
+        RETURNING *
+      `,
+        [uuidv4(), movieId, trimmedKey]
+    );
+    return withScriptViewUrl(result.rows[0]);
 }
 
 export async function listScripts(db, movieId) {
-    const rows = await scriptsRepository.listScriptsForMovie(db, movieId);
-    return Promise.all(rows.map(withScriptViewUrl));
+    await ensureMovieExists(db, movieId);
+    const result = await db.query(`SELECT * FROM scripts WHERE movie_id = $1`, [movieId]);
+    return result.rows[0] ? withScriptViewUrl(result.rows[0]) : null;
 }
 
 export async function getScript(db, { movieId, scriptId }) {
-    const row = await scriptsRepository.findScriptForMovie(db, { movieId, scriptId });
-    if (!row) throw new HttpError(404, "Script not found");
-    return withScriptViewUrl(row);
-}
-
-export async function resolveSceneByTime(db, { movieId, requestedScriptId, timeSeconds }) {
-    const scriptRow = requestedScriptId
-        ? await scriptsRepository.findScriptForMovie(db, { movieId, scriptId: requestedScriptId })
-        : await scriptsRepository.findLatestScriptForMovie(db, movieId);
-
-    if (!scriptRow?.id) {
-        return {
-            found: false,
-            reason: "NO_SCRIPT",
-            script_id: null,
-            scene_id: null,
-        };
-    }
-
-    const scene = await scriptScenesRepository.findSceneByTime(db, {
+    const result = await db.query(`SELECT * FROM scripts WHERE id = $1 AND movie_id = $2`, [
+        scriptId,
         movieId,
-        scriptId: scriptRow.id,
-        timeSeconds,
-    });
-
-    if (!scene) {
-        return {
-            found: false,
-            reason: "NO_SCENE_FOR_TIMESTAMP",
-            script_id: scriptRow.id,
-            scene_id: null,
-        };
-    }
-
-    return {
-        found: true,
-        reason: null,
-        script_id: scene.script_id,
-        scene_id: scene.scene_id,
-        page_start: scene.page_start,
-        page_end: scene.page_end,
-        start_time_seconds: scene.start_time_seconds,
-        end_time_seconds: scene.end_time_seconds,
-    };
+    ]);
+    if (!result.rows[0]) throw new HttpError(404, "Script not found");
+    return withScriptViewUrl(result.rows[0]);
 }

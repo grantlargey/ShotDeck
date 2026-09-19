@@ -73,11 +73,10 @@ export function buildPageTextLines(textContent, viewport, pageNumber) {
     }
   }
 
-  let offset = 0;
   const lines = grouped.map((line, index) => {
     const items = removeDuplicateRuns(line.items.sort((left, right) => left.x - right.x), line.fontSize);
     const text = assembleLineText(items, line.fontSize);
-    const result = {
+    return {
       index,
       baseline: line.baseline,
       fontSize: line.fontSize,
@@ -86,18 +85,14 @@ export function buildPageTextLines(textContent, viewport, pageNumber) {
       left: items[0].x,
       right: Math.max(...items.map((item) => item.right)),
       text,
-      offset,
       items,
     };
-    offset += text.length + 1;
-    return result;
   });
 
   return {
     pageNumber,
     width: viewport.width,
     height: viewport.height,
-    textLength: offset,
     lines,
   };
 }
