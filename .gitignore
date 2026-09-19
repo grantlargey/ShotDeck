@@ -18,9 +18,5 @@ node_modules/
 # Local issues, specs, and conversation history
 /.scratch/
 
-# Task definition snapshots
-td.json
-td-new.json
-
 # Playwright MCP screenshots and logs
 .playwright-mcp/
