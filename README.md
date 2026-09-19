@@ -272,5 +272,5 @@ npm test --prefix server -- --test-name-pattern="signing in"
 - Large uploads should go through the app's presigned S3 flow rather than through the API as request bodies.
 - The API makes an 800px WebP thumbnail for each film still in a `thumbs/` folder beside the original, in the background: when a still is saved or listed, and at startup for any still without one. Grids, timeline previews, and scene cards use it; the hero and scene viewer keep the full image.
 - Run `npm run db:migrate` after pulling and before the first sign-in so the database has every numbered migration.
-- Local env files, data imports, generated task definition snapshots, and local reference notes are ignored by git.
+- Local env files, generated task definition snapshots, and local reference notes are ignored by git.
 - Production deployment details are intentionally not documented in this public README.

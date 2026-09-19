@@ -12,7 +12,7 @@ Every stored captured scene has:
 - non-blank scene text and raw text; and
 - tags from the shared taxonomy in `server/src/domain/script-tags.js`.
 
-A scene draft may have incomplete anchors while it is being edited. It cannot be saved until both anchors resolve to indexed script lines and the anchored range produces non-blank raw text. Film timings and script locations may touch another scene at their boundaries, but may not overlap it. The client refuses invalid saves before sending them, and the server and database enforce the stored invariants.
+A scene draft may have incomplete anchors while it is being edited. It cannot be saved until both anchors resolve to indexed script lines and the anchored range produces non-blank raw text. Film timings may touch at their time boundaries, and script locations may occupy adjacent lines; neither may overlap another scene. The client refuses invalid saves before sending them, and the server and database enforce the stored invariants.
 
 `draftActions.buildSave({ runtimeSeconds, scenes })` returns an error or a result containing this six-field request payload:
 
