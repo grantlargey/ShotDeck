@@ -2,8 +2,12 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["test/browser-smoke/run.mjs", "test/browser-smoke/block-external-network.mjs"],
-      "project": ["test/**/*.mjs"]
+      "entry": [
+        "infra/local-cutover-dry-run.mjs",
+        "test/browser-smoke/run.mjs",
+        "test/browser-smoke/block-external-network.mjs"
+      ],
+      "project": ["infra/**/*.mjs", "test/**/*.mjs"]
     },
     "client": {
       "entry": [

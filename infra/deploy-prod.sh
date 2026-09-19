@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -14,9 +15,33 @@ Options:
   --skip-verify         Skip post-deploy health and website checks
   --no-rollback         Do not auto-rollback backend on failed verification
   --skip-migrations     Deploy the backend without running database migrations first
-  --skip-build          Reuse the image already pushed as --image-tag instead of building it
+  --skip-build          Reuse an image pushed by the runbook's monolithic uploader
+  --prebuilt-frontend   Reuse the existing client/dist build instead of rebuilding it
+  --cutover             Run the irreversible captured-scene cutover under its safety gates
+  --complete-cutover    Restore saved ingress and ECS rollback settings after manual verification
+  --cutover-snapshot-id ID
+                       Completed pre-cutover RDS snapshot (required with --cutover)
+  --cutover-db-instance-id ID
+                       DB instance the completed snapshot must belong to
+  --cutover-state-dir DIR
+                       New state directory for --cutover; existing one for --complete-cutover
+  --resume-desired-count N
+                       Desired API count during restricted cutover verification
+  --verification-security-group SG
+                       Sole security group attached to the API load balancer
+  --verification-cidr CIDR
+                       Sole IPv4 CIDR allowed to reach the verification port
+  --verification-port PORT
+                       Restricted API load-balancer port (default: 443)
+  --verification-record FILE
+                       Nonempty manual verification record required by --complete-cutover
+  --report-bucket NAME  Bucket holding the conversion report (required with --cutover)
+  --migration-report-key KEY
+                       New ops/inventory/*.json key for the conversion report
+  --task-definition ARN Already-registered and read-only-probed definition for --cutover
+  --image-digest DIGEST Require and pin the ECR image at sha256:DIGEST
   --allow-local-database
-                       Allow a localhost/127.0.0.1 DATABASE_URL in the base ECS task definition
+                       Allow localhost/127.0.0.1 in a base ECS task definition
   --region REGION       AWS region override
   --account-id ID       AWS account ID override
   --ecr-repo NAME       ECR repository override
@@ -28,7 +53,8 @@ Options:
                        CloudFront distribution to invalidate after frontend deploy
   --api-health-url URL  API health URL override
   --api-smoke-url URL   Backend smoke-test URL override
-  --image-tag TAG       Docker image tag override
+  --site-url URL        Public frontend URL override
+  --image-tag TAG       Immutable image tag already present in ECR
   -h, --help            Show this help
 EOF
 }
@@ -40,6 +66,11 @@ auto_rollback=1
 run_migrations=1
 allow_local_database=0
 skip_build=0
+prebuilt_frontend=0
+cutover=0
+complete_cutover=0
+cutover_safety_engaged=0
+cutover_task_started=0
 
 DEPLOY_REGION=""
 AWS_ACCOUNT_ID_OVERRIDE=""
@@ -51,91 +82,59 @@ FRONTEND_API_BASE_OVERRIDE=""
 CLOUDFRONT_DISTRIBUTION_ID_OVERRIDE=""
 API_HEALTH_URL_OVERRIDE=""
 API_SMOKE_URL_OVERRIDE=""
+SITE_URL_OVERRIDE=""
 IMAGE_TAG_OVERRIDE=""
+IMAGE_DIGEST_OVERRIDE=""
+MIGRATION_REPORT_KEY_OVERRIDE=""
+REPORT_BUCKET=""
+CUTOVER_SNAPSHOT_ID=""
+CUTOVER_DB_INSTANCE_ID=""
+CUTOVER_STATE_DIR=""
+RESUME_DESIRED_COUNT=""
+VERIFICATION_SECURITY_GROUP=""
+VERIFICATION_CIDR=""
+VERIFICATION_PORT=443
+VERIFICATION_RECORD=""
+TASK_DEFINITION_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --backend-only)
-      deploy_frontend=0
-      shift
-      ;;
-    --frontend-only)
-      deploy_backend=0
-      shift
-      ;;
-    --skip-verify)
-      skip_verify=1
-      shift
-      ;;
-    --no-rollback)
-      auto_rollback=0
-      shift
-      ;;
-    --skip-migrations)
-      run_migrations=0
-      shift
-      ;;
-    --skip-build)
-      skip_build=1
-      shift
-      ;;
-    --allow-local-database)
-      allow_local_database=1
-      shift
-      ;;
-    --region)
-      DEPLOY_REGION="${2:-}"
-      shift 2
-      ;;
-    --account-id)
-      AWS_ACCOUNT_ID_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --ecr-repo)
-      ECR_REPO_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --ecs-cluster)
-      ECS_CLUSTER_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --ecs-service)
-      ECS_SERVICE_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --frontend-bucket)
-      FRONTEND_BUCKET_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --frontend-api-base)
-      FRONTEND_API_BASE_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --cloudfront-distribution-id)
-      CLOUDFRONT_DISTRIBUTION_ID_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --api-health-url)
-      API_HEALTH_URL_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --api-smoke-url)
-      API_SMOKE_URL_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    --image-tag)
-      IMAGE_TAG_OVERRIDE="${2:-}"
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      usage >&2
-      exit 1
-      ;;
+    --backend-only) deploy_frontend=0; shift ;;
+    --frontend-only) deploy_backend=0; shift ;;
+    --skip-verify) skip_verify=1; shift ;;
+    --no-rollback) auto_rollback=0; shift ;;
+    --skip-migrations) run_migrations=0; shift ;;
+    --skip-build) skip_build=1; shift ;;
+    --prebuilt-frontend) prebuilt_frontend=1; shift ;;
+    --cutover) cutover=1; shift ;;
+    --complete-cutover) complete_cutover=1; shift ;;
+    --cutover-snapshot-id) CUTOVER_SNAPSHOT_ID="${2:-}"; shift 2 ;;
+    --cutover-db-instance-id) CUTOVER_DB_INSTANCE_ID="${2:-}"; shift 2 ;;
+    --cutover-state-dir) CUTOVER_STATE_DIR="${2:-}"; shift 2 ;;
+    --resume-desired-count) RESUME_DESIRED_COUNT="${2:-}"; shift 2 ;;
+    --verification-security-group) VERIFICATION_SECURITY_GROUP="${2:-}"; shift 2 ;;
+    --verification-cidr) VERIFICATION_CIDR="${2:-}"; shift 2 ;;
+    --verification-port) VERIFICATION_PORT="${2:-}"; shift 2 ;;
+    --verification-record) VERIFICATION_RECORD="${2:-}"; shift 2 ;;
+    --report-bucket) REPORT_BUCKET="${2:-}"; shift 2 ;;
+    --migration-report-key) MIGRATION_REPORT_KEY_OVERRIDE="${2:-}"; shift 2 ;;
+    --task-definition) TASK_DEFINITION_OVERRIDE="${2:-}"; shift 2 ;;
+    --image-digest) IMAGE_DIGEST_OVERRIDE="${2:-}"; shift 2 ;;
+    --allow-local-database) allow_local_database=1; shift ;;
+    --region) DEPLOY_REGION="${2:-}"; shift 2 ;;
+    --account-id) AWS_ACCOUNT_ID_OVERRIDE="${2:-}"; shift 2 ;;
+    --ecr-repo) ECR_REPO_OVERRIDE="${2:-}"; shift 2 ;;
+    --ecs-cluster) ECS_CLUSTER_OVERRIDE="${2:-}"; shift 2 ;;
+    --ecs-service) ECS_SERVICE_OVERRIDE="${2:-}"; shift 2 ;;
+    --frontend-bucket) FRONTEND_BUCKET_OVERRIDE="${2:-}"; shift 2 ;;
+    --frontend-api-base) FRONTEND_API_BASE_OVERRIDE="${2:-}"; shift 2 ;;
+    --cloudfront-distribution-id) CLOUDFRONT_DISTRIBUTION_ID_OVERRIDE="${2:-}"; shift 2 ;;
+    --api-health-url) API_HEALTH_URL_OVERRIDE="${2:-}"; shift 2 ;;
+    --api-smoke-url) API_SMOKE_URL_OVERRIDE="${2:-}"; shift 2 ;;
+    --site-url) SITE_URL_OVERRIDE="${2:-}"; shift 2 ;;
+    --image-tag) IMAGE_TAG_OVERRIDE="${2:-}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
   esac
 done
 
@@ -146,18 +145,89 @@ require_cmd() {
   fi
 }
 
-require_cmd aws
-require_cmd python3
-require_cmd rsync
-require_cmd npm
-
-if [[ "$deploy_backend" -eq 1 && "$skip_build" -eq 0 ]]; then
-  require_cmd docker
+if [[ "$cutover" -eq 1 && "$complete_cutover" -eq 1 ]]; then
+  echo "Choose exactly one of --cutover and --complete-cutover." >&2
+  exit 1
 fi
 
-if [[ "$skip_build" -eq 1 && -z "$IMAGE_TAG_OVERRIDE" ]]; then
-  echo "--skip-build needs --image-tag naming an image that is already in ECR." >&2
+if [[ -n "$IMAGE_DIGEST_OVERRIDE" && ! "$IMAGE_DIGEST_OVERRIDE" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "--image-digest must be sha256 followed by 64 lowercase hexadecimal characters." >&2
   exit 1
+fi
+
+if [[ "$complete_cutover" -eq 1 ]]; then
+  if [[ -z "$CUTOVER_STATE_DIR" || ! -d "$CUTOVER_STATE_DIR" ]]; then
+    echo "--complete-cutover requires an existing --cutover-state-dir." >&2
+    exit 1
+  fi
+  if [[ -z "$VERIFICATION_RECORD" || ! -s "$VERIFICATION_RECORD" ]]; then
+    echo "--complete-cutover requires a nonempty --verification-record from the manual checks." >&2
+    exit 1
+  fi
+else
+  if [[ "$deploy_backend" -eq 1 && "$skip_build" -eq 0 ]]; then
+    echo "Backend builds must use the runbook's proven buildx --load, docker save and monolithic ECR uploader." >&2
+    echo "No reliable monolithic uploader exists in this repository; push separately, then use --skip-build." >&2
+    exit 1
+  fi
+  if [[ "$deploy_backend" -eq 1 && ( -z "$IMAGE_TAG_OVERRIDE" || -z "$IMAGE_DIGEST_OVERRIDE" ) ]]; then
+    echo "Backend deployment requires --image-tag and --image-digest for an image already in ECR." >&2
+    exit 1
+  fi
+fi
+
+if [[ "$cutover" -eq 1 ]]; then
+  if [[ "$deploy_backend" -ne 1 || "$deploy_frontend" -ne 1 ]]; then
+    echo "--cutover requires a matching backend and frontend deployment." >&2
+    exit 1
+  fi
+  if [[ "$skip_build" -ne 1 || "$prebuilt_frontend" -ne 1 ]]; then
+    echo "--cutover requires --skip-build and --prebuilt-frontend from the runbook's proven artifacts." >&2
+    exit 1
+  fi
+  if [[ "$run_migrations" -ne 1 || "$skip_verify" -ne 0 ]]; then
+    echo "--cutover forbids --skip-migrations and --skip-verify." >&2
+    exit 1
+  fi
+  if [[ -z "$CUTOVER_SNAPSHOT_ID" || -z "$CUTOVER_DB_INSTANCE_ID" || -z "$CUTOVER_STATE_DIR" \
+    || -z "$RESUME_DESIRED_COUNT" || -z "$VERIFICATION_SECURITY_GROUP" \
+    || -z "$VERIFICATION_CIDR" || -z "$TASK_DEFINITION_OVERRIDE" \
+    || -z "$MIGRATION_REPORT_KEY_OVERRIDE" || -z "$REPORT_BUCKET" ]]; then
+    echo "--cutover requires snapshot, DB instance, new state directory, resume count, verification barrier, task definition and report options." >&2
+    exit 1
+  fi
+  if [[ ! "$RESUME_DESIRED_COUNT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "--resume-desired-count must be a positive integer." >&2
+    exit 1
+  fi
+  if [[ "$VERIFICATION_PORT" != "443" ]]; then
+    echo "--verification-port must be 443, the production API HTTPS forwarding listener." >&2
+    exit 1
+  fi
+  python3 - "$VERIFICATION_CIDR" <<'PY'
+import ipaddress
+import sys
+try:
+    network = ipaddress.ip_network(sys.argv[1], strict=True)
+except ValueError as exc:
+    raise SystemExit(f"--verification-cidr must be a single-host IPv4 /32: {exc}")
+if network.version != 4 or network.prefixlen != 32:
+    raise SystemExit("--verification-cidr must be a single-host IPv4 /32.")
+PY
+  if [[ -e "$CUTOVER_STATE_DIR" ]]; then
+    echo "--cutover-state-dir must not already exist: $CUTOVER_STATE_DIR" >&2
+    exit 1
+  fi
+  auto_rollback=0
+fi
+
+require_cmd aws
+require_cmd python3
+if [[ "$deploy_frontend" -eq 1 && "$complete_cutover" -eq 0 && "$prebuilt_frontend" -eq 0 ]]; then
+  require_cmd npm
+fi
+if [[ "$skip_verify" -eq 0 && "$complete_cutover" -eq 0 ]]; then
+  require_cmd curl
 fi
 
 AWS_REGION="${DEPLOY_REGION:-${AWS_REGION:-us-east-1}}"
@@ -170,430 +240,800 @@ FRONTEND_API_BASE="${FRONTEND_API_BASE_OVERRIDE:-https://api.scriptdeckdemo.com}
 CLOUDFRONT_DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID_OVERRIDE:-}"
 API_HEALTH_URL="${API_HEALTH_URL_OVERRIDE:-https://api.scriptdeckdemo.com/health}"
 API_SMOKE_URL="${API_SMOKE_URL_OVERRIDE:-https://api.scriptdeckdemo.com/movies}"
-IMAGE_TAG="${IMAGE_TAG_OVERRIDE:-deploy-amd64-$(date +%Y%m%d%H%M%S)}"
-IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
-
+SITE_URL="${SITE_URL_OVERRIDE:-https://scriptdeckdemo.com}"
+IMAGE_TAG="${IMAGE_TAG_OVERRIDE:-}"
+IMAGE_DIGEST="$IMAGE_DIGEST_OVERRIDE"
+IMAGE_REF="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}@${IMAGE_DIGEST}"
+MIGRATION_REPORT_KEY="${MIGRATION_REPORT_KEY_OVERRIDE:-ops/inventory/deploy-${IMAGE_TAG}.json}"
+FRONTEND_DIST_DIR="${SHOTDECK_FRONTEND_DIST_DIR:-$ROOT_DIR/client/dist}"
 export AWS_REGION
 
-rollback_backend() {
-  local rollback_td="$1"
-  if [[ -z "$rollback_td" ]]; then
-    echo "[ERROR] No rollback task definition available" >&2
-    return 1
-  fi
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/shotdeck-deploy.XXXXXX")"
+chmod 700 "$work_dir"
 
-  echo "[WARN] Rolling backend back to $rollback_td"
-  aws ecs update-service \
-    --cluster "$ECS_CLUSTER" \
-    --service "$ECS_SERVICE" \
-    --task-definition "$rollback_td" \
-    --region "$AWS_REGION" >/dev/null
-
-  aws ecs wait services-stable \
-    --cluster "$ECS_CLUSTER" \
-    --services "$ECS_SERVICE" \
-    --region "$AWS_REGION"
-
-  echo "[WARN] Rollback completed: $rollback_td"
+describe_service_to() {
+  aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+    --region "$AWS_REGION" --query 'services[0]' --output json > "$1"
+  chmod 600 "$1"
 }
 
-# Runs `node src/migrate.js` once as a standalone task on the new task
-# definition, in the service's own subnets and security groups, so schema
-# changes land before any new API task starts. Migrations must stay backward
-# compatible with the previous release: it keeps serving until the service
-# update finishes, and it is what auto-rollback returns to.
-run_migrations_task() {
-  local task_definition="$1"
-  local task_definition_json="$2"
-  local service_json="/tmp/shotdeck-service.json"
-  local network_json="/tmp/shotdeck-migrate-network.json"
-  local capacity_json="/tmp/shotdeck-migrate-capacity.json"
-  local settings_txt="/tmp/shotdeck-migrate-settings.txt"
-  local run_json="/tmp/shotdeck-migrate-run.json"
-  local logs_json="/tmp/shotdeck-migrate-logs.json"
-
-  aws ecs describe-services \
-    --cluster "$ECS_CLUSTER" \
-    --services "$ECS_SERVICE" \
-    --region "$AWS_REGION" \
-    --query 'services[0]' > "$service_json" || return 1
-
-  python3 - <<'PY' "$service_json" "$task_definition_json" "$network_json" "$capacity_json" "$settings_txt" || return 1
-import json
-import sys
-
-service_path, task_path, network_path, capacity_path, settings_path = sys.argv[1:6]
-
-with open(service_path, "r", encoding="utf-8") as fh:
+assert_service_zero_file() {
+  python3 - "$1" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
     service = json.load(fh)
-with open(task_path, "r", encoding="utf-8") as fh:
-    task = json.load(fh)
-
-network = service.get("networkConfiguration")
-if not network:
-    raise SystemExit("Service has no network configuration to run the migration task in.")
-with open(network_path, "w", encoding="utf-8") as fh:
-    json.dump(network, fh)
-
-launch_type = service.get("launchType") or ""
-capacity = service.get("capacityProviderStrategy") or []
-if not launch_type and not capacity:
-    raise SystemExit("Service has neither a launch type nor a capacity provider strategy.")
-with open(capacity_path, "w", encoding="utf-8") as fh:
-    json.dump(capacity, fh)
-
-api = next((c for c in task.get("containerDefinitions", []) if c.get("name") == "api"), {})
-log_options = (api.get("logConfiguration") or {}).get("options") or {}
-
-with open(settings_path, "w", encoding="utf-8") as fh:
-    fh.write(f"{launch_type}\n{log_options.get('awslogs-group', '')}\n{log_options.get('awslogs-stream-prefix', '')}\n")
+counts = {name: service.get(name) for name in ("desiredCount", "runningCount", "pendingCount")}
+if counts != {"desiredCount": 0, "runningCount": 0, "pendingCount": 0}:
+    raise SystemExit(f"API writers are not stopped: {counts}")
 PY
+}
 
-  local launch_type log_group log_prefix
-  launch_type="$(sed -n 1p "$settings_txt")"
-  log_group="$(sed -n 2p "$settings_txt")"
-  log_prefix="$(sed -n 3p "$settings_txt")"
-
-  local placement_flag placement_value
-  if [[ -n "$launch_type" ]]; then
-    placement_flag="--launch-type"
-    placement_value="$launch_type"
-  else
-    placement_flag="--capacity-provider-strategy"
-    placement_value="file://$capacity_json"
-  fi
-
-  echo "[INFO] Starting migration task on $task_definition"
-  aws ecs run-task \
-    --cluster "$ECS_CLUSTER" \
-    --task-definition "$task_definition" \
-    "$placement_flag" "$placement_value" \
-    --network-configuration "file://$network_json" \
-    --overrides '{"containerOverrides":[{"name":"api","command":["node","src/migrate.js"]}]}' \
-    --started-by "deploy-prod-migrate" \
-    --region "$AWS_REGION" \
-    --output json > "$run_json" || return 1
-
-  python3 - <<'PY' "$run_json" "$settings_txt" || return 1
-import json
-import sys
-
-run_path, settings_path = sys.argv[1:3]
-
-with open(run_path, "r", encoding="utf-8") as fh:
-    result = json.load(fh)
-
-failures = result.get("failures") or []
-for failure in failures:
-    print(f"[ERROR] RunTask failure: {failure.get('reason')} {failure.get('detail') or ''}", file=sys.stderr)
-tasks = result.get("tasks") or []
-if failures or not tasks:
-    raise SystemExit("RunTask did not start the migration task.")
-
-with open(settings_path, "a", encoding="utf-8") as fh:
-    fh.write(tasks[0]["taskArn"] + "\n")
+assert_service_deployed_file() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+path, expected_td, expected_count = sys.argv[1:4]
+with open(path, encoding="utf-8") as fh:
+    service = json.load(fh)
+counts = {name: service.get(name) for name in ("desiredCount", "runningCount", "pendingCount")}
+expected = {"desiredCount": int(expected_count), "runningCount": int(expected_count), "pendingCount": 0}
+if counts != expected:
+    raise SystemExit(f"API service counts do not match: {counts}, expected {expected}")
+if service.get("taskDefinition") != expected_td:
+    raise SystemExit(f"API service task definition is {service.get('taskDefinition')}, expected {expected_td}")
+primary = [item for item in service.get("deployments") or [] if item.get("status") == "PRIMARY"]
+if len(primary) != 1 or primary[0].get("taskDefinition") != expected_td or primary[0].get("rolloutState") != "COMPLETED":
+    raise SystemExit(f"API service does not have one completed PRIMARY deployment on {expected_td}")
 PY
+}
 
-  local task_arn task_id
-  task_arn="$(sed -n 4p "$settings_txt")"
-  task_id="${task_arn##*/}"
+force_cutover_zero() {
+  echo "[ERROR] Forcing the cutover API service to zero writers." >&2
+  aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+    --desired-count 0 --region "$AWS_REGION" >/dev/null || return 1
+  aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+    --region "$AWS_REGION" || return 1
+  describe_service_to "$work_dir/service-after-failure.json" || return 1
+  assert_service_zero_file "$work_dir/service-after-failure.json"
+}
 
-  echo "[INFO] Waiting for migration task $task_id to finish"
-  if ! aws ecs wait tasks-stopped \
-    --cluster "$ECS_CLUSTER" \
-    --tasks "$task_arn" \
-    --region "$AWS_REGION"; then
-    echo "[ERROR] Timed out waiting for migration task $task_arn" >&2
-    return 1
-  fi
+apply_deployment_configuration() {
+  aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+    --deployment-configuration "file://$1" --region "$AWS_REGION" >/dev/null
+}
 
-  local exit_code stopped_reason
-  exit_code="$(aws ecs describe-tasks \
-    --cluster "$ECS_CLUSTER" \
-    --tasks "$task_arn" \
-    --region "$AWS_REGION" \
-    --query "tasks[0].containers[?name=='api'] | [0].exitCode" \
-    --output text)" || return 1
-  stopped_reason="$(aws ecs describe-tasks \
-    --cluster "$ECS_CLUSTER" \
-    --tasks "$task_arn" \
-    --region "$AWS_REGION" \
-    --query 'tasks[0].stoppedReason' \
-    --output text)" || return 1
+assert_rollback_disabled_file() {
+  python3 - "$1" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    config = json.load(fh).get("deploymentConfiguration") or {}
+circuit = config.get("deploymentCircuitBreaker") or {}
+alarms = config.get("alarms")
+if circuit.get("enable") is not False or circuit.get("rollback") is not False:
+    raise SystemExit(f"ECS deployment circuit breaker is not disabled: {circuit}")
+if alarms is not None and (alarms.get("enable") is not False or alarms.get("rollback") is not False):
+    raise SystemExit(f"ECS deployment alarm rollback is not disabled: {alarms}")
+PY
+}
 
-  # CloudWatch can lag a few seconds behind a task that just stopped.
-  if [[ -n "$log_group" && -n "$log_prefix" ]]; then
-    local attempt logs_printed=0
-    for attempt in 1 2 3; do
-      if aws logs get-log-events \
-        --log-group-name "$log_group" \
-        --log-stream-name "$log_prefix/api/$task_id" \
-        --start-from-head \
-        --region "$AWS_REGION" \
-        --output json > "$logs_json" 2>/dev/null \
-        && python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1]))["events"] else 1)' "$logs_json"; then
-        python3 -c 'import json, sys; [print("  | " + e["message"]) for e in json.load(open(sys.argv[1]))["events"]]' "$logs_json"
-        logs_printed=1
-        break
-      fi
-      sleep 5
-    done
-    if [[ "$logs_printed" -eq 0 ]]; then
-      echo "[WARN] Could not read migration logs from $log_group ($log_prefix/api/$task_id); check logs:GetLogEvents access. The exit code below still decides the deploy."
+disable_cutover_rollback() {
+  apply_deployment_configuration "$CUTOVER_STATE_DIR/deployment-configuration-disabled.json"
+  describe_service_to "$work_dir/service-rollback-disabled.json"
+  assert_rollback_disabled_file "$work_dir/service-rollback-disabled.json"
+}
+
+describe_verification_group_to() {
+  aws ec2 describe-security-groups --group-ids "$VERIFICATION_SECURITY_GROUP" \
+    --region "$AWS_REGION" --output json > "$1"
+  chmod 600 "$1"
+}
+
+assert_writer_barrier_file() {
+  python3 - "$1" "$VERIFICATION_CIDR" "$VERIFICATION_PORT" <<'PY'
+import ipaddress, json, sys
+path, expected_cidr, port = sys.argv[1:4]
+expected_cidr = str(ipaddress.ip_network(expected_cidr, strict=False))
+port = int(port)
+with open(path, encoding="utf-8") as fh:
+    groups = json.load(fh).get("SecurityGroups") or []
+if len(groups) != 1:
+    raise SystemExit("Could not inspect exactly one verification security group.")
+covering = []
+for permission in groups[0].get("IpPermissions") or []:
+    protocol = permission.get("IpProtocol")
+    if protocol == "-1" or (protocol in {"tcp", "6"} and permission.get("FromPort", -1) <= port <= permission.get("ToPort", -1)):
+        covering.append(permission)
+if len(covering) != 1:
+    raise SystemExit(f"Verification port has {len(covering)} ingress permissions, expected one.")
+permission = covering[0]
+if permission.get("IpProtocol") not in {"tcp", "6"} or permission.get("FromPort") != port or permission.get("ToPort") != port:
+    raise SystemExit("Verification ingress is not restricted to the exact TCP port.")
+if permission.get("Ipv6Ranges") or permission.get("PrefixListIds") or permission.get("UserIdGroupPairs"):
+    raise SystemExit("Verification ingress permits a non-IPv4 source.")
+ranges = permission.get("IpRanges") or []
+if len(ranges) != 1 or str(ipaddress.ip_network(ranges[0].get("CidrIp"), strict=False)) != expected_cidr:
+    raise SystemExit(f"Verification ingress is not restricted to {expected_cidr}.")
+PY
+}
+
+assert_writer_barrier() {
+  describe_verification_group_to "$work_dir/security-group-current.json"
+  assert_writer_barrier_file "$work_dir/security-group-current.json"
+}
+
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [[ "$status" -ne 0 && "$cutover_safety_engaged" -eq 1 ]]; then
+    set +e
+    if [[ "$cutover_task_started" -eq 1 ]]; then
+      echo "[ERROR] A failure occurred after conversion started; the database schema is unknown." >&2
     fi
+    if [[ -s "$CUTOVER_STATE_DIR/deployment-configuration-disabled.json" ]]; then
+      disable_cutover_rollback
+      if [[ $? -ne 0 ]]; then echo "[ERROR] Could not prove ECS managed rollback is disabled." >&2; fi
+    fi
+    assert_writer_barrier
+    if [[ $? -ne 0 ]]; then
+      echo "[ERROR] The restricted-ingress barrier could not be proved; zero service count is mandatory." >&2
+    fi
+    force_cutover_zero
+    if [[ $? -ne 0 ]]; then
+      echo "[ERROR] Could not prove desired/running/pending counts reached zero; writer state is unknown." >&2
+    fi
+    set -e
   fi
+  rm -rf "$work_dir"
+  exit "$status"
+}
+trap cleanup EXIT
 
-  if [[ "$exit_code" != "0" ]]; then
-    echo "[ERROR] Migration task exited with code $exit_code ($stopped_reason)" >&2
+verify_task_definition_image() {
+  local task_definition="$1"
+  local target="$2"
+  aws ecs describe-task-definition --task-definition "$task_definition" --region "$AWS_REGION" \
+    --query taskDefinition --output json > "$target"
+  chmod 600 "$target"
+  python3 - "$target" "$IMAGE_REF" <<'PY'
+import json, sys
+path, expected = sys.argv[1:3]
+with open(path, encoding="utf-8") as fh:
+    task = json.load(fh)
+api = next((item for item in task.get("containerDefinitions", []) if item.get("name") == "api"), None)
+image = (api or {}).get("image")
+if image != expected:
+    raise SystemExit(f"The api task definition image is {image}, expected immutable {expected}")
+PY
+}
+
+validate_task_definition_database() {
+  python3 - "$1" "$allow_local_database" <<'PY'
+import json, sys
+path, allow_local = sys.argv[1], sys.argv[2] == "1"
+with open(path, encoding="utf-8") as fh:
+    task = json.load(fh)
+api = next((item for item in task.get("containerDefinitions", []) if item.get("name") == "api"), None)
+if api is None:
+    raise SystemExit("Missing api container in task definition.")
+env = {item.get("name"): item.get("value", "") for item in api.get("environment", [])}
+db_url = env.get("DATABASE_URL", "")
+if not db_url:
+    raise SystemExit("Task definition is missing DATABASE_URL.")
+if not allow_local and ("localhost" in db_url or "127.0.0.1" in db_url):
+    raise SystemExit("Refusing a base task definition with a local DATABASE_URL.")
+if "PORT" not in env:
+    raise SystemExit("Task definition is missing required env: PORT")
+PY
+}
+
+verify_ecr_digest() {
+  local found_digest
+  found_digest="$(aws ecr describe-images --repository-name "$ECR_REPO" \
+    --image-ids "imageTag=$IMAGE_TAG" --region "$AWS_REGION" \
+    --query 'imageDetails[0].imageDigest' --output text)"
+  if [[ "$found_digest" != "$IMAGE_DIGEST" ]]; then
+    echo "ECR tag $IMAGE_TAG resolves to $found_digest, expected $IMAGE_DIGEST." >&2
+    exit 1
+  fi
+}
+
+verify_running_task_digests() {
+  local task_definition="$1"
+  local expected_count="$2"
+  local arns_file="$work_dir/running-task-arns.json"
+  local tasks_file="$work_dir/running-tasks.json"
+  local task_arns=()
+  aws ecs list-tasks --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" \
+    --desired-status RUNNING --region "$AWS_REGION" --query taskArns --output json > "$arns_file"
+  while IFS= read -r task_arn; do
+    [[ -n "$task_arn" ]] && task_arns+=("$task_arn")
+  done < <(python3 - "$arns_file" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    for arn in json.load(fh): print(arn)
+PY
+)
+  if [[ "${#task_arns[@]}" -ne "$expected_count" ]]; then
+    echo "Expected $expected_count running API tasks, found ${#task_arns[@]}." >&2
     return 1
   fi
+  aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "${task_arns[@]}" \
+    --region "$AWS_REGION" --output json > "$tasks_file"
+  python3 - "$tasks_file" "$task_definition" "$IMAGE_DIGEST" "$expected_count" <<'PY'
+import json, sys
+path, expected_td, expected_digest, expected_count = sys.argv[1:5]
+with open(path, encoding="utf-8") as fh:
+    result = json.load(fh)
+if result.get("failures"):
+    raise SystemExit(f"DescribeTasks failures: {result['failures']}")
+tasks = result.get("tasks") or []
+if len(tasks) != int(expected_count):
+    raise SystemExit(f"Expected {expected_count} running tasks, found {len(tasks)}")
+for task in tasks:
+    if task.get("taskDefinitionArn") != expected_td:
+        raise SystemExit(f"Running task uses {task.get('taskDefinitionArn')}, expected {expected_td}")
+    api = next((item for item in task.get("containers", []) if item.get("name") == "api"), None)
+    if (api or {}).get("imageDigest") != expected_digest:
+        raise SystemExit(f"Running task digest is {(api or {}).get('imageDigest')}, expected {expected_digest}")
+PY
+}
 
-  echo "[INFO] Migrations applied"
+record_rollback_configurations() {
+  python3 - "$1" "$CUTOVER_STATE_DIR/deployment-configuration-original.json" \
+    "$CUTOVER_STATE_DIR/deployment-configuration-disabled.json" <<'PY'
+import copy, json, os, sys
+source, original_path, disabled_path = sys.argv[1:4]
+with open(source, encoding="utf-8") as fh:
+    config = json.load(fh).get("deploymentConfiguration") or {}
+disabled = copy.deepcopy(config)
+disabled["deploymentCircuitBreaker"] = {"enable": False, "rollback": False}
+if "alarms" in disabled:
+    disabled["alarms"]["enable"] = False
+    disabled["alarms"]["rollback"] = False
+for path, value in ((original_path, config), (disabled_path, disabled)):
+    with open(path, "x", encoding="utf-8") as fh:
+        json.dump(value, fh, indent=2, sort_keys=True); fh.write("\n")
+    os.chmod(path, 0o600)
+PY
+}
+
+assert_verification_group_attached() {
+  local service_file="$1"
+  local target_groups_file="$CUTOVER_STATE_DIR/load-balancer-target-groups.json"
+  local load_balancers_file="$CUTOVER_STATE_DIR/load-balancers.json"
+  local listeners_file="$CUTOVER_STATE_DIR/load-balancer-listeners.json"
+  local target_group_arns=()
+  local load_balancer_arns=()
+  local listener_arns=()
+  local rules_files=()
+  local listener_arn rules_file
+  local index=0
+  while IFS= read -r arn; do
+    [[ -n "$arn" ]] && target_group_arns+=("$arn")
+  done < <(python3 - "$service_file" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh: service = json.load(fh)
+for item in service.get("loadBalancers") or []:
+    if item.get("targetGroupArn"): print(item["targetGroupArn"])
+PY
+)
+  if [[ "${#target_group_arns[@]}" -ne 1 ]]; then
+    echo "The ECS service must have exactly one load-balancer target group to prove the writer barrier path." >&2
+    return 1
+  fi
+  aws elbv2 describe-target-groups --target-group-arns "${target_group_arns[@]}" \
+    --region "$AWS_REGION" --output json > "$target_groups_file"
+  chmod 600 "$target_groups_file"
+  while IFS= read -r arn; do
+    [[ -n "$arn" ]] && load_balancer_arns+=("$arn")
+  done < <(python3 - "$target_groups_file" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh: groups = json.load(fh).get("TargetGroups") or []
+for arn in sorted({arn for group in groups for arn in group.get("LoadBalancerArns") or []}): print(arn)
+PY
+)
+  if [[ "${#load_balancer_arns[@]}" -ne 1 ]]; then
+    echo "The ECS target group must resolve to exactly one load balancer." >&2
+    return 1
+  fi
+  aws elbv2 describe-load-balancers --load-balancer-arns "${load_balancer_arns[@]}" \
+    --region "$AWS_REGION" --output json > "$load_balancers_file"
+  chmod 600 "$load_balancers_file"
+  aws elbv2 describe-listeners --load-balancer-arn "${load_balancer_arns[0]}" \
+    --region "$AWS_REGION" --output json > "$listeners_file"
+  chmod 600 "$listeners_file"
+  while IFS= read -r arn; do
+    [[ -n "$arn" ]] && listener_arns+=("$arn")
+  done < <(python3 - "$listeners_file" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh: listeners = json.load(fh).get("Listeners") or []
+for listener in listeners:
+    if listener.get("ListenerArn"): print(listener["ListenerArn"])
+PY
+)
+  if [[ "${#listener_arns[@]}" -eq 0 ]]; then
+    echo "The API load balancer has no listeners to verify." >&2
+    return 1
+  fi
+  for listener_arn in "${listener_arns[@]}"; do
+    rules_file="$CUTOVER_STATE_DIR/load-balancer-listener-rules-$index.json"
+    aws elbv2 describe-rules --listener-arn "$listener_arn" \
+      --region "$AWS_REGION" --output json > "$rules_file"
+    chmod 600 "$rules_file"
+    rules_files+=("$rules_file")
+    index=$((index + 1))
+  done
+  python3 - "$service_file" "$target_groups_file" "$load_balancers_file" "$listeners_file" \
+    "$VERIFICATION_SECURITY_GROUP" "$VERIFICATION_PORT" "${rules_files[@]}" <<'PY'
+import json, sys
+
+service_path, groups_path, balancers_path, listeners_path, security_group, port, *rule_paths = sys.argv[1:]
+
+def read(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+def forwarded_targets(actions):
+    targets = set()
+    for action in actions or []:
+        if action.get("Type") != "forward":
+            continue
+        action_targets = set()
+        if action.get("TargetGroupArn"):
+            action_targets.add(action["TargetGroupArn"])
+        for target in (action.get("ForwardConfig") or {}).get("TargetGroups") or []:
+            if target.get("TargetGroupArn"):
+                action_targets.add(target["TargetGroupArn"])
+        if not action_targets:
+            raise SystemExit("A forwarding listener action has no target group.")
+        targets.update(action_targets)
+    return targets
+
+service = read(service_path)
+expected_targets = {item.get("targetGroupArn") for item in service.get("loadBalancers") or [] if item.get("targetGroupArn")}
+if len(expected_targets) != 1:
+    raise SystemExit("The ECS service target-group mapping is ambiguous.")
+
+target_groups = read(groups_path).get("TargetGroups") or []
+returned_targets = {item.get("TargetGroupArn") for item in target_groups if item.get("TargetGroupArn")}
+if returned_targets != expected_targets:
+    raise SystemExit(f"Returned target groups {returned_targets} do not exactly match service target groups {expected_targets}.")
+load_balancer_arns = {arn for item in target_groups for arn in item.get("LoadBalancerArns") or []}
+if len(load_balancer_arns) != 1:
+    raise SystemExit("The service target group does not resolve to exactly one load balancer.")
+
+load_balancers = read(balancers_path).get("LoadBalancers") or []
+if len(load_balancers) != 1 or load_balancers[0].get("LoadBalancerArn") not in load_balancer_arns:
+    raise SystemExit("The API load balancer response did not exactly match the service target group.")
+if load_balancers[0].get("SecurityGroups") != [security_group]:
+    raise SystemExit(f"Load balancer security groups are {load_balancers[0].get('SecurityGroups')}, expected sole group {[security_group]}")
+
+listeners = read(listeners_path).get("Listeners") or []
+if len(rule_paths) != len(listeners):
+    raise SystemExit("Rules were not inspected for every load-balancer listener.")
+forwarding = []
+for listener, rule_path in zip(listeners, rule_paths, strict=True):
+    listener_arn = listener.get("ListenerArn")
+    if not listener_arn:
+        raise SystemExit("A load-balancer listener has no ARN.")
+    targets = forwarded_targets(listener.get("DefaultActions"))
+    for rule in read(rule_path).get("Rules") or []:
+        targets.update(forwarded_targets(rule.get("Actions")))
+    if targets:
+        forwarding.append((listener, targets))
+
+if len(forwarding) != 1:
+    raise SystemExit(f"Expected exactly one accounted forwarding listener, found {len(forwarding)}.")
+listener, targets = forwarding[0]
+if listener.get("Port") != int(port) or listener.get("Protocol") != "HTTPS":
+    raise SystemExit(f"The sole forwarding listener is {listener.get('Protocol')}:{listener.get('Port')}, expected HTTPS:{port}.")
+if targets != expected_targets:
+    raise SystemExit(f"Forwarding listener target groups {targets} do not exactly match service target groups {expected_targets}.")
+PY
+}
+
+record_and_install_writer_barrier() {
+  local before="$CUTOVER_STATE_DIR/security-group-before.json"
+  local removed="$CUTOVER_STATE_DIR/security-group-port-original.json"
+  local barrier="$CUTOVER_STATE_DIR/security-group-port-barrier.json"
+  describe_verification_group_to "$before"
+  python3 - "$before" "$removed" "$barrier" "$VERIFICATION_CIDR" "$VERIFICATION_PORT" <<'PY'
+import ipaddress, json, os, sys
+source, removed_path, barrier_path, cidr, port = sys.argv[1:6]
+cidr = str(ipaddress.ip_network(cidr, strict=False)); port = int(port)
+with open(source, encoding="utf-8") as fh: groups = json.load(fh).get("SecurityGroups") or []
+if len(groups) != 1: raise SystemExit("Could not record exactly one verification security group.")
+removed = []
+for permission in groups[0].get("IpPermissions") or []:
+    protocol = permission.get("IpProtocol")
+    if protocol == "-1" or (protocol in {"tcp", "6"} and permission.get("FromPort", -1) <= port <= permission.get("ToPort", -1)):
+        removed.append(permission)
+barrier = [{"IpProtocol": "tcp", "FromPort": port, "ToPort": port,
+            "IpRanges": [{"CidrIp": cidr, "Description": "ScriptDeck cutover verification barrier"}]}]
+for path, value in ((removed_path, removed), (barrier_path, barrier)):
+    with open(path, "x", encoding="utf-8") as fh:
+        json.dump(value, fh, indent=2, sort_keys=True); fh.write("\n")
+    os.chmod(path, 0o600)
+PY
+  if python3 - "$removed" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh: raise SystemExit(0 if json.load(fh) else 1)
+PY
+  then
+    aws ec2 revoke-security-group-ingress --group-id "$VERIFICATION_SECURITY_GROUP" \
+      --ip-permissions "file://$removed" --region "$AWS_REGION" >/dev/null
+  fi
+  aws ec2 authorize-security-group-ingress --group-id "$VERIFICATION_SECURITY_GROUP" \
+    --ip-permissions "file://$barrier" --region "$AWS_REGION" >/dev/null
+  assert_writer_barrier
+}
+
+assert_original_writer_ingress_restored() {
+  python3 - "$CUTOVER_STATE_DIR/security-group-before.json" "$1" "$VERIFICATION_PORT" <<'PY'
+import json, sys
+before_path, after_path, port = sys.argv[1:4]; port = int(port)
+def covering(path):
+    with open(path, encoding="utf-8") as fh: groups = json.load(fh).get("SecurityGroups") or []
+    if len(groups) != 1: raise SystemExit("Could not compare exactly one verification security group.")
+    result = []
+    for permission in groups[0].get("IpPermissions") or []:
+        protocol = permission.get("IpProtocol")
+        if protocol == "-1" or (protocol in {"tcp", "6"} and permission.get("FromPort", -1) <= port <= permission.get("ToPort", -1)):
+            result.append(permission)
+    return sorted(result, key=lambda item: json.dumps(item, sort_keys=True))
+if covering(before_path) != covering(after_path):
+    raise SystemExit("Original verification-port ingress was not restored exactly.")
+PY
+}
+
+restore_writer_barrier_exact() {
+  local removed="$CUTOVER_STATE_DIR/security-group-port-original.json"
+  local barrier="$CUTOVER_STATE_DIR/security-group-port-barrier.json"
+  aws ec2 revoke-security-group-ingress --group-id "$VERIFICATION_SECURITY_GROUP" \
+    --ip-permissions "file://$barrier" --region "$AWS_REGION" >/dev/null
+  if python3 - "$removed" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh: raise SystemExit(0 if json.load(fh) else 1)
+PY
+  then
+    aws ec2 authorize-security-group-ingress --group-id "$VERIFICATION_SECURITY_GROUP" \
+      --ip-permissions "file://$removed" --region "$AWS_REGION" >/dev/null
+  fi
+  describe_verification_group_to "$work_dir/security-group-restored.json"
+  assert_original_writer_ingress_restored "$work_dir/security-group-restored.json"
+}
+
+assert_original_rollback_restored() {
+  python3 - "$CUTOVER_STATE_DIR/deployment-configuration-original.json" "$1" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh: expected = json.load(fh)
+with open(sys.argv[2], encoding="utf-8") as fh: actual = json.load(fh).get("deploymentConfiguration") or {}
+if actual != expected: raise SystemExit(f"ECS deployment configuration was not restored exactly: {actual}")
+PY
+}
+
+assert_snapshot_completed() {
+  local snapshot_file="$work_dir/snapshot.json"
+  aws rds describe-db-snapshots --db-snapshot-identifier "$CUTOVER_SNAPSHOT_ID" \
+    --region "$AWS_REGION" --query 'DBSnapshots[0]' --output json > "$snapshot_file"
+  python3 - "$snapshot_file" "$CUTOVER_SNAPSHOT_ID" "$CUTOVER_DB_INSTANCE_ID" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh: snapshot = json.load(fh)
+if snapshot.get("DBSnapshotIdentifier") != sys.argv[2]: raise SystemExit("The requested cutover snapshot was not returned.")
+if snapshot.get("DBInstanceIdentifier") != sys.argv[3]: raise SystemExit("The completed snapshot belongs to a different DB instance.")
+if snapshot.get("Status") != "available": raise SystemExit(f"The cutover snapshot is not completed: {snapshot.get('Status')}")
+if not snapshot.get("DBSnapshotArn"): raise SystemExit("The completed snapshot has no ARN.")
+PY
+  cp "$snapshot_file" "$CUTOVER_STATE_DIR/snapshot.json"
+  chmod 600 "$CUTOVER_STATE_DIR/snapshot.json"
+}
+
+assert_s3_missing_404() {
+  local error_file="$work_dir/head-object-error.txt"
+  if aws s3api head-object --bucket "$REPORT_BUCKET" --key "$MIGRATION_REPORT_KEY" \
+    --region "$AWS_REGION" > /dev/null 2> "$error_file"; then
+    echo "S3 report still exists after deletion: s3://$REPORT_BUCKET/$MIGRATION_REPORT_KEY" >&2
+    return 1
+  fi
+  if ! grep -Eq '\(404\)' "$error_file"; then
+    echo "S3 report absence was not proved by a 404:" >&2
+    sed -n '1,5p' "$error_file" >&2
+    return 1
+  fi
+}
+
+validate_conversion_report() {
+  python3 - "$1" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh: report = json.load(fh)
+if report.get("status") != "converted": raise SystemExit(f"Conversion report status is {report.get('status')}, expected converted")
+if report.get("aborts") != []: raise SystemExit("Conversion report contains aborts.")
+scanned = (report.get("scanned") or {}).get("captured_scenes")
+converted = (report.get("converted") or {}).get("captured_scenes")
+if not isinstance(scanned, int) or converted != scanned:
+    raise SystemExit(f"Conversion count mismatch: scanned={scanned}, converted={converted}")
+PY
+}
+
+write_cutover_authorization() {
+  local path="$CUTOVER_STATE_DIR/cutover-authorization.json"
+  python3 - "$path" "$TASK_DEFINITION_OVERRIDE" "$IMAGE_DIGEST" <<'PY'
+import json
+import os
+import sys
+path, task_definition, image_digest = sys.argv[1:4]
+authorization = {
+    "explicit_cutover": True,
+    "service_zero_proved": True,
+    "snapshot_completed_proved": True,
+    "ecs_rollback_disabled_proved": True,
+    "writer_barrier_proved": True,
+    "task_definition": task_definition,
+    "image_digest": image_digest,
+    "consumed": False,
+}
+with open(path, "x", encoding="utf-8") as fh:
+    json.dump(authorization, fh, indent=2, sort_keys=True)
+    fh.write("\n")
+os.chmod(path, 0o600)
+PY
 }
 
 verify_backend() {
   echo "[INFO] Verifying backend health"
-  curl -fsS "$API_HEALTH_URL"
+  curl -fsS "$API_HEALTH_URL" || return 1
   echo
-
   echo "[INFO] Verifying backend smoke endpoint"
   curl -fsS "$API_SMOKE_URL" | python3 -c '
-import json
-import sys
-
+import json, sys
 obj = json.load(sys.stdin)
-if not isinstance(obj, list):
-    raise SystemExit("Expected smoke endpoint to return a JSON array.")
+if not isinstance(obj, list): raise SystemExit("Expected smoke endpoint to return a JSON array.")
 print(f"[INFO] Smoke endpoint returned {len(obj)} item(s)")
-'
+' || return 1
 }
 
 verify_frontend() {
-  echo "[INFO] Verifying frontend index.html headers"
-  aws s3api head-object \
-    --bucket "$FRONTEND_BUCKET" \
-    --key index.html \
-    --region "$AWS_REGION" \
+  aws s3api head-object --bucket "$FRONTEND_BUCKET" --key index.html --region "$AWS_REGION" \
     --query '{CacheControl:CacheControl,ContentType:ContentType,LastModified:LastModified}'
+  curl -fsS "$SITE_URL/" > "$work_dir/index-served.html"
+  python3 - "$FRONTEND_DIST_DIR/index.html" "$work_dir/index-served.html" <<'PY'
+import re
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh: expected_html = fh.read()
+with open(sys.argv[2], encoding="utf-8") as fh: served_html = fh.read()
+assets = set(re.findall(r"assets/[^\"' ]+\.(?:js|css)", expected_html))
+if not assets:
+    raise SystemExit("Built index.html names no JavaScript or CSS assets.")
+missing = sorted(asset for asset in assets if asset not in served_html)
+if missing:
+    raise SystemExit(f"Served index.html does not name built assets: {missing}")
+PY
 }
 
-echo "[INFO] Root: $ROOT_DIR"
-echo "[INFO] Region: $AWS_REGION"
-echo "[INFO] Backend image: $IMAGE_URI"
-echo "[INFO] Backend enabled: $deploy_backend"
-echo "[INFO] Frontend enabled: $deploy_frontend"
-echo "[INFO] Backend auto-rollback: $auto_rollback"
-echo "[INFO] Run database migrations: $run_migrations"
-echo "[INFO] Allow local DATABASE_URL in base task definition: $allow_local_database"
-echo "[INFO] Skip image build: $skip_build"
+deploy_frontend_artifact() {
+  aws s3 sync "$FRONTEND_DIST_DIR/" "s3://$FRONTEND_BUCKET/" --delete \
+    --exclude "index.html" --cache-control "public,max-age=31536000,immutable" --region "$AWS_REGION"
+  aws s3 cp "$FRONTEND_DIST_DIR/index.html" "s3://$FRONTEND_BUCKET/index.html" \
+    --cache-control "no-cache,no-store,must-revalidate" --content-type "text/html; charset=utf-8" \
+    --region "$AWS_REGION"
+  if [[ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]]; then
+    aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+      --paths "/" "/index.html" --region "$AWS_REGION" >/dev/null
+  fi
+}
 
-if [[ "$deploy_backend" -eq 1 && "$skip_build" -eq 1 ]]; then
-  # A push that keeps failing from buildx can be finished with a plain
-  # `docker push`; this then deploys that image without rebuilding it.
-  echo "[INFO] Using the image already in ECR: $IMAGE_URI"
-  pushed_at="$(aws ecr describe-images \
-    --repository-name "$ECR_REPO" \
-    --image-ids imageTag="$IMAGE_TAG" \
-    --region "$AWS_REGION" \
-    --query 'imageDetails[0].imagePushedAt' \
-    --output text)"
-  echo "[INFO] Image pushed at: $pushed_at"
+write_cutover_manifest() {
+  python3 - "$CUTOVER_STATE_DIR/cutover-state.json" "$AWS_REGION" "$ECS_CLUSTER" "$ECS_SERVICE" \
+    "$TASK_DEFINITION_OVERRIDE" "$IMAGE_TAG" "$IMAGE_DIGEST" "$IMAGE_REF" "$RESUME_DESIRED_COUNT" \
+    "$VERIFICATION_SECURITY_GROUP" "$VERIFICATION_CIDR" "$VERIFICATION_PORT" \
+    "$CUTOVER_SNAPSHOT_ID" "$CUTOVER_DB_INSTANCE_ID" <<'PY'
+import json, os, sys
+keys = ("region", "cluster", "service", "task_definition", "image_tag", "image_digest", "image_ref",
+        "resume_desired_count", "verification_security_group", "verification_cidr", "verification_port",
+        "snapshot_id", "db_instance_id")
+path, *values = sys.argv[1:]
+value = dict(zip(keys, values, strict=True))
+value["resume_desired_count"] = int(value["resume_desired_count"])
+value["verification_port"] = int(value["verification_port"])
+value["conversion_started"] = True
+value["manual_verification_pending"] = True
+with open(path, "x", encoding="utf-8") as fh:
+    json.dump(value, fh, indent=2, sort_keys=True); fh.write("\n")
+os.chmod(path, 0o600)
+PY
+}
+
+load_cutover_manifest() {
+  local assignments="$work_dir/cutover-state.assignments"
+  python3 - "$CUTOVER_STATE_DIR/cutover-state.json" > "$assignments" <<'PY'
+import json, shlex, sys
+with open(sys.argv[1], encoding="utf-8") as fh: state = json.load(fh)
+if state.get("manual_verification_pending") is not True or state.get("conversion_started") is not True:
+    raise SystemExit("Cutover state is not awaiting manual verification completion.")
+mapping = {"AWS_REGION": state["region"], "ECS_CLUSTER": state["cluster"], "ECS_SERVICE": state["service"],
+           "TASK_DEFINITION_OVERRIDE": state["task_definition"], "IMAGE_TAG": state["image_tag"],
+           "IMAGE_DIGEST": state["image_digest"], "IMAGE_REF": state["image_ref"],
+           "RESUME_DESIRED_COUNT": str(state["resume_desired_count"]),
+           "VERIFICATION_SECURITY_GROUP": state["verification_security_group"],
+           "VERIFICATION_CIDR": state["verification_cidr"], "VERIFICATION_PORT": str(state["verification_port"])}
+for name, value in mapping.items(): print(f"{name}={shlex.quote(value)}")
+PY
+  # This file contains only assignments emitted from the mode-0600 JSON state above.
+  source "$assignments"
+  export AWS_REGION
+}
+
+complete_cutover_safely() {
+  load_cutover_manifest
+  cutover_safety_engaged=1
+  cutover_task_started=1
+  describe_service_to "$work_dir/service-before-completion.json"
+  assert_service_deployed_file "$work_dir/service-before-completion.json" \
+    "$TASK_DEFINITION_OVERRIDE" "$RESUME_DESIRED_COUNT"
+  assert_writer_barrier
+  assert_rollback_disabled_file "$work_dir/service-before-completion.json"
+  verify_running_task_digests "$TASK_DEFINITION_OVERRIDE" "$RESUME_DESIRED_COUNT"
+  apply_deployment_configuration "$CUTOVER_STATE_DIR/deployment-configuration-original.json"
+  describe_service_to "$work_dir/service-rollback-restored.json"
+  assert_original_rollback_restored "$work_dir/service-rollback-restored.json"
+  restore_writer_barrier_exact
+  python3 - "$CUTOVER_STATE_DIR/cutover-state.json" "$VERIFICATION_RECORD" <<'PY'
+import json, os, sys
+path, verification_record = sys.argv[1:3]
+with open(path, encoding="utf-8") as fh: state = json.load(fh)
+state["manual_verification_pending"] = False
+state["verification_record"] = os.path.abspath(verification_record)
+temporary = path + ".tmp"
+with open(temporary, "x", encoding="utf-8") as fh:
+    json.dump(state, fh, indent=2, sort_keys=True); fh.write("\n")
+os.chmod(temporary, 0o600); os.replace(temporary, path)
+PY
+  cutover_safety_engaged=0
+  echo "[DONE] Cutover verification completed; ECS rollback settings and public ingress were restored."
+}
+
+if [[ "$complete_cutover" -eq 1 ]]; then
+  complete_cutover_safely
+  exit 0
 fi
 
-if [[ "$deploy_backend" -eq 1 && "$skip_build" -eq 0 ]]; then
-  echo "[INFO] Checking Docker availability"
-  docker info >/dev/null
-
-  build_dir="/tmp/shotdeck-server-build"
-  rm -rf "$build_dir"
-  mkdir -p "$build_dir"
-
-  echo "[INFO] Preparing backend build context in $build_dir"
-  rsync -a --delete \
-    --exclude '.env' \
-    --exclude '.env.remote' \
-    --exclude '.dockerignore' \
-    --exclude 'node_modules' \
-    --exclude '.DS_Store' \
-    "$ROOT_DIR/server/" "$build_dir/"
-
-  echo "[INFO] Logging into ECR"
-  aws ecr get-login-password --region "$AWS_REGION" \
-    | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-
-  echo "[INFO] Building and pushing backend image"
-  docker buildx build \
-    --platform linux/amd64 \
-    --provenance=false \
-    -t "$IMAGE_URI" \
-    --push \
-    "$build_dir"
-fi
-
-if [[ "$deploy_backend" -eq 1 ]]; then
-  current_td_json="/tmp/shotdeck-task-current.json"
-  next_td_json="/tmp/shotdeck-task-next.json"
-
-  echo "[INFO] Fetching current ECS service task definition"
-  current_task_definition_arn="$(aws ecs describe-services \
-    --cluster "$ECS_CLUSTER" \
-    --services "$ECS_SERVICE" \
-    --region "$AWS_REGION" \
-    --query 'services[0].taskDefinition' \
-    --output text)"
-
-  if [[ -z "$current_task_definition_arn" || "$current_task_definition_arn" == "None" ]]; then
-    echo "Failed to resolve current task definition for $ECS_SERVICE" >&2
+if [[ "$deploy_frontend" -eq 1 ]]; then
+  if [[ "$prebuilt_frontend" -eq 0 ]]; then
+    echo "[INFO] Building frontend before backend changes"
+    (cd "$ROOT_DIR/client" && VITE_API_BASE="$FRONTEND_API_BASE" npm run build)
+  fi
+  if [[ ! -s "$FRONTEND_DIST_DIR/index.html" ]]; then
+    echo "Frontend artifact is missing $FRONTEND_DIST_DIR/index.html." >&2
     exit 1
   fi
+fi
 
-  echo "[INFO] Current ECS task definition: $current_task_definition_arn"
+new_td=""
+current_task_definition_arn=""
+current_desired_count=""
 
-  aws ecs describe-task-definition \
-    --task-definition "$current_task_definition_arn" \
-    --region "$AWS_REGION" \
-    --query taskDefinition > "$current_td_json"
+if [[ "$deploy_backend" -eq 1 ]]; then
+  verify_ecr_digest
+  describe_service_to "$work_dir/service-before.json"
+  current_task_definition_arn="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["taskDefinition"])' "$work_dir/service-before.json")"
+  current_desired_count="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["desiredCount"])' "$work_dir/service-before.json")"
 
-  echo "[INFO] Validating current ECS runtime env"
-  python3 - <<'PY' "$current_td_json" "$allow_local_database"
-import json
-import sys
+  if [[ "$cutover" -eq 1 ]]; then
+    mkdir -m 700 "$CUTOVER_STATE_DIR"
+    cp "$work_dir/service-before.json" "$CUTOVER_STATE_DIR/service-before.json"
+    chmod 600 "$CUTOVER_STATE_DIR/service-before.json"
+    assert_service_zero_file "$work_dir/service-before.json"
+    cutover_safety_engaged=1
+    assert_snapshot_completed
+    assert_verification_group_attached "$work_dir/service-before.json"
+    record_rollback_configurations "$work_dir/service-before.json"
+    disable_cutover_rollback
+    record_and_install_writer_barrier
+    new_td="$TASK_DEFINITION_OVERRIDE"
+    verify_task_definition_image "$new_td" "$work_dir/cutover-task-definition.json"
+    validate_task_definition_database "$work_dir/cutover-task-definition.json"
+    describe_service_to "$work_dir/service-immediately-before-conversion.json"
+    assert_service_zero_file "$work_dir/service-immediately-before-conversion.json"
+    assert_rollback_disabled_file "$work_dir/service-immediately-before-conversion.json"
+    assert_writer_barrier
+    assert_snapshot_completed
+    write_cutover_authorization
 
-current_path = sys.argv[1]
-allow_local = sys.argv[2] == "1"
-
-with open(current_path, "r", encoding="utf-8") as fh:
-    task = json.load(fh)
-
-api = next((c for c in task.get("containerDefinitions", []) if c.get("name") == "api"), None)
-if api is None:
-    raise SystemExit("Missing api container in current task definition.")
-
-env = {item.get("name"): item.get("value", "") for item in api.get("environment", [])}
-db_url = env.get("DATABASE_URL", "")
-if not db_url:
-    raise SystemExit("Current ECS task definition is missing DATABASE_URL.")
-
-if not allow_local and ("localhost" in db_url or "127.0.0.1" in db_url):
-    raise SystemExit(
-        "Refusing to deploy from a base task definition with a local DATABASE_URL. "
-        "Rollback/fix ECS env first, or rerun with --allow-local-database if that is intentional."
-    )
-
-for required in ("PORT",):
-    if required not in env:
-        raise SystemExit(f"Current ECS task definition is missing required env: {required}")
-
-print("[INFO] Current ECS DATABASE_URL passed safety checks")
-PY
-
-  echo "[INFO] Writing next ECS task definition"
-  python3 - <<'PY' "$current_td_json" "$next_td_json" "$IMAGE_URI"
-import json
-import sys
-
-current_path, next_path, image_uri = sys.argv[1:4]
-
-with open(current_path, "r", encoding="utf-8") as fh:
-    task = json.load(fh)
-
-for key in [
-    "taskDefinitionArn",
-    "revision",
-    "status",
-    "requiresAttributes",
-    "compatibilities",
-    "registeredAt",
-    "registeredBy",
-    "deregisteredAt",
-]:
-    task.pop(key, None)
-
-for container in task.get("containerDefinitions", []):
-    if container.get("name") != "api":
-        continue
-    container["image"] = image_uri
-
-with open(next_path, "w", encoding="utf-8") as fh:
-    json.dump(task, fh)
-PY
-
-  echo "[INFO] Registering ECS task definition"
-  new_td="$(aws ecs register-task-definition \
-    --region "$AWS_REGION" \
-    --cli-input-json "file://$next_td_json" \
-    --query 'taskDefinition.taskDefinitionArn' \
-    --output text)"
-
-  if [[ "$run_migrations" -eq 1 ]]; then
-    if ! run_migrations_task "$new_td" "$next_td_json"; then
-      echo "[ERROR] Migrations failed. The ECS service was not updated and still runs $current_task_definition_arn" >&2
+    cutover_task_started=1
+    set +e
+    bash "$ROOT_DIR/infra/run-captured-scene-conversion.sh" \
+      --region "$AWS_REGION" --ecs-cluster "$ECS_CLUSTER" --ecs-service "$ECS_SERVICE" \
+      --task-definition "$new_td" --expected-image-digest "$IMAGE_DIGEST" \
+      --task-status-file "$CUTOVER_STATE_DIR/conversion-task-status.json" \
+      --cutover-authorization-file "$CUTOVER_STATE_DIR/cutover-authorization.json" \
+      --report-key "$MIGRATION_REPORT_KEY" --convert-and-migrate
+    conversion_status=$?
+    set -e
+    if [[ ! -s "$CUTOVER_STATE_DIR/conversion-task-status.json" ]]; then
+      echo "Conversion task status was not persisted; schema state is unknown." >&2
       exit 1
+    fi
+    chmod 600 "$CUTOVER_STATE_DIR/conversion-task-status.json"
+    if [[ "$conversion_status" -ne 0 ]]; then
+      echo "Conversion task failed with status $conversion_status; schema state is unknown." >&2
+      exit "$conversion_status"
+    fi
+    aws s3api get-object --bucket "$REPORT_BUCKET" --key "$MIGRATION_REPORT_KEY" \
+      "$CUTOVER_STATE_DIR/conversion-report.json" --region "$AWS_REGION" >/dev/null
+    chmod 600 "$CUTOVER_STATE_DIR/conversion-report.json"
+    validate_conversion_report "$CUTOVER_STATE_DIR/conversion-report.json"
+    aws s3api delete-object --bucket "$REPORT_BUCKET" --key "$MIGRATION_REPORT_KEY" \
+      --region "$AWS_REGION" >/dev/null
+    assert_s3_missing_404
+  else
+    current_td_json="$work_dir/task-definition-current.json"
+    next_td_json="$work_dir/task-definition-next.json"
+    aws ecs describe-task-definition --task-definition "$current_task_definition_arn" \
+      --region "$AWS_REGION" --query taskDefinition --output json > "$current_td_json"
+    chmod 600 "$current_td_json"
+    validate_task_definition_database "$current_td_json"
+    python3 - "$current_td_json" "$next_td_json" "$IMAGE_REF" <<'PY'
+import json, os, sys
+source, target, image = sys.argv[1:4]
+with open(source, encoding="utf-8") as fh: task = json.load(fh)
+for key in ("taskDefinitionArn", "revision", "status", "requiresAttributes", "compatibilities",
+            "registeredAt", "registeredBy", "deregisteredAt"):
+    task.pop(key, None)
+api = next((item for item in task.get("containerDefinitions", []) if item.get("name") == "api"), None)
+if api is None: raise SystemExit("Missing api container in task definition.")
+api["image"] = image
+with open(target, "x", encoding="utf-8") as fh: json.dump(task, fh)
+os.chmod(target, 0o600)
+PY
+    new_td="$(aws ecs register-task-definition --region "$AWS_REGION" \
+      --cli-input-json "file://$next_td_json" --query 'taskDefinition.taskDefinitionArn' --output text)"
+    verify_task_definition_image "$new_td" "$work_dir/task-definition-registered.json"
+    if [[ "$run_migrations" -eq 1 ]]; then
+      bash "$ROOT_DIR/infra/run-api-task.sh" --region "$AWS_REGION" \
+        --ecs-cluster "$ECS_CLUSTER" --ecs-service "$ECS_SERVICE" --task-definition "$new_td" \
+        --expected-image-digest "$IMAGE_DIGEST" --status-file "$work_dir/migration-task-status.json" \
+        -- node src/migrate.js
     fi
   fi
 
-  echo "[INFO] Updating ECS service to $new_td"
-  aws ecs update-service \
-    --cluster "$ECS_CLUSTER" \
-    --service "$ECS_SERVICE" \
-    --task-definition "$new_td" \
-    --region "$AWS_REGION" >/dev/null
-
-  echo "[INFO] Waiting for ECS service stability"
-  aws ecs wait services-stable \
-    --cluster "$ECS_CLUSTER" \
-    --services "$ECS_SERVICE" \
-    --region "$AWS_REGION"
-
-  echo "[INFO] Backend deployed: $new_td"
-
+  # The cutover is a coordinated release under a zero-writer barrier, so its
+  # prebuilt frontend is published before the converted API resumes. Ordinary
+  # deploys publish only after the backend has passed all checks below.
+  if [[ "$cutover" -eq 1 && "$deploy_frontend" -eq 1 ]]; then deploy_frontend_artifact; fi
+  desired_count="$current_desired_count"
+  if [[ "$cutover" -eq 1 ]]; then desired_count="$RESUME_DESIRED_COUNT"; fi
+  aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+    --task-definition "$new_td" --desired-count "$desired_count" --region "$AWS_REGION" >/dev/null
+  aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --region "$AWS_REGION"
+  describe_service_to "$work_dir/service-deployed.json"
+  assert_service_deployed_file "$work_dir/service-deployed.json" "$new_td" "$desired_count"
+  verify_running_task_digests "$new_td" "$desired_count"
   if [[ "$skip_verify" -eq 0 ]]; then
+    if [[ "$cutover" -eq 1 ]]; then assert_writer_barrier; fi
     if ! verify_backend; then
-      echo "[ERROR] Backend verification failed for $new_td" >&2
-      if [[ "$auto_rollback" -eq 1 ]]; then
-        rollback_backend "$current_task_definition_arn"
-      else
-        echo "[WARN] Auto-rollback disabled. Manual rollback target: $current_task_definition_arn" >&2
+      echo "Backend verification failed for $new_td." >&2
+      if [[ "$cutover" -eq 0 && "$run_migrations" -eq 0 && "$auto_rollback" -eq 1 ]]; then
+        echo "Rolling the API service back to $current_task_definition_arn before any frontend upload." >&2
+        aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+          --task-definition "$current_task_definition_arn" --region "$AWS_REGION" >/dev/null
+        aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --region "$AWS_REGION"
       fi
       exit 1
     fi
   fi
 fi
 
-if [[ "$deploy_frontend" -eq 1 ]]; then
-  echo "[INFO] Building frontend"
-  (
-    cd "$ROOT_DIR/client"
-    VITE_API_BASE="$FRONTEND_API_BASE" npm run build
-  )
+if [[ "$deploy_frontend" -eq 1 && "$cutover" -eq 0 ]]; then deploy_frontend_artifact; fi
+if [[ "$skip_verify" -eq 0 && "$deploy_frontend" -eq 1 ]]; then verify_frontend; fi
 
-  echo "[INFO] Syncing frontend to s3://$FRONTEND_BUCKET"
-  aws s3 sync "$ROOT_DIR/client/dist/" "s3://$FRONTEND_BUCKET/" \
-    --delete \
-    --exclude "index.html" \
-    --cache-control "public,max-age=31536000,immutable" \
-    --region "$AWS_REGION"
-
-  aws s3 cp "$ROOT_DIR/client/dist/index.html" "s3://$FRONTEND_BUCKET/index.html" \
-    --cache-control "no-cache,no-store,must-revalidate" \
-    --content-type "text/html; charset=utf-8" \
-    --region "$AWS_REGION"
-
-  if [[ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]]; then
-    echo "[INFO] Invalidating CloudFront paths"
-    aws cloudfront create-invalidation \
-      --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
-      --paths "/" "/index.html" \
-      --region "$AWS_REGION" >/dev/null
-  fi
-
-  echo "[INFO] Frontend deployed to s3://$FRONTEND_BUCKET"
+if [[ "$cutover" -eq 1 ]]; then
+  assert_writer_barrier
+  describe_service_to "$work_dir/service-before-manual-verification.json"
+  assert_service_deployed_file "$work_dir/service-before-manual-verification.json" "$new_td" "$RESUME_DESIRED_COUNT"
+  assert_rollback_disabled_file "$work_dir/service-before-manual-verification.json"
+  verify_running_task_digests "$new_td" "$RESUME_DESIRED_COUNT"
+  write_cutover_manifest
+  echo "[DONE] Automated cutover checks passed. Restricted ingress and disabled ECS rollback remain enforced."
+  echo "[NEXT] Complete the manual browser/viewer checks, record them, then run --complete-cutover."
+else
+  echo "[DONE] Deployment completed"
 fi
-
-if [[ "$skip_verify" -eq 0 ]]; then
-  if [[ "$deploy_frontend" -eq 1 ]]; then
-    verify_frontend
-  fi
-fi
-
-echo "[DONE] Deployment completed"

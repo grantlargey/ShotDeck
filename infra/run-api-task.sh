@@ -3,7 +3,8 @@
 # Runs one command inside the production API's environment as a one-off ECS
 # task: the service's current task definition (image, env, secrets), its
 # network configuration and its launch settings. Waits for the task to stop
-# and exits with the container's exit code.
+# and exits with the container's exit code (1 through 255). Runner failures
+# such as a task-start or wait failure exit 1.
 #
 # This is how the owner account is created in production, where the database
 # is only reachable from inside the VPC:
@@ -16,9 +17,11 @@
 #   bash infra/run-api-task.sh node src/admin.js reset-password --email you@example.com --password-hash "$hash"
 #
 # Options (before the command): --region, --ecs-cluster, --ecs-service,
-# --task-definition (defaults to the service's current one).
+# --task-definition (defaults to the service's current one),
+# --expected-image-digest and --status-file.
 
 set -euo pipefail
+umask 077
 
 usage() {
   cat <<'EOF'
@@ -30,6 +33,8 @@ Options:
   --ecs-cluster NAME        ECS cluster override
   --ecs-service NAME        ECS service override
   --task-definition ARN     Task definition override (default: the service's current one)
+  --expected-image-digest D Require the api image and stopped task to use sha256 digest D
+  --status-file PATH        Write task ARN, definition, image digest and exit status as JSON
   -h, --help                Show this help
 EOF
 }
@@ -38,6 +43,8 @@ DEPLOY_REGION=""
 ECS_CLUSTER_OVERRIDE=""
 ECS_SERVICE_OVERRIDE=""
 TASK_DEFINITION_OVERRIDE=""
+EXPECTED_IMAGE_DIGEST=""
+STATUS_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,11 +52,23 @@ while [[ $# -gt 0 ]]; do
     --ecs-cluster) ECS_CLUSTER_OVERRIDE="${2:-}"; shift 2 ;;
     --ecs-service) ECS_SERVICE_OVERRIDE="${2:-}"; shift 2 ;;
     --task-definition) TASK_DEFINITION_OVERRIDE="${2:-}"; shift 2 ;;
+    --expected-image-digest) EXPECTED_IMAGE_DIGEST="${2:-}"; shift 2 ;;
+    --status-file) STATUS_FILE="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
     *) break ;;
   esac
 done
+
+if [[ -n "$EXPECTED_IMAGE_DIGEST" && ! "$EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "--expected-image-digest must be sha256 followed by 64 lowercase hexadecimal characters." >&2
+  exit 1
+fi
+
+if [[ -n "$STATUS_FILE" && -e "$STATUS_FILE" ]]; then
+  echo "--status-file must name a new file: $STATUS_FILE" >&2
+  exit 1
+fi
 
 if [[ $# -eq 0 ]]; then
   echo "Missing command to run." >&2
@@ -69,7 +88,8 @@ ECS_CLUSTER="${ECS_CLUSTER_OVERRIDE:-shotdeck-prod2}"
 ECS_SERVICE="${ECS_SERVICE_OVERRIDE:-shotdeck-api-service-hf9lczwr}"
 export AWS_REGION
 
-work_dir="$(mktemp -d /tmp/shotdeck-run-task.XXXXXX)"
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/shotdeck-run-task.XXXXXX")"
+chmod 700 "$work_dir"
 trap 'rm -rf "$work_dir"' EXIT
 service_json="$work_dir/service.json"
 task_json="$work_dir/task-definition.json"
@@ -86,7 +106,8 @@ aws ecs describe-services \
   --cluster "$ECS_CLUSTER" \
   --services "$ECS_SERVICE" \
   --region "$AWS_REGION" \
-  --query 'services[0]' > "$service_json"
+  --query 'services[0]' \
+  --output json > "$service_json"
 
 task_definition="$TASK_DEFINITION_OVERRIDE"
 if [[ -z "$task_definition" ]]; then
@@ -97,7 +118,23 @@ echo "[INFO] Task definition: $task_definition"
 aws ecs describe-task-definition \
   --task-definition "$task_definition" \
   --region "$AWS_REGION" \
-  --query taskDefinition > "$task_json"
+  --query taskDefinition \
+  --output json > "$task_json"
+
+if [[ -n "$EXPECTED_IMAGE_DIGEST" ]]; then
+  python3 - "$task_json" "$EXPECTED_IMAGE_DIGEST" <<'PY'
+import json
+import sys
+
+task_path, expected = sys.argv[1:3]
+with open(task_path, "r", encoding="utf-8") as fh:
+    task = json.load(fh)
+api = next((container for container in task.get("containerDefinitions", []) if container.get("name") == "api"), None)
+image = (api or {}).get("image", "")
+if not image.endswith("@" + expected):
+    raise SystemExit(f"The api task definition is not pinned to the expected image digest: {image}")
+PY
+fi
 
 python3 - "$service_json" "$task_json" "$network_json" "$capacity_json" "$settings_txt" <<'PY'
 import json
@@ -194,6 +231,41 @@ stopped_reason="$(aws ecs describe-tasks \
   --region "$AWS_REGION" \
   --query 'tasks[0].stoppedReason' \
   --output text)"
+image_digest="$(aws ecs describe-tasks \
+  --cluster "$ECS_CLUSTER" \
+  --tasks "$task_arn" \
+  --region "$AWS_REGION" \
+  --query "tasks[0].containers[?name=='api'] | [0].imageDigest" \
+  --output text)"
+
+if [[ -n "$STATUS_FILE" ]]; then
+  python3 - "$STATUS_FILE" "$task_arn" "$task_definition" "$exit_code" "$stopped_reason" "$image_digest" <<'PY'
+import json
+import os
+import sys
+
+path, task_arn, task_definition, exit_code, stopped_reason, image_digest = sys.argv[1:7]
+parent = os.path.dirname(os.path.abspath(path))
+if not os.path.isdir(parent):
+    raise SystemExit(f"Status-file directory does not exist: {parent}")
+stored_exit_code = int(exit_code) if exit_code.isdigit() else exit_code
+with open(path, "x", encoding="utf-8") as fh:
+    json.dump({
+        "task_arn": task_arn,
+        "task_definition": task_definition,
+        "exit_code": stored_exit_code,
+        "stopped_reason": stopped_reason,
+        "image_digest": image_digest,
+    }, fh, indent=2)
+    fh.write("\n")
+os.chmod(path, 0o600)
+PY
+fi
+
+if [[ -n "$EXPECTED_IMAGE_DIGEST" && "$image_digest" != "$EXPECTED_IMAGE_DIGEST" ]]; then
+  echo "[ERROR] Task used image digest $image_digest, expected $EXPECTED_IMAGE_DIGEST" >&2
+  exit 1
+fi
 
 # CloudWatch can lag a few seconds behind a task that just stopped, and some
 # IAM users can't read logs at all; the exit code below is the real result.
@@ -218,9 +290,14 @@ if [[ -n "$log_group" && -n "$log_prefix" ]]; then
   fi
 fi
 
+if [[ ! "$exit_code" =~ ^[0-9]+$ ]] || (( exit_code < 0 || exit_code > 255 )); then
+  echo "[ERROR] Task returned an invalid exit code: $exit_code ($stopped_reason)" >&2
+  exit 1
+fi
+
 if [[ "$exit_code" != "0" ]]; then
   echo "[ERROR] Task exited with code $exit_code ($stopped_reason)" >&2
-  exit 1
+  exit "$exit_code"
 fi
 
 echo "[DONE] Task finished successfully"
