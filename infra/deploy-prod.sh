@@ -33,8 +33,6 @@ Options:
                        Sole IPv4 CIDR allowed to reach the verification port
   --verification-port PORT
                        Restricted API load-balancer port (default: 443)
-  --verification-command FILE
-                       Executable issue-16 smoke wrapper run before manual verification
   --verification-record FILE
                        Nonempty manual verification record required by --complete-cutover
   --report-bucket NAME  Bucket holding the conversion report (required with --cutover)
@@ -96,7 +94,6 @@ RESUME_DESIRED_COUNT=""
 VERIFICATION_SECURITY_GROUP=""
 VERIFICATION_CIDR=""
 VERIFICATION_PORT=443
-VERIFICATION_COMMAND=""
 VERIFICATION_RECORD=""
 TASK_DEFINITION_OVERRIDE=""
 
@@ -118,7 +115,6 @@ while [[ $# -gt 0 ]]; do
     --verification-security-group) VERIFICATION_SECURITY_GROUP="${2:-}"; shift 2 ;;
     --verification-cidr) VERIFICATION_CIDR="${2:-}"; shift 2 ;;
     --verification-port) VERIFICATION_PORT="${2:-}"; shift 2 ;;
-    --verification-command) VERIFICATION_COMMAND="${2:-}"; shift 2 ;;
     --verification-record) VERIFICATION_RECORD="${2:-}"; shift 2 ;;
     --report-bucket) REPORT_BUCKET="${2:-}"; shift 2 ;;
     --migration-report-key) MIGRATION_REPORT_KEY_OVERRIDE="${2:-}"; shift 2 ;;
@@ -196,13 +192,8 @@ if [[ "$cutover" -eq 1 ]]; then
   if [[ -z "$CUTOVER_SNAPSHOT_ID" || -z "$CUTOVER_DB_INSTANCE_ID" || -z "$CUTOVER_STATE_DIR" \
     || -z "$RESUME_DESIRED_COUNT" || -z "$VERIFICATION_SECURITY_GROUP" \
     || -z "$VERIFICATION_CIDR" || -z "$TASK_DEFINITION_OVERRIDE" \
-    || -z "$MIGRATION_REPORT_KEY_OVERRIDE" || -z "$REPORT_BUCKET" \
-    || -z "$VERIFICATION_COMMAND" ]]; then
-    echo "--cutover requires snapshot, DB instance, new state directory, resume count, verification barrier/command, task definition and report options." >&2
-    exit 1
-  fi
-  if [[ ! -x "$VERIFICATION_COMMAND" ]]; then
-    echo "--verification-command must name an executable file." >&2
+    || -z "$MIGRATION_REPORT_KEY_OVERRIDE" || -z "$REPORT_BUCKET" ]]; then
+    echo "--cutover requires snapshot, DB instance, new state directory, resume count, verification barrier, task definition and report options." >&2
     exit 1
   fi
   if [[ ! "$RESUME_DESIRED_COUNT" =~ ^[1-9][0-9]*$ ]]; then
@@ -1036,13 +1027,9 @@ if [[ "$skip_verify" -eq 0 && "$deploy_frontend" -eq 1 ]]; then verify_frontend;
 
 if [[ "$cutover" -eq 1 ]]; then
   assert_writer_barrier
-  describe_service_to "$work_dir/service-before-smoke.json"
-  assert_rollback_disabled_file "$work_dir/service-before-smoke.json"
-  "$VERIFICATION_COMMAND"
-  assert_writer_barrier
-  describe_service_to "$work_dir/service-after-smoke.json"
-  assert_service_deployed_file "$work_dir/service-after-smoke.json" "$new_td" "$RESUME_DESIRED_COUNT"
-  assert_rollback_disabled_file "$work_dir/service-after-smoke.json"
+  describe_service_to "$work_dir/service-before-manual-verification.json"
+  assert_service_deployed_file "$work_dir/service-before-manual-verification.json" "$new_td" "$RESUME_DESIRED_COUNT"
+  assert_rollback_disabled_file "$work_dir/service-before-manual-verification.json"
   verify_running_task_digests "$new_td" "$RESUME_DESIRED_COUNT"
   write_cutover_manifest
   echo "[DONE] Automated cutover checks passed. Restricted ingress and disabled ECS rollback remain enforced."

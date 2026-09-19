@@ -296,20 +296,24 @@ PY
 dispatch="${0##*/}"
 if [[ "$dispatch" == "aws" ]]; then fake_aws "$@"; exit $?; fi
 if [[ "$dispatch" == "curl" ]]; then
-  fake_log CURL_VERIFY
-  if [[ "${FAKE_CURL_FAIL:-}" == "health" && "${*: -1}" == *health* ]]; then exit 22; fi
-  if [[ "${*: -1}" == *movies* ]]; then
+  url="${*: -1}"
+  if [[ "$url" == *health* ]]; then
+    fake_log CURL_HEALTH
+  elif [[ "$url" == *movies* ]]; then
+    fake_log CURL_SMOKE
+  else
+    fake_log CURL_SITE
+  fi
+  if [[ "${FAKE_CURL_FAIL:-}" == "health" && "$url" == *health* ]]; then exit 22; fi
+  if [[ "${FAKE_CURL_FAIL:-}" == "site" && "$url" == *scriptdeckdemo.com* && "$url" != *api.* ]]; then exit 22; fi
+  if [[ "$url" == *movies* ]]; then
     printf '[]\n'
-  elif [[ "${*: -1}" == *scriptdeckdemo.com* && "${*: -1}" != *api.* ]]; then
+  elif [[ "$url" == *scriptdeckdemo.com* && "$url" != *api.* ]]; then
     sed -n '1,200p' "$SHOTDECK_FRONTEND_DIST_DIR/index.html"
   else
     printf '{"status":"ok"}\n'
   fi
   exit 0
-fi
-if [[ "$dispatch" == "cutover-smoke" ]]; then
-  fake_log ISSUE16_SMOKE
-  exit "${FAKE_HOOK_STATUS:-0}"
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -326,7 +330,6 @@ FAKE_BIN="$TEST_ROOT/bin"
 mkdir -p "$FAKE_BIN" "$TEST_ROOT/tmp" "$TEST_ROOT/dist"
 ln -s "$ROOT_DIR/infra/test-cutover-safety.sh" "$FAKE_BIN/aws"
 ln -s "$ROOT_DIR/infra/test-cutover-safety.sh" "$FAKE_BIN/curl"
-ln -s "$ROOT_DIR/infra/test-cutover-safety.sh" "$FAKE_BIN/cutover-smoke"
 printf '<html><script src="/assets/test.js"></script></html>\n' > "$TEST_ROOT/dist/index.html"
 
 export PATH="$FAKE_BIN:$PATH"
@@ -376,7 +379,7 @@ new_case() {
   printf '%s\n' original > "$FAKE_STATE/security-group"
   printf '%s\n' present > "$FAKE_STATE/report"
   unset FAKE_CURL_FAIL FAKE_ECR_DIGEST FAKE_TASK_DIGEST FAKE_TASK_EXIT_CODE FAKE_HEAD_ERROR \
-    FAKE_HOOK_STATUS FAKE_SNAPSHOT_STATUS FAKE_LISTENER_MODE
+    FAKE_SNAPSHOT_STATUS FAKE_LISTENER_MODE
 }
 
 cutover_args() {
@@ -387,7 +390,7 @@ cutover_args() {
     --cutover-snapshot-id snapshot-test --cutover-db-instance-id db-test
     --cutover-state-dir "$FAKE_CUTOVER_STATE_DIR" --resume-desired-count 1
     --verification-security-group sg-verification --verification-cidr 198.51.100.24/32
-    --verification-port 443 --verification-command "$FAKE_BIN/cutover-smoke"
+    --verification-port 443
     --report-bucket report-bucket --migration-report-key ops/inventory/cutover-test.json
   )
 }
@@ -442,6 +445,7 @@ pass "shell syntax"
 
 new_case refusals 0
 expect_failure "monolithic ECR uploader" bash "$DEPLOY" --image-tag test --image-digest "$DIGEST"
+expect_failure "Unknown option: --verification-command" bash "$DEPLOY" --verification-command /tmp/removed
 cutover_args
 expect_failure "forbids --skip-migrations" bash "$DEPLOY" "${CUTOVER_ARGS[@]}" --skip-migrations
 expect_failure "single-host IPv4 /32" bash "$DEPLOY" "${CUTOVER_ARGS[@]}" --verification-cidr 0.0.0.0/0
@@ -457,7 +461,7 @@ new_case ordinary_success 1
 ordinary_args
 bash "$DEPLOY" "${ORDINARY_ARGS[@]}"
 [[ "$(<"$FAKE_STATE/task-definition")" == "$NEW_TD" ]] || fail "ordinary deploy did not retain the new backend"
-assert_order SERVICE_DEPLOY CURL_VERIFY FRONTEND_SYNC
+assert_order SERVICE_DEPLOY CURL_HEALTH CURL_SMOKE FRONTEND_SYNC CURL_SITE
 pass "ordinary combined deploy verifies backend before publishing frontend"
 
 new_case ordinary_backend_failure 1
@@ -467,12 +471,12 @@ expect_failure "Backend verification failed" bash "$DEPLOY" "${ORDINARY_ARGS[@]}
 [[ "$(<"$FAKE_STATE/task-definition")" == "$OLD_TD" ]] || fail "ordinary backend failure did not roll back"
 assert_no_event FRONTEND_SYNC
 assert_no_event FRONTEND_INDEX
-assert_order SERVICE_DEPLOY CURL_VERIFY SERVICE_ROLLBACK
+assert_order SERVICE_DEPLOY CURL_HEALTH SERVICE_ROLLBACK
 pass "ordinary backend failure rolls back without touching frontend"
 
 new_case success 0
 cutover_args
-FAKE_HOOK_STATUS=0 bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
+bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
 [[ "$(<"$FAKE_STATE/desired")" == 1 ]] || fail "cutover service did not reach verification count"
 [[ "$(<"$FAKE_STATE/task-definition")" == "$NEW_TD" ]] || fail "cutover service did not use probed task definition"
 [[ "$(<"$FAKE_STATE/rollback")" == disabled ]] || fail "rollback paths restored before manual verification"
@@ -481,7 +485,8 @@ FAKE_HOOK_STATUS=0 bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
 [[ -s "$FAKE_CUTOVER_STATE_DIR/conversion-task-status.json" ]] || fail "task status missing"
 assert_secure_state "$FAKE_CUTOVER_STATE_DIR"
 assert_order ECR_DIGEST SNAPSHOT_CHECK DISABLE_ROLLBACK REVOKE_PUBLIC AUTHORIZE_BARRIER \
-  RUN_CONVERSION_TASK GET_CONVERSION_REPORT DELETE_CONVERSION_REPORT FRONTEND_SYNC SERVICE_DEPLOY ISSUE16_SMOKE
+  RUN_CONVERSION_TASK GET_CONVERSION_REPORT DELETE_CONVERSION_REPORT FRONTEND_SYNC SERVICE_DEPLOY \
+  CURL_HEALTH CURL_SMOKE CURL_SITE
 expect_failure "consumed=False" bash "$CONVERSION" --task-definition "$NEW_TD" \
   --expected-image-digest "$DIGEST" --task-status-file "$TEST_ROOT/reuse-task-status.json" \
   --cutover-authorization-file "$FAKE_CUTOVER_STATE_DIR/cutover-authorization.json" \
@@ -496,7 +501,7 @@ expect_failure "nonempty --verification-record" bash "$DEPLOY" \
 : > "$TEST_ROOT/empty-verification.txt"
 expect_failure "nonempty --verification-record" bash "$DEPLOY" --complete-cutover \
   --cutover-state-dir "$FAKE_CUTOVER_STATE_DIR" --verification-record "$TEST_ROOT/empty-verification.txt"
-printf 'issue-16 smoke and manual browser/viewer checks passed\n' > "$TEST_ROOT/verification.txt"
+printf 'automated deploy checks and manual browser/viewer checks passed\n' > "$TEST_ROOT/verification.txt"
 bash "$DEPLOY" --complete-cutover --cutover-state-dir "$FAKE_CUTOVER_STATE_DIR" \
   --verification-record "$TEST_ROOT/verification.txt"
 [[ "$(<"$FAKE_STATE/rollback")" == original ]] || fail "rollback settings were not restored"
@@ -506,7 +511,7 @@ import json, sys
 with open(sys.argv[1], encoding="utf-8") as fh: state = json.load(fh)
 if state.get("manual_verification_pending") is not False: raise SystemExit("completion state was not recorded")
 PY
-assert_order ISSUE16_SMOKE RESTORE_ROLLBACK REVOKE_BARRIER RESTORE_PUBLIC
+assert_order CURL_SITE RESTORE_ROLLBACK REVOKE_BARRIER RESTORE_PUBLIC
 assert_temp_clean
 pass "completion requires evidence and restores protections only afterward"
 
@@ -558,22 +563,22 @@ expect_failure "resolves to" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
 assert_no_event RUN_CONVERSION_TASK
 pass "cutover refuses a mutable-tag digest mismatch"
 
-new_case verification_failure 0
-export FAKE_HOOK_STATUS=7
+new_case frontend_failure 0
+export FAKE_CURL_FAIL=site
 cutover_args
 expect_failure "schema is unknown" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
-[[ "$(<"$FAKE_STATE/desired")" == 0 ]] || fail "verification failure did not force service zero"
-[[ "$(<"$FAKE_STATE/rollback")" == disabled ]] || fail "verification failure did not leave rollback disabled"
-[[ "$(<"$FAKE_STATE/security-group")" == barrier ]] || fail "verification failure removed writer barrier"
-assert_order RUN_CONVERSION_TASK ISSUE16_SMOKE SERVICE_ZERO
-pass "post-conversion failure forces and proves zero with protections retained"
+[[ "$(<"$FAKE_STATE/desired")" == 0 ]] || fail "frontend verification failure did not force service zero"
+[[ "$(<"$FAKE_STATE/rollback")" == disabled ]] || fail "frontend verification failure did not leave rollback disabled"
+[[ "$(<"$FAKE_STATE/security-group")" == barrier ]] || fail "frontend verification failure removed writer barrier"
+assert_order RUN_CONVERSION_TASK FRONTEND_SYNC SERVICE_DEPLOY CURL_HEALTH CURL_SMOKE CURL_SITE SERVICE_ZERO
+pass "post-conversion frontend failure forces and proves zero with protections retained"
 
 new_case health_failure 0
 export FAKE_CURL_FAIL=health
 cutover_args
 expect_failure "schema is unknown" bash "$DEPLOY" "${CUTOVER_ARGS[@]}"
 [[ "$(<"$FAKE_STATE/desired")" == 0 ]] || fail "health failure did not force service zero"
-assert_order RUN_CONVERSION_TASK SERVICE_DEPLOY CURL_VERIFY SERVICE_ZERO
+assert_order RUN_CONVERSION_TASK SERVICE_DEPLOY CURL_HEALTH SERVICE_ZERO
 pass "backend health failure propagates and fails closed"
 
 new_case deletion_forbidden 0
