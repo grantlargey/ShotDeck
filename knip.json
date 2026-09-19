@@ -3,7 +3,6 @@
   "workspaces": {
     ".": {
       "entry": [
-        "infra/local-cutover-dry-run.mjs",
         "test/browser-smoke/run.mjs",
         "test/browser-smoke/block-external-network.mjs"
       ],
@@ -32,8 +31,6 @@
         "src/index.js",
         "src/admin.js",
         "src/migrate.js",
-        "src/tools/convert-captured-scenes.js",
-        "src/tools/inventory.js",
         "test/run.js",
         "test/**/*.test.js",
         "eslint.config.js"

@@ -62,7 +62,7 @@ async function runMigrations() {
         const legacy = await legacyTables(client);
         if (legacy.length > 0) {
             throw new Error(
-                `This database predates the canonical schema; run node src/tools/convert-captured-scenes.js first. Legacy tables: ${legacy.join(", ")}`
+                `This database predates the supported schema and cannot be migrated in place. Restore a compatible backup or rebuild it. Incompatible tables: ${legacy.join(", ")}`
             );
         }
 

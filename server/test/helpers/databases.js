@@ -69,13 +69,3 @@ export function runServerNode(script, suffix, args = []) {
         timeout: 120_000,
     });
 }
-
-export async function restoreDump(suffix, dumpPath) {
-    const dump = await readFile(dumpPath);
-    const restored = spawnSync(
-        "docker",
-        ["exec", "-i", "shotdeck-db-1", "pg_restore", "-U", "app", "-d", databaseName(suffix), "--no-owner", "--no-privileges"],
-        { input: dump, encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: 120_000 }
-    );
-    if (restored.status !== 0) throw new Error(`Could not restore legacy dump: ${restored.stderr}`);
-}
