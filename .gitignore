@@ -18,11 +18,6 @@ node_modules/
 # Local issues, specs, and conversation history
 /.scratch/
 
-# ShotDeck import artifacts
-/data/sd/
-/data/shotdeck/
-/server/src/importShotdeckShots.js
-
 # Task definition snapshots
 td.json
 td-new.json

@@ -57,7 +57,7 @@ Where a scene draft's text came from: Captured, Edited, Saved, or AI formatted.
 _Avoid_: Text source, text status
 
 **Stale text**:
-Scene draft text whose scene anchors no longer match the ones it came from, such as after the anchors move without a re-capture.
+Scene draft text that came from a different anchor pair than the draft's current complete, readable anchor pair.
 _Avoid_: Stale capture, outdated capture
 
 **AI proposal**:

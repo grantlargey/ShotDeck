@@ -19,9 +19,11 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 - `server/src/routes/` - One router per API domain, holding the domain's paths, sign-in guards, and HTTP handlers.
 - `server/src/services/` - The domain module behind each router: validation, rules, SQL, and response shaping. `thumbnails.service.js` makes still thumbnails in the background.
 - `server/src/repositories/` - Persistence files private to one domain module: admin accounts and sessions.
+- `server/src/domain/` - Domain data shared by the server and client, currently the captured-scene tag taxonomy.
+- `server/src/tools/` - Maintenance commands for captured-scene inventory and conversion.
 - `server/src/db.js`, `server/src/s3.js` - The shared Postgres pool; S3 object keys, uploads, and signed URLs.
 - `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code: CORS, the sign-in guards, the Origin check, the error handler, and small helpers.
-- `server/sql/schema.sql` - Postgres schema.
+- `server/sql/migrations/` - Numbered Postgres schema migrations.
 - `package.json` - Root development and database commands.
 - `.nvmrc` - Pinned local Node.js version, matching the server Docker image.
 - `docker-compose.yml` - Local Postgres and an optional containerized API.
@@ -63,7 +65,7 @@ In practice:
 - `entities` contain domain models (constants and pure helpers) and the UI that renders one entity, such as a movie or scene card.
 - `shared` contains reusable infrastructure: API operations (`shared/api/<domain>.js`), UI primitives (`shared/ui/`), and libraries such as time formatting and the screenplay grammar (`shared/lib/`).
 
-Every operation, helper and component has one owning module, and callers import it directly from that file, for example `import { getMovie } from "@/shared/api/movies.js"` or `import { Button } from "@/shared/ui/Button.jsx"`. There are no `index.js` barrels, re-export files or aggregate API objects, and no modules that only forward calls to another module. A workflow that combines requests, such as uploading a file and then saving the record that points to it, is one operation in its API owner, for example `saveScript` in `shared/api/scripts.js`.
+Every operation, helper and component has one owning module, and callers import it directly from that file, for example `import { getMovie } from "@/shared/api/movies.js"` or `import { Button } from "@/shared/ui/Button.jsx"`. A workflow that combines requests, such as uploading a file and then saving the record that points to it, remains one operation in its API owner, for example `saveScript` in `shared/api/scripts.js`.
 
 The script-viewer and admin routes are loaded on demand from their page modules, so the PDF renderer and editor are kept out of the initial application bundle.
 
@@ -133,7 +135,7 @@ Common settings include:
 - `DATABASE_URL` - Postgres connection string.
 - `PORT` - API port, defaults to `4000` when unset.
 - `AWS_REGION` - AWS region for S3 operations.
-- `S3_BUCKET` - Bucket used for covers, scripts, and annotation images.
+- `S3_BUCKET` - Bucket used for covers, scripts, and film stills.
 - `ALLOWED_ORIGINS` - Comma-separated list of additional browser origins allowed by CORS.
 - `OPENAI_API_KEY` - Optional, enables AI formatting proposals. Without it, manual editing and PDF capture remain available.
 - `OPENAI_SCREENPLAY_TIMEOUT_MS` - Screenplay formatter request timeout in milliseconds, defaults to `90000`.
@@ -162,14 +164,14 @@ postgres://app:app@127.0.0.1:5432/shotdeck
 
 ## Database
 
-The schema lives in `server/sql/schema.sql`. Start Postgres and apply it from the repository root:
+The schema is built by the numbered files in `server/sql/migrations/`. Start Postgres and apply pending migrations from the repository root:
 
 ```bash
 npm run db:up
 npm run db:migrate
 ```
 
-The migration script reads `DATABASE_URL` from the shell or `server/.env`; use the local connection string above when targeting the Compose database. It applies the schema and incremental alterations, and imports unmatched legacy script annotations through the shared Postgres pool. It currently has no migration-history ledger, so changes to legacy migration behavior require checking existing database state.
+The migration runner reads `DATABASE_URL` from the shell or `server/.env`; use the local connection string above when targeting the Compose database. It applies the numbered files in `server/sql/migrations/` in order and records them in `schema_migrations`. It refuses a database that still contains the retired captured-scene tables instead of trying to convert it implicitly.
 
 ## Admin Access
 
@@ -212,7 +214,7 @@ From the repository root:
 | `npm run db:up` | Start Postgres and wait for readiness. |
 | `npm run db:stop` | Stop Postgres while retaining its data. |
 | `npm run db:logs` | Follow Postgres logs. |
-| `npm run db:migrate` | Apply the schema and existing migration logic using `DATABASE_URL`. |
+| `npm run db:migrate` | Apply pending numbered migrations using `DATABASE_URL`. |
 | `npm run admin -- <command>` | Manage admin accounts: `hash`, `create-owner`, `reset-password`, `list`. See [Admin Access](#admin-access). |
 
 Client (from `client/`, or append `--prefix client` from the root):
@@ -265,24 +267,10 @@ npm test --prefix server -- --test-name-pattern="signing in"
 
 `npm run lint --prefix server` checks the server and its tests with ESLint.
 
-## Local-only Importer
-
-The ShotDeck importer and its compatibility shim are intentionally untracked local tools, so they are not installed by cloning this repository. The public package no longer advertises an importer npm command that depends on those absent files.
-
-An existing local installation containing both `server/src/importShotdeckShots.js` and `server/src/annotation-service.js` can still invoke the CLI directly from `server/`:
-
-```bash
-node src/importShotdeckShots.js --help
-```
-
-In API mode the importer signs in first with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from the environment (for example from `server/.env.remote`); the account must be an admin, since every write requires one.
-
-Those local files and the repository/S3 helpers they call have been preserved. The importer's deduplication contract still needs to be reconciled with the current annotation API before relying on repeat imports.
-
 ## Notes
 
 - Large uploads should go through the app's presigned S3 flow rather than through the API as request bodies.
-- The API makes an 800px WebP thumbnail for each film still in a `thumbs/` folder beside the original, in the background: when a still is saved or listed, and at startup for any still without one. Grids, timeline previews, and scene cards use it; the hero and scene viewer keep the full image. Run `npm run db:migrate` after pulling so the `annotations.thumb_key` column exists.
-- `npm run db:migrate` also creates the `admin_users` and `admin_sessions` tables; run it before the first sign-in.
-- Local env files, data imports, generated task definition snapshots, and local reference notes are ignored by git.
+- The API makes an 800px WebP thumbnail for each film still in a `thumbs/` folder beside the original, in the background: when a still is saved or listed, and at startup for any still without one. Grids, timeline previews, and scene cards use it; the hero and scene viewer keep the full image.
+- Run `npm run db:migrate` after pulling and before the first sign-in so the database has every numbered migration.
+- Local env files, generated task definition snapshots, and local reference notes are ignored by git.
 - Production deployment details are intentionally not documented in this public README.
