@@ -10,8 +10,6 @@ import { pool } from "../src/db.js";
  * /movies/:movieId/annotations. Saving or listing a still also queues its
  * thumbnail in the background; with S3 unreachable in tests, that fails and
  * logs "Failed to create still thumbnail" without changing any response.
- *
- * "changes in NN" marks behavior that overhaul issue NN is expected to change.
  */
 
 const api = await startApi();

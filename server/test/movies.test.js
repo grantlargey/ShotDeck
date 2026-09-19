@@ -13,8 +13,6 @@ import {
 
 /*
  * Characterization of the movie routes: POST, GET, PUT and DELETE /movies.
- *
- * "changes in NN" marks behavior that overhaul issue NN is expected to change.
  */
 
 const api = await startApi();
@@ -23,7 +21,6 @@ const { cookie } = await signInOwner(api);
 const INVALID_MOVIE =
     "Invalid body. Expected { title:string, director:string, year:number, runtime_minutes:number, (optional) writer:string, (optional) cinematographer:string, (optional) cover_image_key:string }";
 
-// changes in 11: no links (A8)
 const MOVIE_FIELDS = [
     "cinematographer",
     "cover_image_key",

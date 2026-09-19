@@ -56,7 +56,7 @@ describe("the numbered migration runner", () => {
         assert.match(second.stdout, /No migrations pending/);
     });
 
-    test("refuses a legacy database before creating the ledger", async () => {
+    test("refuses an incompatible database before creating the ledger", async () => {
         const db = await connectDatabase("migrate_legacy");
         try {
             await applyLegacySchema(db);
@@ -65,7 +65,7 @@ describe("the numbered migration runner", () => {
         }
         const run = runServerNode("src/migrate.js", "migrate_legacy");
         assert.notEqual(run.status, 0);
-        assert.match(run.stderr, /predates the canonical schema/);
+        assert.match(run.stderr, /predates the supported schema/);
         const check = await connectDatabase("migrate_legacy");
         try {
             const result = await check.query("SELECT to_regclass('public.schema_migrations') AS ledger");

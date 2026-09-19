@@ -13,8 +13,6 @@ import {
 /*
  * Characterization of the script routes: POST and GET /movies/:id/scripts
  * and GET /movies/:movieId/scripts/:scriptId. The scene-by-time route is gone.
- *
- * "changes in NN" marks behavior that overhaul issue NN is expected to change.
  */
 
 const api = await startApi();

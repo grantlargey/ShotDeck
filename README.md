@@ -20,7 +20,6 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 - `server/src/services/` - The domain module behind each router: validation, rules, SQL, and response shaping. `thumbnails.service.js` makes still thumbnails in the background.
 - `server/src/repositories/` - Persistence files private to one domain module: admin accounts and sessions.
 - `server/src/domain/` - Domain data shared by the server and client, currently the captured-scene tag taxonomy.
-- `server/src/tools/` - Maintenance commands for captured-scene inventory and conversion.
 - `server/src/db.js`, `server/src/s3.js` - The shared Postgres pool; S3 object keys, uploads, and signed URLs.
 - `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code: CORS, the sign-in guards, the Origin check, the error handler, and small helpers.
 - `server/sql/migrations/` - Numbered Postgres schema migrations.
@@ -273,4 +272,4 @@ npm test --prefix server -- --test-name-pattern="signing in"
 - The API makes an 800px WebP thumbnail for each film still in a `thumbs/` folder beside the original, in the background: when a still is saved or listed, and at startup for any still without one. Grids, timeline previews, and scene cards use it; the hero and scene viewer keep the full image.
 - Run `npm run db:migrate` after pulling and before the first sign-in so the database has every numbered migration.
 - Local env files, generated task definition snapshots, and local reference notes are ignored by git.
-- Production deployment details are intentionally not documented in this public README.
+- Production deployment and recovery invariants are documented in [the operations guide](docs/operations/production.md).
