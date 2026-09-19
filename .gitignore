@@ -10,7 +10,9 @@ node_modules/
 **/.env
 **/.env.*
 
-# Local agent skills
+# Local agent docs
+CLAUDE.md
+/.claude/
 /.agents/skills/
 /.claude/skills/
 /skills-lock.json
