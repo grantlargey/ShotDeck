@@ -9,7 +9,7 @@ import MovieDetailPage from "./MovieDetailPage.jsx";
  * image in the scene viewer, and deleting it. Only external edges are doubled
  * (the API modules and the session); the page, the scene viewer and the form
  * controls are real, so error placement is checked where people see it.
- * No test uploads a file: the stills API module is mocked.
+ * Still-save orchestration is real; upload and record requests are mocked.
  */
 
 const api = vi.hoisted(() => ({
@@ -195,6 +195,8 @@ beforeEach(() => {
   api.listAnnotations.mockImplementation(async () => stills.map((row) => ({ ...row })));
   api.listScriptScenes.mockImplementation(async () => []);
   api.getViewUrlForKey.mockImplementation(async () => ({ url: "" }));
+  api.uploadMediaFile.mockResolvedValue("annotations/m1/upload.png");
+  api.createAnnotation.mockImplementation(async ({ id, timeSeconds, imageKey }) => ({ id, movie_id: "m1", time_seconds: timeSeconds, image_key: imageKey }));
   vi.spyOn(window, "confirm").mockReturnValue(false);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -370,7 +372,7 @@ describe("adding a still", () => {
     expect(within(dialog).getByText(`Between 00:00:00 and ${RUNTIME_LABEL}`)).toBeTruthy();
   });
 
-  it("disables submit while adding, then shows an upload failure in the dialog and keeps it open", async () => {
+  it("disables submit while adding, then shows a record failure in the dialog and keeps it open", async () => {
     await renderPage();
     const request = deferred();
     api.createAnnotation.mockReturnValue(request.promise);
@@ -383,8 +385,8 @@ describe("adding a still", () => {
 
     const busy = within(addDialog()).getByRole("button", { name: "Adding…" });
     expect(busy.disabled).toBe(true);
-    expect(api.createAnnotation).toHaveBeenCalledTimes(1);
-    expect(api.createAnnotation).toHaveBeenCalledWith({ movieId: "m1", timeSeconds: 600, file });
+    await waitFor(() => expect(api.createAnnotation).toHaveBeenCalledTimes(1));
+    expect(api.createAnnotation).toHaveBeenCalledWith({ movieId: "m1", id: expect.any(String), timeSeconds: 600, imageKey: "annotations/m1/upload.png" });
 
     await act(async () => request.reject(s3Failure()));
 
@@ -397,7 +399,8 @@ describe("adding a still", () => {
   it("closes the dialog and refreshes the stills once the still is saved", async () => {
     await renderPage();
     const added = { id: "a3", movie_id: "m1", time_seconds: 600, image_key: "stills/a3.png", image_url: "https://media.test/a3.png" };
-    api.createAnnotation.mockImplementation(async () => {
+    api.createAnnotation.mockImplementation(async ({ id }) => {
+      added.id = id;
       stills = [...stills, added];
       return added;
     });
@@ -410,6 +413,56 @@ describe("adding a still", () => {
     expect(await screen.findByRole("button", { name: "Open still at 00:10:00" })).toBeTruthy();
     expect(queryAddDialog()).toBeNull();
     expect(api.listAnnotations).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a failed creation with the uploaded image and applies changed timing to the same still", async () => {
+    await renderPage();
+    api.createAnnotation.mockRejectedValueOnce(new Error("response lost"));
+    const dialog = await openAddDialog();
+    chooseFile(dialog, imageFile());
+    typeTime(dialog, "10:00");
+    submitAdd();
+    await waitFor(() => expect(within(addDialog()).getByRole("alert").textContent).toBe("Failed to add the still."));
+    const original = api.createAnnotation.mock.calls[0][0];
+
+    typeTime(dialog, "11:00");
+    submitAdd();
+    await waitFor(() => expect(queryAddDialog()).toBeNull());
+    expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
+    expect(api.createAnnotation.mock.calls[1][0]).toEqual(original);
+    expect(api.updateAnnotation).toHaveBeenCalledWith({ movieId: "m1", annotationId: original.id, timeSeconds: 660, imageKey: original.imageKey });
+  });
+
+  it.each(["success", "failure"])("keeps an earlier add's %s out of a reopened dialog", async (outcome) => {
+    await renderPage();
+    const earlier = deferred();
+    const later = deferred();
+    api.createAnnotation.mockImplementationOnce(async ({ id }) => {
+      await earlier.promise;
+      return { id };
+    }).mockImplementationOnce(async ({ id }) => {
+      await later.promise;
+      return { id };
+    });
+    let dialog = await openAddDialog();
+    chooseFile(dialog, imageFile());
+    typeTime(dialog, "10:00");
+    submitAdd();
+    await waitFor(() => expect(api.createAnnotation).toHaveBeenCalledTimes(1));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    dialog = await openAddDialog();
+    chooseFile(dialog, imageFile());
+    typeTime(dialog, "11:00");
+    submitAdd();
+    await waitFor(() => expect(api.createAnnotation).toHaveBeenCalledTimes(2));
+    expect(api.createAnnotation.mock.calls[0][0].id).not.toBe(api.createAnnotation.mock.calls[1][0].id);
+    await settle(() => outcome === "success" ? earlier.resolve() : earlier.reject(new Error("offline")));
+    expect(within(addDialog()).getByRole("button", { name: "Adding…" }).disabled).toBe(true);
+    expect(within(addDialog()).queryByRole("alert")).toBeNull();
+    expect(within(addDialog()).getByPlaceholderText("HH:MM:SS").value).toBe("00:11:00");
+    await settle(() => later.resolve());
+    expect(queryAddDialog()).toBeNull();
   });
 
   it("opens with an empty form each time", async () => {
@@ -476,8 +529,7 @@ describe("editing a still in the viewer", () => {
       movieId: "m1",
       annotationId: "a2",
       timeSeconds: 900,
-      imageKey: null,
-      file,
+      imageKey: "annotations/m1/upload.png",
     });
     expect(within(viewer()).queryByRole("alert")).toBeNull();
   });
@@ -501,7 +553,6 @@ describe("editing a still in the viewer", () => {
       annotationId: "a1",
       timeSeconds: 360,
       imageKey: "stills/a1.jpg",
-      file: null,
     });
     expect(api.listAnnotations).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Open still at 00:06:00" })).toBeTruthy();
@@ -739,7 +790,8 @@ describe("closing the viewer", () => {
 
     expect(screen.queryByRole("dialog", { name: "Night Diner" })).toBeNull();
     const added = { id: "a3", movie_id: "m1", time_seconds: 600, image_key: "stills/a3.png", image_url: "https://media.test/a3.png" };
-    api.createAnnotation.mockImplementation(async () => {
+    api.createAnnotation.mockImplementation(async ({ id }) => {
+      added.id = id;
       stills = [added];
       return added;
     });

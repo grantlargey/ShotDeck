@@ -35,6 +35,32 @@ async function createStill(movie, body) {
 }
 
 describe("creating a still", () => {
+    test("replays an identity without duplicating the still or overwriting later edits", async () => {
+        const movie = await createMovie(api, cookie);
+        const id = randomUUID();
+        const body = { id, time_seconds: 42 };
+        const [first, retry] = await Promise.all([createStill(movie, body), createStill(movie, body)]);
+        assert.equal(first.id, id);
+        assert.equal(retry.id, id);
+        assert.equal((await api.get(stillsPath(movie))).body.length, 1);
+        const edited = await api.put(`${stillsPath(movie)}/${id}`, { cookie, body: { time_seconds: 60 } });
+        assert.equal(edited.status, 200);
+        const replay = await createStill(movie, body);
+        assert.equal(replay.time_seconds, 60);
+    });
+
+    test("rejects malformed identities and cannot replay a still belonging to another film", async () => {
+        const movie = await createMovie(api, cookie);
+        for (const id of ["invalid", null, 42]) {
+            await expectError(api.post(stillsPath(movie), { cookie, body: { id, time_seconds: 1 } }), 400, "Invalid still id. Expected a UUID.");
+        }
+        const still = await createStill(movie, { id: randomUUID(), time_seconds: 1 });
+        const other = await createMovie(api, cookie);
+        await expectError(api.post(stillsPath(other), { cookie, body: { id: still.id, time_seconds: 2 } }), 409, "Still identity is already in use.");
+        assert.equal((await api.get(stillsPath(other))).body.length, 0);
+        assert.equal((await api.get(stillsPath(movie))).body[0].time_seconds, 1);
+    });
+
     test("returns 201 with the still and a signed image URL, and no title or body", async () => {
         const movie = await createMovie(api, cookie);
         const key = `annotations/${movie.id}/frame.jpg`;

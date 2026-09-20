@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
+import { createStillSave } from "@/entities/annotation/model/stillSave.js";
 import { parseFilmMoment } from "@/entities/script-scene/model/filmTiming.js";
-import { createAnnotation, deleteAnnotation, updateAnnotation } from "@/shared/api/annotations.js";
+import { deleteAnnotation } from "@/shared/api/annotations.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
 import { formatSecondsToHms, normalizeTypedTime } from "@/shared/lib/time.js";
@@ -44,11 +45,13 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
   const [addFile, setAddFile] = useState(null);
   const [addError, setAddError] = useState("");
   const [addBusy, setAddBusy] = useState(false);
+  const addSaveRef = useRef(null);
   const addPreviewUrl = useFilePreviewUrl(addFile);
 
   // The viewer's edit, tied to the still it edits so stepping to another still
   // never applies it to the wrong one.
   const [edit, setEdit] = useState(null);
+  const editSaveRef = useRef(null);
   // The last edit or delete failure, shown above whichever still the viewer shows.
   const [error, setError] = useState("");
   // True while the viewer's save or delete runs, including the refresh after it.
@@ -63,14 +66,24 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
   }
 
   function openAddDialog() {
+    addSaveRef.current = createStillSave({ movieId });
     setAddTime("");
     setAddFile(null);
     setAddError("");
+    setAddBusy(false);
     setAdding(true);
+  }
+
+  function closeAddDialog() {
+    addSaveRef.current = null;
+    setAdding(false);
+    setAddBusy(false);
   }
 
   async function addStill(event) {
     event.preventDefault();
+    const save = addSaveRef.current;
+    if (!save || addBusy) return;
     setAddError("");
 
     try {
@@ -80,17 +93,18 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
       }
 
       setAddBusy(true);
-      await createAnnotation({ movieId, timeSeconds, file: addFile });
-      setAdding(false);
+      await save({ timeSeconds, file: addFile });
+      if (addSaveRef.current === save) closeAddDialog();
       await onChange();
     } catch (e) {
-      setAddError(getErrorMessage(e, "Failed to add the still."));
+      if (addSaveRef.current === save) setAddError(getErrorMessage(e, "Failed to add the still."));
     } finally {
-      setAddBusy(false);
+      if (addSaveRef.current === save) setAddBusy(false);
     }
   }
 
   function toggleEdit(still) {
+    editSaveRef.current = edit?.stillId === still.id ? null : createStillSave({ movieId, stillId: still.id });
     setEdit(
       edit?.stillId === still.id
         ? null
@@ -99,8 +113,11 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
   }
 
   async function saveEdit(still) {
-    if (edit?.stillId !== still.id) return;
+    if (edit?.stillId !== still.id || busy) return;
+    const save = editSaveRef.current;
+    if (!save) return;
     const isSameSession = trackViewerSession();
+    const isCurrent = () => isSameSession() && editSaveRef.current === save;
     setError("");
 
     try {
@@ -110,20 +127,22 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
       }
 
       setBusy(true);
-      await updateAnnotation({
-        movieId,
-        annotationId: still.id,
+      await save({
         timeSeconds,
         imageKey: still.image_key ?? null,
         file: edit.file,
       });
 
       await onChange();
-      if (isSameSession()) setEdit(null);
+      if (isCurrent()) {
+        setEdit(null);
+        editSaveRef.current = null;
+        setBusy(false);
+      }
     } catch (e) {
-      if (isSameSession()) setError(getErrorMessage(e, "Failed to save the still."));
+      if (isCurrent()) setError(getErrorMessage(e, "Failed to save the still."));
     } finally {
-      if (isSameSession()) setBusy(false);
+      if (isCurrent()) setBusy(false);
     }
   }
 
@@ -135,6 +154,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
       await deleteAnnotation(movieId, still.id);
       if (isSameSession()) {
         setEdit(null);
+        editSaveRef.current = null;
         setError("");
       }
       await onChange();
@@ -147,6 +167,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
 
   function reset() {
     viewerSessionRef.current += 1;
+    editSaveRef.current = null;
     setEdit(null);
     setError("");
     setBusy(false);
@@ -159,7 +180,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
         <Button variant="danger" disabled={busy} onClick={() => deleteStill(still)}>
           Delete
         </Button>
-        <Button onClick={() => toggleEdit(still)}>
+        <Button disabled={busy} onClick={() => toggleEdit(still)}>
           {edit?.stillId === still.id ? "Cancel edit" : "Edit"}
         </Button>
       </>
@@ -174,6 +195,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
           <div className={styles.editRow}>
             <Field label="Timestamp" required className={styles.timeField}>
               <Input
+                disabled={busy}
                 placeholder="HH:MM:SS"
                 value={edit.time}
                 onChange={(e) => {
@@ -188,6 +210,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
             </Field>
             <Field as="div" label="Replace image" className={styles.imageField}>
               <FileInput
+                disabled={busy}
                 accept="image/*"
                 file={edit.file}
                 onChange={(file) => setEdit((current) => ({ ...current, file }))}
@@ -209,10 +232,10 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
   const addDialog = adding ? (
     <Dialog
       title="Add a film still"
-      onClose={() => setAdding(false)}
+      onClose={closeAddDialog}
       footer={
         <>
-          <Button onClick={() => setAdding(false)}>Cancel</Button>
+          <Button onClick={closeAddDialog}>Cancel</Button>
           <Button type="submit" form="add-still-form" variant="primary" disabled={addBusy}>
             {addBusy ? "Adding…" : "Add still"}
           </Button>
@@ -221,6 +244,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
     >
       <form id="add-still-form" className={styles.addForm} onSubmit={addStill}>
         <FileDropzone
+          disabled={addBusy}
           className={styles.addDrop}
           accept="image/*"
           file={addFile}
@@ -239,6 +263,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
           hint={runtimeSeconds ? `Between 00:00:00 and ${formatSecondsToHms(runtimeSeconds)}` : "HH:MM:SS"}
         >
           <Input
+            disabled={addBusy}
             placeholder="HH:MM:SS"
             value={addTime}
             onChange={(e) => setAddTime(e.target.value)}

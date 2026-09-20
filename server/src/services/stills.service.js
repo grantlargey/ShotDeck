@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4, validate as isUuid } from "uuid";
 import { createPresignedGetUrl } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
 import { ensureMovieExists } from "./movies.service.js";
@@ -51,19 +51,26 @@ async function toStillResponse(row) {
 export async function createStill(db, movieId, body) {
     const fields = body ?? {};
     if (!isValidStillBody(fields)) throw new HttpError(400, INVALID_BODY_MESSAGE);
+    if (fields.id !== undefined && !isUuid(fields.id)) throw new HttpError(400, "Invalid still id. Expected a UUID.");
     await ensureMovieExists(db, movieId);
 
+    const id = fields.id ?? uuidv4();
     const result = await db.query(
         `
         INSERT INTO annotations (id, movie_id, time_seconds, image_key)
         VALUES ($1, $2, $3, $4)
+        ON CONFLICT (id) DO NOTHING
         RETURNING *
       `,
-        [uuidv4(), movieId, fields.time_seconds, fields.image_key ?? null]
+        [id, movieId, fields.time_seconds, fields.image_key ?? null]
     );
 
-    queueThumbnailsForRows(db, result.rows);
-    return toStillResponse(result.rows[0]);
+    // A separate read sees a concurrent insert after the unique constraint
+    // finishes waiting. Creation replay never overwrites subsequent edits.
+    const row = result.rows[0] ?? (await db.query("SELECT * FROM annotations WHERE id = $1 AND movie_id = $2", [id, movieId])).rows[0];
+    if (!row) throw new HttpError(409, "Still identity is already in use.");
+    queueThumbnailsForRows(db, [row]);
+    return toStillResponse(row);
 }
 
 export async function listStills(db, movieId) {
