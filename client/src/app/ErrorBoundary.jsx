@@ -1,7 +1,7 @@
 import { Component } from "react";
 import { Button } from "@/shared/ui/Button.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
-import styles from "./ErrorBoundary.module.css";
+import styles from "./styles/ErrorBoundary.module.css";
 
 /**
  * Catches render errors so a broken page shows a recoverable message instead of
