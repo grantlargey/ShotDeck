@@ -13,8 +13,7 @@ import { hashPassword, passwordProblem } from "./utils/passwords.js";
  *
  * Without --password-hash, the password is read from the ADMIN_PASSWORD
  * environment variable or, at a terminal, from a hidden prompt. Make the hash
- * locally with `hash` when the command runs where you can't type, such as a
- * one-off ECS task; only the hash then leaves your machine.
+ * with `hash` and pass --password-hash when an interactive prompt isn't available.
  */
 
 const USAGE = `Usage:

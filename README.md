@@ -26,7 +26,6 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 - `package.json` - Root development and database commands.
 - `.nvmrc` - Pinned local Node.js version, matching the server Docker image.
 - `docker-compose.yml` - Local Postgres and an optional containerized API.
-- `infra/` - Deployment utilities.
 
 ## Backend Architecture
 
@@ -67,8 +66,6 @@ In practice:
 Every operation, helper and component has one owning module, and callers import it directly from that file, for example `import { getMovie } from "@/shared/api/movies.js"` or `import { Button } from "@/shared/ui/Button.jsx"`. A workflow that combines requests, such as uploading a file and then saving the record that points to it, remains one operation in its API owner, for example `saveScript` in `shared/api/scripts.js`.
 
 The script-viewer and admin routes are loaded on demand from their page modules, so the PDF renderer and editor are kept out of the initial application bundle.
-
-See the [script viewer architecture guide](docs/architecture/script-viewer.md) for draft ownership, saved text and location rules, and where to change viewer behavior.
 
 ## Requirements
 
@@ -147,7 +144,7 @@ Client configuration:
 
 - `VITE_API_BASE` - Public API base URL, defaults to `http://localhost:4000`.
 
-Restart the Vite dev server after changing client environment files, or rebuild for a deployed frontend. Vite embeds these values in browser assets, so they must not contain secrets.
+Restart the Vite dev server after changing client environment files. Vite embeds these values in browser assets, so they must not contain secrets.
 
 When running the optional API container, Compose overrides `DATABASE_URL` to use the Postgres service hostname:
 
@@ -189,12 +186,7 @@ Create the owner account after applying the schema:
 npm run admin -- create-owner --email you@example.com
 ```
 
-The command prompts for a password of at least 12 characters, or reads `ADMIN_PASSWORD` from the environment. Where the database is only reachable from inside the deployment, make the hash locally and pass it instead, so no password leaves your machine:
-
-```bash
-npm run admin -- hash
-npm run admin -- create-owner --email you@example.com --password-hash '<hash>'
-```
+The command prompts for a password of at least 12 characters, or reads `ADMIN_PASSWORD` from the environment.
 
 `npm run admin -- list` shows the accounts, and `npm run admin -- reset-password --email you@example.com` replaces a password and signs that account out everywhere.
 
@@ -271,5 +263,3 @@ npm test --prefix server -- --test-name-pattern="signing in"
 - Large uploads should go through the app's presigned S3 flow rather than through the API as request bodies.
 - The API makes an 800px WebP thumbnail for each film still in a `thumbs/` folder beside the original, in the background: when a still is saved or listed, and at startup for any still without one. Grids, timeline previews, and scene cards use it; the hero and scene viewer keep the full image.
 - Run `npm run db:migrate` after pulling and before the first sign-in so the database has every numbered migration.
-- Local env files, generated task definition snapshots, and local reference notes are ignored by git.
-- Production deployment and recovery invariants are documented in [the operations guide](docs/operations/production.md).

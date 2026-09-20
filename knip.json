@@ -6,7 +6,7 @@
         "test/browser-smoke/run.mjs",
         "test/browser-smoke/block-external-network.mjs"
       ],
-      "project": ["infra/**/*.mjs", "test/**/*.mjs"]
+      "project": ["test/**/*.mjs"]
     },
     "client": {
       "entry": [
