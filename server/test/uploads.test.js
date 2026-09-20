@@ -26,6 +26,24 @@ function presign(body, options = { cookie }) {
 }
 
 describe("presigning an upload", () => {
+    test("renews the same upload identity and allocates a different key for a replacement", async () => {
+        const body = { movieId: randomUUID(), type: "script", contentType: "application/pdf", uploadId: randomUUID() };
+        const first = await presign(body);
+        const retry = await presign(body);
+        const replacement = await presign({ ...body, uploadId: randomUUID() });
+        assert.equal(first.status, 200, first.text);
+        assert.equal(retry.status, 200, retry.text);
+        assert.equal(retry.body.key, first.body.key);
+        assert.notEqual(replacement.body.key, first.body.key);
+        assert.ok(new URL(retry.body.uploadUrl).pathname.endsWith(`/${first.body.key}`));
+    });
+
+    test("rejects invalid supplied upload identities", async () => {
+        for (const uploadId of [null, 5, "not-a-uuid", ""]) {
+            await expectError(presign({ movieId: randomUUID(), type: "cover", contentType: "image/png", uploadId }), 400, "Invalid upload id. Expected a UUID.");
+        }
+    });
+
     test("returns a new key under the type's folder and a 5-minute PUT URL for it", async () => {
         const movieId = randomUUID();
         const cases = [

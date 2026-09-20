@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4, validate as isUuid } from "uuid";
 import {
     buildObjectKey,
     createPresignedPutUrl,
@@ -9,7 +9,7 @@ import { HttpError } from "../utils/http-error.js";
 
 /** Reads a presign request, `{ movieId, type, contentType }`, and signs a PUT for a new key in the type's folder. */
 export async function createUploadPresign(body) {
-    const { movieId, type, contentType } = body ?? {};
+    const { movieId, type, contentType, uploadId } = body ?? {};
     const isImageUpload = type === "cover" || type === "annotation";
     const isScriptUpload = type === "script";
 
@@ -26,7 +26,12 @@ export async function createUploadPresign(body) {
         );
     }
 
-    const id = uuidv4();
+    if (uploadId !== undefined && !isUuid(uploadId)) {
+        throw new HttpError(400, "Invalid upload id. Expected a UUID.");
+    }
+    // Renewing a failed/expired upload targets the same object, including when
+    // its previous PUT succeeded but the browser lost the response.
+    const id = uploadId ?? uuidv4();
     const ext = getExtensionForContentType(contentType);
     const key = buildObjectKey({
         movieId,

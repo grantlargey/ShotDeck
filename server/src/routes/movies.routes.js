@@ -22,6 +22,10 @@ router.put("/movies/:id", requireAdmin, async (req, res) => {
     res.json(await moviesService.updateMovie(pool, req.params.id, req.body));
 });
 
+router.put("/movies/:id/cover", requireAdmin, async (req, res) => {
+    res.json(await moviesService.updateMovieCover(pool, req.params.id, req.body));
+});
+
 router.delete("/movies/:id", requireAdmin, async (req, res) => {
     await moviesService.deleteMovie(pool, req.params.id);
     res.status(204).send();

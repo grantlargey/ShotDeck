@@ -373,6 +373,40 @@ try {
   assert((await context.cookies()).some((cookie) => cookie.name === "sd_admin" && cookie.httpOnly));
   pass("real authentication creates the admin session used by browser writes");
 
+  // Commit a film creation, then lose its response. A real reload must retain
+  // the request identity and input, and retry must leave exactly one film.
+  const recoveryPage = await context.newPage();
+  const recoveryErrors = [];
+  recoveryPage.on("pageerror", (error) => recoveryErrors.push(error.message));
+  let dropCreationResponse = true;
+  let recoveredFilmId;
+  await recoveryPage.route(`${apiOrigin}/movies`, async (route) => {
+    if (route.request().method() === "POST" && dropCreationResponse) {
+      dropCreationResponse = false;
+      const response = await route.fetch();
+      assert.equal(response.status(), 201);
+      recoveredFilmId = (await response.json()).id;
+      return route.abort("failed");
+    }
+    return route.continue();
+  });
+  await recoveryPage.goto(`${appOrigin}/movies/new`);
+  await recoveryPage.getByRole("textbox", { name: /^Title/ }).fill("Recoverable smoke film");
+  await recoveryPage.getByRole("textbox", { name: /^Director/ }).fill("Synthetic Director");
+  await recoveryPage.getByRole("spinbutton", { name: /^Release year/ }).fill("2026");
+  await recoveryPage.getByPlaceholder("00:00:00").fill("02:00:00");
+  await recoveryPage.getByRole("button", { name: "Create project", exact: true }).click();
+  await recoveryPage.getByRole("button", { name: "Retry save", exact: true }).waitFor();
+  await recoveryPage.reload();
+  assert.equal(await recoveryPage.getByRole("textbox", { name: /^Title/ }).inputValue(), "Recoverable smoke film");
+  await recoveryPage.getByRole("button", { name: "Retry save", exact: true }).click();
+  await recoveryPage.waitForURL(`${appOrigin}/movies`);
+  const recoveredFilms = await database.query("SELECT id FROM movies WHERE title = $1", ["Recoverable smoke film"]);
+  assert.deepEqual(recoveredFilms.rows, [{ id: recoveredFilmId }]);
+  assert.deepEqual(recoveryErrors, []);
+  await recoveryPage.close();
+  pass("film-save retry after a lost creation response and reload keeps exactly one film");
+
   const page = await context.newPage();
   const pageErrors = [];
   const consoleErrors = [];

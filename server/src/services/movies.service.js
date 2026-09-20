@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4, validate as isUuid } from "uuid";
 import { createPresignedGetUrl } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
 
@@ -77,14 +77,21 @@ export async function ensureMovieExists(db, movieId) {
 
 export async function createMovie(db, body) {
     const movie = readMovieBody(body);
+    // The browser persists this identity before sending a recoverable film save.
+    // Replaying creation must never overwrite a film that has since been edited.
+    if (body.id !== undefined && !isUuid(body.id)) {
+        throw new HttpError(400, "Invalid movie id. Expected a UUID.");
+    }
+    const id = body.id ?? uuidv4();
     const result = await db.query(
         `
         INSERT INTO movies (id, title, director, writer, cinematographer, year, runtime_minutes, cover_image_key)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO NOTHING
         RETURNING *
       `,
         [
-            uuidv4(),
+            id,
             movie.title,
             movie.director,
             movie.writer ?? null,
@@ -94,7 +101,9 @@ export async function createMovie(db, body) {
             movie.coverImageKey ?? null,
         ]
     );
-    return toMovieResponse(result.rows[0]);
+    // A separate statement sees a concurrently committed insert after the
+    // unique constraint has made the losing insert wait for it.
+    return toMovieResponse(result.rows[0] ?? await findMovie(db, id));
 }
 
 export async function listMovies(db) {
@@ -104,6 +113,19 @@ export async function listMovies(db) {
 
 export async function getMovie(db, id) {
     return toMovieResponse(await findMovie(db, id));
+}
+
+/** A retried cover attachment must not replay previously saved film details. */
+export async function updateMovieCover(db, id, body) {
+    const key = body?.cover_image_key;
+    if (key !== null && (typeof key !== "string" || !key.startsWith(`covers/${id}/`))) {
+        throw new HttpError(400, "Invalid cover image key for this movie.");
+    }
+    const result = await db.query(
+        "UPDATE movies SET cover_image_key = $2 WHERE id = $1 RETURNING *", [id, key]
+    );
+    if (!result.rows[0]) throw new HttpError(404, "Movie not found");
+    return toMovieResponse(result.rows[0]);
 }
 
 /** Replaces the required fields, and each optional field the body includes. */

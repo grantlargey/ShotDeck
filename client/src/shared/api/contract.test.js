@@ -2,11 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dependencies = vi.hoisted(() => ({
   req: vi.fn(),
-  uploadMediaFile: vi.fn(),
 }));
 
 vi.mock("./request.js", () => ({ req: dependencies.req }));
-vi.mock("./uploads.js", () => ({ uploadMediaFile: dependencies.uploadMediaFile }));
 
 import { createMovie, deleteMovie, getMovie, listMovies, updateMovie } from "./movies.js";
 import {
@@ -32,7 +30,6 @@ const SCENE_BODY = {
 
 beforeEach(() => {
   dependencies.req.mockReset();
-  dependencies.uploadMediaFile.mockReset();
 });
 
 describe("movie endpoints", () => {
@@ -66,13 +63,8 @@ describe("script endpoints", () => {
     ]);
   });
 
-  it("uploads and saves a script with the canonical key body", async () => {
-    const file = new File(["pdf"], "script.pdf", { type: "application/pdf" });
-    dependencies.uploadMediaFile.mockResolvedValue("scripts/movie-1.pdf");
-
-    await saveScript({ movieId: "movie/1", file });
-
-    expect(dependencies.uploadMediaFile).toHaveBeenCalledWith({ movieId: "movie/1", type: "script", file });
+  it("attaches an uploaded script with the canonical key body", async () => {
+    await saveScript({ movieId: "movie/1", key: "scripts/movie-1.pdf" });
     expect(dependencies.req).toHaveBeenCalledWith("/movies/movie%2F1/scripts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

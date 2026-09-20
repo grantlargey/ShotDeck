@@ -1,6 +1,3 @@
-import { updateMovie } from "@/shared/api/movies.js";
-import { saveScript } from "@/shared/api/scripts.js";
-import { uploadMediaFile } from "@/shared/api/uploads.js";
 import { ValidationError } from "@/shared/lib/errors.js";
 import { formatMinutesToHms, parseTimeInputToMinutes } from "@/shared/lib/time.js";
 
@@ -29,21 +26,4 @@ export function buildMovieSavePayload(form) {
     year: Number(form.year) || null,
     runtime_minutes: runtimeMinutes,
   };
-}
-
-/** Saves every editable part of an existing project in its established order. */
-export async function saveMovieEdits({ movieId, form, coverFile = null, scriptFile = null }) {
-  if (scriptFile && scriptFile.type !== "application/pdf") {
-    throw new ValidationError("Please choose a PDF file for the script.");
-  }
-
-  const payload = buildMovieSavePayload(form);
-  await updateMovie(movieId, payload);
-
-  if (coverFile) {
-    const key = await uploadMediaFile({ movieId, type: "cover", file: coverFile });
-    await updateMovie(movieId, { ...payload, cover_image_key: key });
-  }
-
-  if (scriptFile) await saveScript({ movieId, file: scriptFile });
 }

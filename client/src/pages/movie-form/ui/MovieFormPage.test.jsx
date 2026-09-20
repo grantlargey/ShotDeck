@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   createMovie: vi.fn(),
   getMovie: vi.fn(),
   updateMovie: vi.fn(),
+  updateMovieCover: vi.fn(),
   saveScript: vi.fn(),
   uploadMediaFile: vi.fn(),
 }));
@@ -15,9 +16,11 @@ vi.mock("@/shared/api/movies.js", () => ({
   createMovie: api.createMovie,
   getMovie: api.getMovie,
   updateMovie: api.updateMovie,
+  updateMovieCover: api.updateMovieCover,
 }));
 vi.mock("@/shared/api/scripts.js", () => ({ saveScript: api.saveScript }));
 vi.mock("@/shared/api/uploads.js", () => ({ uploadMediaFile: api.uploadMediaFile }));
+vi.mock("@/entities/session/model/useSession.js", () => ({ useSession: () => ({ user: { id: "admin-1" } }) }));
 
 const MOVIE = {
   id: "movie-1",
@@ -48,13 +51,72 @@ function submit() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  vi.stubGlobal("crypto", webcrypto);
   for (const fn of Object.values(api)) fn.mockReset();
   api.getMovie.mockResolvedValue({ ...MOVIE });
+  api.createMovie.mockImplementation(async (body) => ({ ...body }));
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+function renderCreatePage() {
+  return render(
+    <MemoryRouter initialEntries={["/movies/new"]}>
+      <Routes>
+        <Route path="/movies/new" element={<MovieFormPage mode="create" />} />
+        <Route path="/movies" element={<h1>Film library</h1>} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
+function fillDetails() {
+  fireEvent.change(screen.getByRole("textbox", { name: /^Title/ }), { target: { value: "Night Diner" } });
+  fireEvent.change(screen.getByRole("textbox", { name: /^Director/ }), { target: { value: "Ada Park" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: /^Release year/ }), { target: { value: "2024" } });
+  fireEvent.change(screen.getByPlaceholderText("00:00:00"), { target: { value: "02:00:00" } });
+}
+
+describe("MovieFormPage creation recovery", () => {
+  it("restores a failed creation after reopening, with the same identity and input", async () => {
+    api.createMovie.mockRejectedValueOnce(new Error("connection lost"));
+    const page = renderCreatePage();
+    fillDetails();
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+    expect(await screen.findByText("Failed to save project.")).toBeTruthy();
+    const original = api.createMovie.mock.calls[0][0];
+    page.unmount();
+    renderCreatePage();
+    expect(screen.getByDisplayValue("Night Diner")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    expect(await screen.findByRole("heading", { name: "Film library" })).toBeTruthy();
+    expect(api.createMovie.mock.calls[1][0]).toEqual(original);
+  });
+
+  it("reopens a completed upload for attachment retry without selecting the file again", async () => {
+    api.uploadMediaFile.mockResolvedValue("scripts/uploaded.pdf");
+    api.saveScript.mockRejectedValueOnce(new Error("attachment failed")).mockResolvedValueOnce({ id: "script-1" });
+    const page = renderCreatePage();
+    fillDetails();
+    fireEvent.change(page.container.querySelector('input[type="file"][accept="application/pdf"]'), {
+      target: { files: [new File(["script"], "script.pdf", { type: "application/pdf" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+    expect(await screen.findByText("Failed to save project.")).toBeTruthy();
+    expect(screen.getByText(/Film details saved/)).toBeTruthy();
+    page.unmount();
+    renderCreatePage();
+    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    expect(await screen.findByRole("heading", { name: "Film library" })).toBeTruthy();
+    expect(api.createMovie).toHaveBeenCalledTimes(1);
+    expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
+    expect(api.saveScript).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("MovieFormPage movie editing", () => {
@@ -97,3 +159,4 @@ describe("MovieFormPage movie editing", () => {
     expect(screen.getByRole("heading", { name: "Edit project", level: 1 })).toBeTruthy();
   });
 });
+import { webcrypto } from "node:crypto";

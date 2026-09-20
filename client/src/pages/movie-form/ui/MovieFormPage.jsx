@@ -1,13 +1,13 @@
 // client/src/pages/movie-form/ui/MovieFormPage.jsx
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { buildMovieSavePayload, createMovieEditForm, saveMovieEdits } from "@/entities/movie/model/movieForms.js";
+import { useNavigate, useParams } from "react-router-dom";
+import { createMovieEditForm } from "@/entities/movie/model/movieForms.js";
+import { useFilmSave } from "@/entities/movie/model/filmSave.js";
 import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
-import { createMovie, getMovie, updateMovie } from "@/shared/api/movies.js";
-import { saveScript } from "@/shared/api/scripts.js";
-import { uploadMediaFile } from "@/shared/api/uploads.js";
+import { useSession } from "@/entities/session/model/useSession.js";
+import { getMovie } from "@/shared/api/movies.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
-import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
+import { getErrorMessage } from "@/shared/lib/errors.js";
 import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
 import { Badge } from "@/shared/ui/Badge.jsx";
 import { Button } from "@/shared/ui/Button.jsx";
@@ -19,11 +19,19 @@ import styles from "./MovieFormPage.module.css";
 
 export default function MovieFormPage({ mode }) {
   const { id } = useParams();
+  const { user } = useSession();
+  return <MovieForm key={`${user?.id}:${mode}:${id}`} mode={mode} id={id} ownerId={user?.id} />;
+}
+
+function MovieForm({ mode, id, ownerId }) {
   const nav = useNavigate();
   const isEdit = mode === "edit";
+  const filmSave = useFilmSave({ movieId: isEdit ? id : null, ownerId });
+  const { saving } = filmSave;
+  const [recoveredForm] = useState(filmSave.recovery?.form);
   useDocumentTitle(isEdit ? "Edit project" : "New project");
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => recoveredForm || {
     title: "",
     director: "",
     writer: "",
@@ -33,7 +41,6 @@ export default function MovieFormPage({ mode }) {
   });
 
   const [err, setErr] = useState("");
-  const [saving, setSaving] = useState(false);
 
   const [coverFile, setCoverFile] = useState(null);
   const [scriptFile, setScriptFile] = useState(null);
@@ -42,19 +49,19 @@ export default function MovieFormPage({ mode }) {
 
   useEffect(() => {
     if (mode !== "edit") return;
-
+    let cancelled = false;
     (async () => {
       try {
         const m = await getMovie(id);
-
-        setForm(createMovieEditForm(m));
-
+        if (cancelled) return;
+        setForm(recoveredForm || createMovieEditForm(m));
         setExistingCoverUrl(m.cover_image_url || "");
       } catch (e) {
-        setErr(getErrorMessage(e, "Failed to load project."));
+        if (!cancelled) setErr(getErrorMessage(e, "Failed to load project."));
       }
     })();
-  }, [mode, id]);
+    return () => { cancelled = true; };
+  }, [mode, id, recoveredForm]);
 
   function updateField(k, v) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -62,46 +69,26 @@ export default function MovieFormPage({ mode }) {
 
   async function onSubmit(e) {
     e.preventDefault();
-    setSaving(true);
     setErr("");
 
     try {
-      if (!isEdit && scriptFile && scriptFile.type !== "application/pdf") {
-        throw new ValidationError("Please choose a PDF file for the script.");
-      }
-
-      if (isEdit) {
-        await saveMovieEdits({ movieId: id, form, coverFile, scriptFile });
-        nav(`/movies/${id}`);
-        return;
-      }
-
-      const basePayload = buildMovieSavePayload(form);
-      const created = await createMovie(basePayload);
-
-      if (coverFile) {
-        const key = await uploadMediaFile({
-          movieId: created.id,
-          type: "cover",
-          file: coverFile,
-        });
-
-        await updateMovie(created.id, { ...basePayload, cover_image_key: key });
-      }
-
-      if (scriptFile) {
-        await saveScript({ movieId: created.id, file: scriptFile });
-      }
-
-      nav(`/movies`);
+      const saved = await filmSave.save({ form, coverFile, scriptFile });
+      nav(isEdit ? `/movies/${saved.movieId}` : "/movies");
     } catch (e2) {
       setErr(getErrorMessage(e2, "Failed to save project."));
-    } finally {
-      setSaving(false);
     }
   }
 
   const coverToShow = coverPreviewUrl || existingCoverUrl;
+
+  function leaveForm() {
+    if (filmSave.recovery) {
+      if (!window.confirm("Leave this unfinished save? Completed work will stay saved. Unsaved inputs will be discarded.")) return;
+      try { filmSave.leave(); }
+      catch (error) { setErr(getErrorMessage(error)); return; }
+    }
+    nav(isEdit ? `/movies/${id}` : "/movies");
+  }
 
   return (
     <div className={styles.page}>
@@ -121,50 +108,58 @@ export default function MovieFormPage({ mode }) {
         </Callout>
       )}
 
-      <form className={styles.form} onSubmit={onSubmit}>
-        <div className={styles.coverColumn}>
-          <FileDropzone
-            className={styles.coverDrop}
-            accept="image/png, image/jpeg"
-            file={coverFile}
-            onChange={setCoverFile}
-            onReject={() => setErr("The cover image must be a JPG or PNG.")}
-            title={coverToShow ? "Replace cover" : "Add a cover image"}
-            hint={coverToShow ? "Drop or click to change" : "JPG or PNG · drop or click"}
-            preview={coverToShow ? <img src={coverToShow} alt="" /> : null}
-          />
-        </div>
+      {filmSave.recovery && !saving && (
+        <Callout tone="info" className={styles.notice}>{filmSave.recovery.message}</Callout>
+      )}
 
-        <div className={styles.fieldsColumn}>
-          <section aria-labelledby="project-form-details">
-            <SectionHeading id="project-form-details" title="Film details" />
-            <MovieDetailsFields values={form} onChange={updateField} />
-          </section>
-
-          <section aria-labelledby="project-form-script">
-            <SectionHeading id="project-form-script" title="Script" badge={<Badge>Optional</Badge>} />
+      <form onSubmit={onSubmit}>
+        <fieldset className={styles.form} disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+          <div className={styles.coverColumn}>
             <FileDropzone
-              accept="application/pdf"
-              file={scriptFile}
-              onChange={setScriptFile}
-              onReject={() => setErr("The script must be a PDF file.")}
-              title={isEdit ? "Upload a new script PDF" : "Add the script PDF"}
-              hint="Drop a PDF here or click to choose. You can also add it later from the project page."
+              className={styles.coverDrop}
+              accept="image/png, image/jpeg"
+              disabled={saving}
+              file={coverFile}
+              onChange={setCoverFile}
+              onReject={() => setErr("The cover image must be a JPG or PNG.")}
+              title={coverToShow ? "Replace cover" : "Add a cover image"}
+              hint={coverToShow ? "Drop or click to change" : "JPG or PNG · drop or click"}
+              preview={coverToShow ? <img src={coverToShow} alt="" /> : null}
             />
-          </section>
-
-          <div className={styles.actions}>
-            <p className={styles.requiredNote}>
-              <span aria-hidden="true">*</span> Required
-            </p>
-            <Button as={Link} to={isEdit ? `/movies/${id}` : "/movies"}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Saving…" : isEdit ? "Save changes" : "Create project"}
-            </Button>
           </div>
-        </div>
+
+          <div className={styles.fieldsColumn}>
+            <section aria-labelledby="project-form-details">
+              <SectionHeading id="project-form-details" title="Film details" />
+              <MovieDetailsFields values={form} onChange={updateField} />
+            </section>
+
+            <section aria-labelledby="project-form-script">
+              <SectionHeading id="project-form-script" title="Script" badge={<Badge>Optional</Badge>} />
+              <FileDropzone
+                accept="application/pdf"
+                disabled={saving}
+                file={scriptFile}
+                onChange={setScriptFile}
+                onReject={() => setErr("The script must be a PDF file.")}
+                title={isEdit ? "Upload a new script PDF" : "Add the script PDF"}
+                hint="Drop a PDF here or click to choose. You can also add it later from the project page."
+              />
+            </section>
+
+            <div className={styles.actions}>
+              <p className={styles.requiredNote}>
+                <span aria-hidden="true">*</span> Required
+              </p>
+              <Button onClick={leaveForm} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? "Saving…" : filmSave.recovery ? "Retry save" : isEdit ? "Save changes" : "Create project"}
+              </Button>
+            </div>
+          </div>
+        </fieldset>
       </form>
     </div>
   );

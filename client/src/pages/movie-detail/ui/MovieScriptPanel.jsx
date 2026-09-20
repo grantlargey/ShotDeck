@@ -54,6 +54,7 @@ export function MovieScriptPanel({
               </>
             ) : (
               <FileInput
+                disabled={savingScript}
                 accept="application/pdf"
                 file={null}
                 onChange={onScriptFileChange}

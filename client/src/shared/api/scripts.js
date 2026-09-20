@@ -1,5 +1,4 @@
 import { req } from "./request.js";
-import { uploadMediaFile } from "./uploads.js";
 
 /** Returns the movie's one script, or null when it has none. */
 export function getMovieScript(movieId) {
@@ -11,11 +10,10 @@ export function getScript(movieId, scriptId) {
 }
 
 /**
- * Uploads a script PDF and saves it as the movie's script. The upload refuses
- * a file that isn't a PDF before sending anything.
+ * Attaches an uploaded script to the film. Upload progress belongs to the
+ * film-save module, so attachment can be retried without another upload.
  */
-export async function saveScript({ movieId, file }) {
-  const key = await uploadMediaFile({ movieId, type: "script", file });
+export async function saveScript({ movieId, key }) {
   return req(`/movies/${encodeURIComponent(movieId)}/scripts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

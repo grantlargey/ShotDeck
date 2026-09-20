@@ -29,3 +29,11 @@ export function deleteMovie(id) {
     method: "DELETE",
   });
 }
+
+export function updateMovieCover(id, key) {
+  return req(`/movies/${encodeURIComponent(id)}/cover`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cover_image_key: key }),
+  });
+}

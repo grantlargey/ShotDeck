@@ -23,8 +23,9 @@ const api = vi.hoisted(() => ({
   deleteAnnotation: vi.fn(),
   listScriptScenes: vi.fn(),
   getViewUrlForKey: vi.fn(),
+  uploadMediaFile: vi.fn(),
 }));
-const session = vi.hoisted(() => ({ isAdmin: true }));
+const session = vi.hoisted(() => ({ isAdmin: true, user: { id: "admin-1" } }));
 
 vi.mock("@/shared/api/annotations.js", () => ({
   listAnnotations: api.listAnnotations,
@@ -35,7 +36,7 @@ vi.mock("@/shared/api/annotations.js", () => ({
 vi.mock("@/shared/api/movies.js", () => ({ getMovie: api.getMovie, updateMovie: api.updateMovie }));
 vi.mock("@/shared/api/scripts.js", () => ({ getMovieScript: api.getMovieScript, saveScript: api.saveScript }));
 vi.mock("@/shared/api/scriptScenes.js", () => ({ listScriptScenes: api.listScriptScenes }));
-vi.mock("@/shared/api/uploads.js", () => ({ getViewUrlForKey: api.getViewUrlForKey }));
+vi.mock("@/shared/api/uploads.js", () => ({ getViewUrlForKey: api.getViewUrlForKey, uploadMediaFile: api.uploadMediaFile }));
 vi.mock("@/entities/session/model/useSession.js", () => ({ useSession: () => session }));
 
 // jsdom has no object URLs; the add dialog previews the picked image with one.
@@ -185,6 +186,8 @@ function submitAdd() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  vi.stubGlobal("crypto", webcrypto);
   stills = [WITH_IMAGE, WITHOUT_IMAGE];
   for (const fn of Object.values(api)) fn.mockReset();
   api.getMovie.mockImplementation(async () => ({ ...MOVIE }));
@@ -198,9 +201,64 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("loading the project's script", () => {
+  it("does not replay a canceled script replacement when later saving film details", async () => {
+    api.uploadMediaFile.mockResolvedValue("scripts/m1/canceled.pdf");
+    api.saveScript.mockRejectedValueOnce(new Error("attachment failed"));
+    await renderPage();
+    const section = screen.getByRole("region", { name: /^Script/ });
+    chooseFile(section, new File(["replacement"], "replacement.pdf", { type: "application/pdf" }));
+    fireEvent.click(within(section).getByRole("button", { name: "Upload PDF" }));
+    await screen.findByText("Failed to save script PDF.");
+    window.confirm.mockReturnValue(true);
+    fireEvent.click(within(section).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Resume film save" })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /^Title/ }), { target: { value: "Updated title" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.updateMovie).toHaveBeenCalledTimes(1));
+    expect(api.saveScript).toHaveBeenCalledTimes(1);
+    expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay canceled film details when later uploading a script", async () => {
+    api.updateMovie.mockRejectedValueOnce(new Error("details failed"));
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /^Title/ }), { target: { value: "Canceled title" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByText("Failed to save project details.");
+    window.confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel", exact: true }));
+    api.uploadMediaFile.mockResolvedValue("scripts/m1/replacement.pdf");
+    api.saveScript.mockResolvedValue(SCRIPT);
+    const section = screen.getByRole("region", { name: /^Script/ });
+    chooseFile(section, new File(["replacement"], "replacement.pdf", { type: "application/pdf" }));
+    fireEvent.click(within(section).getByRole("button", { name: "Upload PDF" }));
+    expect(await screen.findByRole("button", { name: "Open script" })).toBeTruthy();
+    expect(api.updateMovie).toHaveBeenCalledTimes(1);
+    expect(api.saveScript).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a standalone script attachment without uploading it again", async () => {
+    api.uploadMediaFile.mockResolvedValue("scripts/m1/upload.pdf");
+    api.saveScript.mockRejectedValueOnce(new Error("attachment failed")).mockResolvedValueOnce(SCRIPT);
+    await renderPage();
+    const section = screen.getByRole("region", { name: /^Script/ });
+    chooseFile(section, new File(["script"], "script.pdf", { type: "application/pdf" }));
+    fireEvent.click(within(section).getByRole("button", { name: "Upload PDF" }));
+    expect(await screen.findByText("Failed to save script PDF.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Resume film save" }).getAttribute("href")).toBe("/movies/m1/edit");
+    fireEvent.click(within(section).getByRole("button", { name: "Upload PDF" }));
+    expect(await screen.findByRole("button", { name: "Open script" })).toBeTruthy();
+    expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
+    expect(api.saveScript).toHaveBeenCalledTimes(2);
+    expect(api.saveScript).toHaveBeenLastCalledWith({ movieId: "m1", key: "scripts/m1/upload.pdf" });
+  });
+
   it("consumes the one script object and opens it", async () => {
     api.getMovieScript.mockResolvedValueOnce({ ...SCRIPT });
 
@@ -710,3 +768,4 @@ describe("visitors", () => {
     expect(within(viewer()).queryByRole("button", { name: "Delete" })).toBeNull();
   });
 });
+import { webcrypto } from "node:crypto";

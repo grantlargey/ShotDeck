@@ -46,7 +46,56 @@ function without(body, ...fields) {
     return copy;
 }
 
+describe("attaching a cover", () => {
+    test("replays only the cover change and preserves newer film details", async () => {
+        const movie = await createMovie(api, cookie);
+        const path = `/movies/${movie.id}/cover`;
+        const body = { cover_image_key: `covers/${movie.id}/cover.png` };
+        assert.equal((await api.put(path, { cookie, body })).status, 200);
+        await api.put(`/movies/${movie.id}`, { cookie, body: movieBody({ title: "Newer details" }) });
+        const replay = await api.put(path, { cookie, body });
+        assert.equal(replay.status, 200, replay.text);
+        assert.equal(replay.body.title, "Newer details");
+        assert.equal(replay.body.cover_image_key, body.cover_image_key);
+        assert.match(replay.body.cover_image_url, signedUrlPattern(body.cover_image_key));
+    });
+
+    test("requires sign-in, validates the film's cover key and reports a missing film", async () => {
+        const movie = await createMovie(api, cookie);
+        const path = `/movies/${movie.id}/cover`;
+        await expectError(api.put(path, { body: { cover_image_key: null } }), 401, "Sign in to make changes.");
+        for (const body of [undefined, {}, { cover_image_key: 5 }, { cover_image_key: "covers/another-film/a.png" }]) {
+            await expectError(api.put(path, { cookie, body }), 400, "Invalid cover image key for this movie.");
+        }
+        await expectError(api.put(`/movies/${randomUUID()}/cover`, { cookie, body: { cover_image_key: null } }), 404, "Movie not found");
+    });
+});
+
 describe("creating a movie", () => {
+    test("replays concurrent creates with one identity without overwriting later edits", async () => {
+        const id = randomUUID();
+        const body = { ...movieBody(), id };
+        const responses = await Promise.all([
+            api.post("/movies", { cookie, body }), api.post("/movies", { cookie, body }),
+        ]);
+        for (const response of responses) {
+            assert.equal(response.status, 201, response.text);
+            assert.equal(response.body.id, id);
+        }
+        await api.put(`/movies/${id}`, { cookie, body: movieBody({ title: "Later edit" }) });
+        const replay = await api.post("/movies", { cookie, body });
+        assert.equal(replay.status, 201, replay.text);
+        assert.equal(replay.body.title, "Later edit");
+        const listing = await api.get("/movies");
+        assert.equal(listing.body.filter((movie) => movie.id === id).length, 1);
+    });
+
+    test("rejects invalid supplied creation identities", async () => {
+        for (const id of [null, 5, "not-a-uuid", ""]) {
+            await expectError(api.post("/movies", { cookie, body: { ...movieBody(), id } }), 400, "Invalid movie id. Expected a UUID.");
+        }
+    });
+
     test("returns 201 with the movie and no cover URL", async () => {
         const body = movieBody();
         const response = await api.post("/movies", { cookie, body });

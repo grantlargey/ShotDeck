@@ -1,15 +1,16 @@
 // client/src/pages/movie-detail/ui/MovieDetailPage.jsx
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
 import { getStillThumbnail } from "@/entities/annotation/model/still.js";
-import { createMovieEditForm, saveMovieEdits } from "@/entities/movie/model/movieForms.js";
+import { createMovieEditForm } from "@/entities/movie/model/movieForms.js";
+import { useFilmSave } from "@/entities/movie/model/filmSave.js";
 import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { listAnnotations } from "@/shared/api/annotations.js";
 import { getMovie } from "@/shared/api/movies.js";
-import { getMovieScript, saveScript } from "@/shared/api/scripts.js";
+import { getMovieScript } from "@/shared/api/scripts.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
@@ -77,7 +78,8 @@ export default function MovieDetailPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   // Visitors get the same page without any of the editing controls.
-  const { isAdmin: canEdit } = useSession();
+  const { isAdmin: canEdit, user } = useSession();
+  const filmSave = useFilmSave({ movieId: id, ownerId: user?.id });
   const [movie, setMovie] = useState(null);
   // The project's stills sorted by time; null until they load.
   const [stillRows, setStillRows] = useState(null);
@@ -93,7 +95,6 @@ export default function MovieDetailPage() {
   const [backdropStillId, setBackdropStillId] = useState(null);
 
   const [scriptFile, setScriptFile] = useState(null);
-  const [savingScript, setSavingScript] = useState(false);
 
   // Inline edit mode (MOVIE)
   const [editMode, setEditMode] = useState(false);
@@ -189,23 +190,20 @@ export default function MovieDetailPage() {
   async function saveScriptPdf() {
     if (!scriptFile) return;
     setErr("");
-    setSavingScript(true);
 
     try {
-      const savedScript = await saveScript({ movieId: id, file: scriptFile });
+      const saved = await filmSave.save({ scriptFile });
       setScriptFile(null);
-      setScript(savedScript);
+      setScript(saved.script || await getMovieScript(id));
     } catch (e) {
       setErr(getErrorMessage(e, "Failed to save script PDF."));
-    } finally {
-      setSavingScript(false);
     }
   }
 
   async function submitMovieEdits() {
     setErr("");
     try {
-      await saveMovieEdits({ movieId: id, form: editForm });
+      await filmSave.save({ form: editForm });
       await load();
       setEditMode(false);
     } catch (e) {
@@ -213,7 +211,22 @@ export default function MovieDetailPage() {
     }
   }
 
+  function leaveFilmSave() {
+    if (!filmSave.recovery) return true;
+    if (!window.confirm("Leave this unfinished save? Completed work will stay saved. Unsaved inputs will be discarded.")) return false;
+    try {
+      filmSave.leave();
+      setScriptFile(null);
+      load();
+      return true;
+    } catch (error) {
+      setErr(getErrorMessage(error));
+      return false;
+    }
+  }
+
   function cancelMovieEdits() {
+    if (!leaveFilmSave()) return;
     setEditForm(createMovieEditForm(movie));
     setEditMode(false);
   }
@@ -251,7 +264,7 @@ export default function MovieDetailPage() {
               </Button>
             )}
             {canEdit && (
-              <Button onClick={() => (editMode ? cancelMovieEdits() : setEditMode(true))}>
+              <Button disabled={filmSave.saving} onClick={() => (editMode ? cancelMovieEdits() : setEditMode(true))}>
                 {editMode ? "Close editor" : "Edit details"}
               </Button>
             )}
@@ -261,21 +274,29 @@ export default function MovieDetailPage() {
 
       <div className={styles.content}>
         {err && !viewerStillId && <Callout tone="error">{err}</Callout>}
+        {canEdit && filmSave.recovery && !filmSave.saving && (
+          <Callout tone="info">
+            {filmSave.recovery.message}{" "}
+            <Link to={`/movies/${id}/edit`}>Resume film save</Link>
+          </Callout>
+        )}
 
         {editMode && canEdit && (
           <section aria-labelledby="project-edit-heading">
             <SectionHeading id="project-edit-heading" title="Edit details" />
-            <MovieDetailsFields
-              values={editForm}
-              onChange={(field, value) => setEditForm((f) => ({ ...f, [field]: value }))}
-            />
+            <fieldset disabled={filmSave.saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+              <MovieDetailsFields
+                values={editForm}
+                onChange={(field, value) => setEditForm((f) => ({ ...f, [field]: value }))}
+              />
 
-            <div className={styles.panelActions}>
-              <Button onClick={cancelMovieEdits}>Cancel</Button>
-              <Button variant="primary" onClick={submitMovieEdits}>
-                Save changes
-              </Button>
-            </div>
+              <div className={styles.panelActions}>
+                <Button onClick={cancelMovieEdits}>Cancel</Button>
+                <Button variant="primary" onClick={submitMovieEdits}>
+                  {filmSave.saving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            </fieldset>
           </section>
         )}
 
@@ -283,8 +304,10 @@ export default function MovieDetailPage() {
           currentScript={script}
           canEdit={canEdit}
           scriptFile={scriptFile}
-          savingScript={savingScript}
-          onScriptFileChange={setScriptFile}
+          savingScript={filmSave.saving}
+          onScriptFileChange={(file) => {
+            if (file || leaveFilmSave()) setScriptFile(file);
+          }}
           onSaveScript={saveScriptPdf}
         />
 
