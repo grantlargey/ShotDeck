@@ -17,6 +17,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createTestDatabases } from "./helpers/database-lifetime.js";
 
 const CONTAINER = "shotdeck-db-1";
 const DEFAULT_TEST_FILES = ["test/**/*.test.js"];
@@ -109,29 +110,10 @@ function dropCommand(name) {
     return `docker exec ${CONTAINER} psql -U app -d postgres -c 'DROP DATABASE IF EXISTS ${name} WITH (FORCE)'`;
 }
 
-function createDatabase(name) {
-    const existing = psql(`SELECT 1 FROM pg_database WHERE datname = '${name}'`);
-    if (existing.status !== 0) fail(`Couldn't check for ${name}:\n${existing.stderr}`);
-    if (existing.stdout.trim() === "1") {
-        fail(
-            `The database ${name} already exists. Another run with the same TEST_DB_SUFFIX may be in progress, ` +
-                "or an earlier run was killed before it could clean up.\n" +
-                `If no run is in progress, drop it with:\n  ${dropCommand(name)}`
-        );
-    }
-    const created = psql(`CREATE DATABASE ${name}`);
-    if (created.status !== 0) fail(`Couldn't create ${name}:\n${created.stderr}`);
-}
-
-function dropDatabase(name) {
-    // FORCE ends connections a crashed test process may have left open.
-    const dropped = psql(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-    if (dropped.status !== 0) {
-        console.error(`\nCouldn't drop ${name}:\n${dropped.stderr || dropped.error || ""}\nDrop it by hand with:\n  ${dropCommand(name)}`);
-        return false;
-    }
-    return true;
-}
+const databases = createTestDatabases(async (work) => work((sql) => {
+    const result = psql(sql);
+    if (result.error || result.status !== 0) throw new Error(result.stderr || result.error?.message || "psql failed");
+}));
 
 /**
  * The child processes' environment. Values are set explicitly, even when empty,
@@ -191,19 +173,29 @@ const database = suppliedUrl ? null : databaseName();
 const args = testArgs(process.argv.slice(2));
 if (!suppliedUrl) {
     checkContainer();
-    createDatabase(database);
 }
 
 let exitCode = 1;
 try {
+    if (database) await databases.create(database);
     const env = testEnvironment(suppliedUrl ?? `postgres://app:app@127.0.0.1:5432/${database}`);
-    exitCode = await runNode(["src/migrate.js"], env);
+    if (!interrupted) exitCode = await runNode(["src/migrate.js"], env);
     if (exitCode !== 0) {
         console.error(`\nApplying the schema to ${database} failed.`);
     } else if (!interrupted) {
         exitCode = await runNode(args, env);
     }
+} catch (error) {
+    console.error(error);
+    if (database) console.error(`If no run is using it, remove a leftover database with:\n  ${dropCommand(database)}`);
+    exitCode = 1;
 } finally {
-    if (database && !dropDatabase(database)) exitCode = exitCode || 1;
+    try {
+        await databases.cleanup();
+    } catch (error) {
+        console.error(error);
+        console.error(`Remove the leftover database with:\n  ${dropCommand(database)}`);
+        exitCode = exitCode || 1;
+    }
 }
 process.exit(interrupted && exitCode === 0 ? 1 : exitCode);

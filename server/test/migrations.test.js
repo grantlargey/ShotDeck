@@ -8,7 +8,7 @@ import {
     applyLegacySchema,
     connectDatabase,
     createTestDatabase,
-    dropTestDatabase,
+    cleanupTestDatabases,
     runServerNode,
 } from "./helpers/databases.js";
 
@@ -19,9 +19,7 @@ before(async () => {
     for (const suffix of SUFFIXES) await createTestDatabase(suffix);
 });
 
-after(async () => {
-    for (const suffix of SUFFIXES.toReversed()) await dropTestDatabase(suffix);
-});
+after(cleanupTestDatabases);
 
 describe("the numbered migration runner", () => {
     test("builds only the canonical schema, records version 1 and is idempotent", async () => {

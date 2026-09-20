@@ -253,6 +253,8 @@ The existing local Postgres must be reachable; the smoke never starts or restart
 - The command sets `DATABASE_URL`, dummy AWS credentials with S3 sends pointed at a closed local port, and an empty `OPENAI_API_KEY` itself, so a `server/.env` can't point the tests at a real database, bucket or OpenAI key. Presigned URLs are signed locally.
 - In CI, setting `DATABASE_URL` to an already-created `shotdeck_test_*` database bypasses `docker exec`; the harness refuses any other database name and leaves provider cleanup to the CI service.
 
+The runner, browser smoke and migration fixtures share `server/test/helpers/database-lifetime.js`. It records successful acquisitions before closing their administrative connections and attempts cleanup of every owned database, including after partial setup fails. Supplied or pre-existing databases are never acquired for cleanup.
+
 To run part of the suite, pass test files or globs ending in `.js` (relative to `server/`), or `node --test` flags written as `--flag=value`. Each file always runs alone in its own process, so `--test-concurrency` and the test isolation flags are refused:
 
 ```bash

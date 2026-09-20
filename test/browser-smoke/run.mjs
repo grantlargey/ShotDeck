@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 import { makeSyntheticPdf } from "./make-pdf.mjs";
+import { createTestDatabases, postgresAdmin } from "../../server/test/helpers/database-lifetime.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -36,12 +37,12 @@ if (adminUrl.pathname !== "/postgres") {
 if (!/^shotdeck_test_16_[a-z0-9_]+$/.test(databaseName)) {
   throw new Error(`Refusing unsafe smoke database name: ${databaseName}`);
 }
+const databases = createTestDatabases(postgresAdmin(adminUrl));
 
 const children = [];
 const portReservations = [];
 let browser;
 let database;
-let databaseCreated = false;
 let s3Stub;
 let cleanupPromise;
 let shuttingDown = false;
@@ -170,18 +171,7 @@ function cleanup() {
         errors
       );
     }
-    if (databaseCreated) {
-      await attemptCleanup("drop throwaway database", async () => {
-        const admin = new Client({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 5_000 });
-        try {
-          await admin.connect();
-          await admin.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
-          console.log(`Removed throwaway database ${databaseName}.`);
-        } finally {
-          await admin.end().catch(() => {});
-        }
-      }, errors);
-    }
+    await attemptCleanup("drop throwaway database", databases.cleanup, errors);
     if (errors.length) throw new AggregateError(errors, "Browser smoke cleanup failed.");
   })();
   return cleanupPromise;
@@ -252,19 +242,7 @@ try {
   });
   throwIfShuttingDown();
 
-  const admin = new Client({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 5_000 });
-  await admin.connect();
-  try {
-    throwIfShuttingDown();
-    const existing = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
-    throwIfShuttingDown();
-    assert.equal(existing.rowCount, 0, `throwaway database ${databaseName} does not already exist`);
-    await admin.query(`CREATE DATABASE ${databaseName}`);
-    databaseCreated = true;
-    throwIfShuttingDown();
-  } finally {
-    await admin.end();
-  }
+  await databases.create(databaseName);
   throwIfShuttingDown();
 
   const serverEnvironment = safeEnvironment({
