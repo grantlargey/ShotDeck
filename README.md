@@ -6,20 +6,20 @@ The project is split into a React/Vite client and an Express/Postgres API. Media
 
 ## Project Structure
 
-- `client/` - React app built with Vite and organized with Feature-Sliced Design layers.
+- `client/` - React app built with Vite and organized with FSD-inspired layers around route-level pages.
 - `client/src/app/` - Frontend app entry composition, routing, and global styles.
-- `client/src/pages/` - Page slices such as `movies-list`, `movie-detail`, and `script-viewer`.
-- `client/src/widgets/` - Reusable app-level UI blocks such as the site header.
-- `client/src/features/` - User-action UI that isn't tied to one page, such as the change-password dialog.
-- `client/src/entities/` - Domain models and single-entity UI for movies, stills, captured scenes, and the admin session.
-- `client/src/shared/` - API operations by backend domain, generic UI primitives, and reusable libraries.
+- `client/src/pages/` - Route-level screens and their local state, workflows, and UI, such as `movies-list`, `movie-detail`, and `script-viewer`.
+- `client/src/widgets/` - Reusable composite UI blocks, with any widget-local state, such as the site header and scene viewer.
+- `client/src/features/` - Reusable user actions that need an independent owner; currently the change-password dialog.
+- `client/src/entities/` - Domain rules, derived data, state, and reusable entity UI for movies, stills, captured scenes, and the admin session.
+- `client/src/shared/` - The browser API client, generic UI primitives, and reusable generic and screenplay/PDF libraries.
 - `server/` - Node.js backend package.
 - `server/src/index.js` - Small server entrypoint that imports the app and listens on `PORT`.
 - `server/src/app.js` - Express composition root: middleware, CORS, the health check, router mounting, and error middleware.
 - `server/src/routes/` - One router per API domain, holding the domain's paths, sign-in guards, and HTTP handlers.
 - `server/src/services/` - The domain module behind each router: validation, rules, SQL, and response shaping. `thumbnails.service.js` makes still thumbnails in the background.
 - `server/src/repositories/` - Persistence files private to one domain module: admin accounts and sessions.
-- `server/src/domain/` - Domain data shared by the server and client, currently the captured-scene tag taxonomy.
+- `server/src/domain/` - Browser-safe domain data shared by the server and client, currently the captured-scene tag taxonomy; Vite includes it in the client through the `@server` alias.
 - `server/src/db.js`, `server/src/s3.js` - The shared Postgres pool; S3 object keys, uploads, and signed URLs.
 - `server/src/config/`, `server/src/middleware/`, `server/src/utils/` - Shared backend support code: CORS, the sign-in guards, the Origin check, the error handler, and small helpers.
 - `server/sql/migrations/` - Numbered Postgres schema migrations.
@@ -48,22 +48,26 @@ The domains are auth, movies, scripts, captured scenes, stills, uploads, and the
 
 ## Frontend Architecture
 
-The frontend follows a lightweight Feature-Sliced Design structure:
+The frontend uses Feature-Sliced Design layer names and a downward dependency rule, but is a route-centered, FSD-inspired structure rather than a strict FSD implementation. Most application behavior is owned by page slices, API clients are centralized in `shared/api`, and callers import concrete source files rather than slice-level public APIs.
 
 ```text
 app -> pages -> widgets -> features -> entities -> shared
 ```
 
+The arrow describes allowed dependency direction, not a required chain: a module may import any lower layer directly. The current application imports follow that direction, with no cross-imports between separate page, widget, or entity slices.
+
 In practice:
 
 - `app` wires routing and global application concerns.
-- `pages` contain route-level screens and page-local UI.
-- `widgets` contain larger reusable UI blocks.
-- `features` contain user-action UI that isn't tied to one page, such as the change-password dialog.
-- `entities` contain domain models (constants and pure helpers) and the UI that renders one entity, such as a movie or scene card.
-- `shared` contains reusable infrastructure: API operations (`shared/api/<domain>.js`), UI primitives (`shared/ui/`), and libraries such as time formatting and the screenplay grammar (`shared/lib/`).
+- `pages` contain route-level screens and usually own their loading, local state, mutations, page-specific workflows, and UI.
+- `widgets` contain larger reusable composite UI blocks and may have widget-local models.
+- `features` contain reusable user actions that need an independent owner. The current layer contains the change-password dialog.
+- `entities` contain domain-oriented rules, transformations, state, and reusable entity UI, such as movie and scene cards.
+- `shared` contains the browser API gateway (`shared/api/`), UI primitives (`shared/ui/`), and reusable libraries such as time formatting, PDF text processing, and the screenplay grammar (`shared/lib/`).
 
-Every operation, helper and component has one owning module, and callers import it directly from that file, for example `import { getMovie } from "@/shared/api/movies.js"` or `import { Button } from "@/shared/ui/Button.jsx"`. A workflow that combines requests, such as uploading a file and then saving the record that points to it, remains one operation in its API owner, for example `saveScript` in `shared/api/scripts.js`.
+The segment names are conventions rather than enforced boundaries. Within a page, widget, feature, or entity slice, `ui` contains rendering code while `model` contains the non-presentational rules, transformations, state, and workflows owned by that slice. A model may be a pure helper, a React hook or provider, or API-driven state; the name does not imply a database model or pure code. Page-local `lib` modules contain supporting technical helpers, while `shared/lib` is available throughout the client. `shared/api` contains the common HTTP client, endpoint wrappers, direct presigned uploads, and some multi-request remote workflows.
+
+Modules generally have one owner, and callers import them directly from their concrete files; the client does not currently use slice barrel files or public APIs. For example, callers use `import { getMovie } from "@/shared/api/movies.js"` or `import { Button } from "@/shared/ui/Button.jsx"`. The captured-scene tag taxonomy is the exception to the `client/src` boundary: browser code imports the shared, browser-safe module at `server/src/domain/script-tags.js` through Vite's `@server` alias.
 
 The script-viewer and admin routes are loaded on demand from their page modules, so the PDF renderer and editor are kept out of the initial application bundle.
 
