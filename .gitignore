@@ -11,15 +11,16 @@ node_modules/
 **/.env.*
 !**/.env.example
 
-# Local agent docs
+# Local agent configuration
 /CLAUDE.md
 /CONTEXT.md
-/docs/
-/infra/
 /.claude/
 /.agents/skills/
 /.claude/skills/
 /skills-lock.json
+
+# Docs: local docs are ignored
+/docs/*
 
 # Local issues, specs, and conversation history
 /.scratch/
