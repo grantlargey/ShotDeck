@@ -9,8 +9,8 @@ try {
 } catch {
     // Reported below.
 }
-if (!databaseName.startsWith("shotdeck_test_")) {
-    throw new Error("Server tests only run against a shotdeck_test_* database. Run them with `npm test --prefix server`.");
+if (!databaseName.startsWith("scriptdeck_test_")) {
+    throw new Error("Server tests only run against a scriptdeck_test_* database. Run them with `npm test --prefix server`.");
 }
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);

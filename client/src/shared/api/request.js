@@ -17,7 +17,7 @@ export function markSessionActive(active) {
 }
 
 /**
- * Shared HTTP primitive for the ShotDeck REST API.
+ * Shared HTTP primitive for the ScriptDeck REST API.
  *
  * Domain API modules build endpoint-specific functions on top of this helper,
  * which keeps response parsing consistent across the app. Failures throw an

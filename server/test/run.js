@@ -1,26 +1,33 @@
 /*
  * `npm test` for the server. Runs the test files against a throwaway Postgres
- * database in the local `shotdeck-db-1` container, then always drops it.
+ * database, then always drops it.
  *
  *   TEST_DB_SUFFIX=01 npm test --prefix server              every test file
- *   DATABASE_URL=postgres://.../shotdeck_test_ci npm test --prefix server
+ *   DATABASE_URL=postgres://.../scriptdeck_test_ci npm test --prefix server
  *   npm test --prefix server -- test/auth.test.js          only these files (relative to server/)
  *   npm test --prefix server -- --test-name-pattern=login  node --test flags, written --flag=value
  *
- * The database is `shotdeck_test_<TEST_DB_SUFFIX>`; give runs that happen at the
- * same time different suffixes. Without one, the suffix is this process's id.
- * With DATABASE_URL, the named shotdeck_test_* database must already exist and
- * is left for the provider to clean up (for example a CI Postgres service). In
- * local-container mode, a run refuses to start when its database already exists,
- * so it never drops a database it didn't create. It never starts the container.
+ * The database is `scriptdeck_test_<TEST_DB_SUFFIX>`; give runs that happen at
+ * the same time different suffixes. Without one, the suffix is this process's
+ * id. With DATABASE_URL, the named scriptdeck_test_* database must already
+ * exist and is left for the provider to clean up (for example a CI Postgres
+ * service). Otherwise a run refuses to start when its database already exists,
+ * so it never drops a database it didn't create.
+ *
+ * Postgres is reached over TCP, so it works the same whether it runs in this
+ * repository's Compose stack, another container, or directly on the machine.
+ * TEST_DATABASE_ADMIN_URL overrides the default local connection. This command
+ * never starts Postgres.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createTestDatabases } from "./helpers/database-lifetime.js";
+import pg from "pg";
+import { createTestDatabases, postgresAdmin } from "./helpers/database-lifetime.js";
 
-const CONTAINER = "shotdeck-db-1";
+const DEFAULT_ADMIN_URL = "postgres://app:app@127.0.0.1:5432/postgres";
 const DEFAULT_TEST_FILES = ["test/**/*.test.js"];
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function fail(message) {
@@ -28,12 +35,25 @@ function fail(message) {
     process.exit(1);
 }
 
-function psql(sql) {
-    return spawnSync(
-        "docker",
-        ["exec", CONTAINER, "psql", "-U", "app", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-Atqc", sql],
-        { encoding: "utf8", timeout: 30_000 }
-    );
+/** The administrative connection used to create and drop the throwaway database. */
+function adminUrl() {
+    const value = process.env.TEST_DATABASE_ADMIN_URL?.trim() || DEFAULT_ADMIN_URL;
+    let url;
+    try {
+        url = new URL(value);
+    } catch {
+        return fail("TEST_DATABASE_ADMIN_URL must be a valid Postgres URL.");
+    }
+    if (!["postgres:", "postgresql:"].includes(url.protocol)) {
+        fail("TEST_DATABASE_ADMIN_URL must use the postgres protocol.");
+    }
+    if (!LOOPBACK_HOSTS.has(url.hostname)) {
+        fail("TEST_DATABASE_ADMIN_URL must use a loopback hostname.");
+    }
+    if (url.pathname !== "/postgres") {
+        fail("TEST_DATABASE_ADMIN_URL must name the postgres administrative database.");
+    }
+    return url;
 }
 
 function databaseName() {
@@ -41,7 +61,7 @@ function databaseName() {
     if (!/^[a-z0-9_]{1,40}$/.test(suffix)) {
         fail(`TEST_DB_SUFFIX must be 1-40 lowercase letters, digits or underscores; got "${suffix}".`);
     }
-    return `shotdeck_test_${suffix}`;
+    return `scriptdeck_test_${suffix}`;
 }
 
 function providedDatabaseUrl() {
@@ -55,8 +75,8 @@ function providedDatabaseUrl() {
         fail("DATABASE_URL must be a valid Postgres URL.");
     }
     const name = decodeURIComponent(url.pathname.slice(1));
-    if (!name.startsWith("shotdeck_test_")) {
-        fail(`Refusing DATABASE_URL for non-test database "${name}"; its name must start with shotdeck_test_.`);
+    if (!name.startsWith("scriptdeck_test_")) {
+        fail(`Refusing DATABASE_URL for non-test database "${name}"; its name must start with scriptdeck_test_.`);
     }
     return value;
 }
@@ -91,29 +111,34 @@ function testArgs(extraArgs) {
     return ["--test", ...flags, "--test-concurrency=1", ...(files.length > 0 ? files : DEFAULT_TEST_FILES)];
 }
 
-function checkContainer() {
-    const inspect = spawnSync("docker", ["inspect", "-f", "{{.State.Running}}", CONTAINER], {
-        encoding: "utf8",
-        timeout: 30_000,
-    });
-    if (inspect.error || inspect.status !== 0 || inspect.stdout.trim() !== "true") {
+/** Fails with a readable message when nothing answers on the administrative connection. */
+async function checkPostgres(url) {
+    const client = new pg.Client({ connectionString: url.toString(), connectionTimeoutMillis: 5_000 });
+    try {
+        await client.connect();
+        await client.query("SELECT 1");
+    } catch (error) {
         fail(
-            `The Postgres container ${CONTAINER} isn't running, so the server tests can't create their database.\n` +
-                "Start it with `npm run db:up` from the main checkout, then run the tests again. This command never starts it."
+            `Postgres isn't reachable at ${url.host}, so the server tests can't create their database.\n` +
+                `${error.message}\n\n` +
+                "Start it with `npm run db:up` from the repository root, then run the tests again. " +
+                "This command never starts it."
         );
+    } finally {
+        await client.end().catch(() => {});
     }
-    const ping = psql("SELECT 1");
-    if (ping.status !== 0) fail(`Postgres in ${CONTAINER} isn't accepting connections yet:\n${ping.stderr}`);
 }
 
-function dropCommand(name) {
-    return `docker exec ${CONTAINER} psql -U app -d postgres -c 'DROP DATABASE IF EXISTS ${name} WITH (FORCE)'`;
+function testDatabaseUrl(url, name) {
+    const databaseUrl = new URL(url);
+    databaseUrl.pathname = `/${name}`;
+    databaseUrl.search = "";
+    return databaseUrl.toString();
 }
 
-const databases = createTestDatabases(async (work) => work((sql) => {
-    const result = psql(sql);
-    if (result.error || result.status !== 0) throw new Error(result.stderr || result.error?.message || "psql failed");
-}));
+function dropCommand(url, name) {
+    return `psql "${testDatabaseUrl(url, "postgres")}" -c 'DROP DATABASE IF EXISTS ${name} WITH (FORCE)'`;
+}
 
 /**
  * The child processes' environment. Values are set explicitly, even when empty,
@@ -128,7 +153,7 @@ function testEnvironment(databaseUrl) {
         // Presigning is local. Anything that really sends to S3 goes to a closed
         // local port and fails on its first attempt.
         AWS_REGION: "us-east-1",
-        S3_BUCKET: "shotdeck-test-bucket",
+        S3_BUCKET: "scriptdeck-test-bucket",
         AWS_ACCESS_KEY_ID: "test-access-key-id",
         AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
         AWS_SESSION_TOKEN: "",
@@ -169,16 +194,18 @@ function runNode(args, env) {
 }
 
 const suppliedUrl = providedDatabaseUrl();
+const administrative = adminUrl();
+const databases = createTestDatabases(postgresAdmin(administrative));
 const database = suppliedUrl ? null : databaseName();
 const args = testArgs(process.argv.slice(2));
 if (!suppliedUrl) {
-    checkContainer();
+    await checkPostgres(administrative);
 }
 
 let exitCode = 1;
 try {
     if (database) await databases.create(database);
-    const env = testEnvironment(suppliedUrl ?? `postgres://app:app@127.0.0.1:5432/${database}`);
+    const env = testEnvironment(suppliedUrl ?? testDatabaseUrl(administrative, database));
     if (!interrupted) exitCode = await runNode(["src/migrate.js"], env);
     if (exitCode !== 0) {
         console.error(`\nApplying the schema to ${database} failed.`);
@@ -187,14 +214,20 @@ try {
     }
 } catch (error) {
     console.error(error);
-    if (database) console.error(`If no run is using it, remove a leftover database with:\n  ${dropCommand(database)}`);
+    if (database) {
+        console.error(
+            `If no run is using it, remove a leftover database with:\n  ${dropCommand(administrative, database)}`
+        );
+    }
     exitCode = 1;
 } finally {
     try {
         await databases.cleanup();
     } catch (error) {
         console.error(error);
-        console.error(`Remove the leftover database with:\n  ${dropCommand(database)}`);
+        if (database) {
+            console.error(`Remove the leftover database with:\n  ${dropCommand(administrative, database)}`);
+        }
         exitCode = exitCode || 1;
     }
 }

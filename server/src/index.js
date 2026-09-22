@@ -6,8 +6,7 @@ import { queueMissingThumbnails } from "./services/thumbnails.service.js";
 const port = process.env.PORT || 4000;
 
 app.listen(port, () => {
-    console.log("ShotDeck API running on port", port);
-    // Stills saved before thumbnails existed get theirs in the background.
+    console.log("ScriptDeck API running on port", port);
     queueMissingThumbnails(pool).catch((err) => {
         console.error("Failed to queue missing still thumbnails:", err.message);
     });

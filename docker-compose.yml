@@ -1,10 +1,15 @@
+# Pinned so container and volume names never depend on the folder this
+# repository was cloned into. Tooling that looks for `scriptdeck-db-1` keeps
+# working from any checkout.
+name: scriptdeck
+
 services:
   db:
     image: postgres:16
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
-      POSTGRES_DB: shotdeck
+      POSTGRES_DB: scriptdeck
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -23,7 +28,7 @@ services:
       - ./server/.env
     environment:
       # IMPORTANT: inside compose, the host is the service name "db"
-      DATABASE_URL: postgres://app:app@db:5432/shotdeck
+      DATABASE_URL: postgres://app:app@db:5432/scriptdeck
     ports:
       - "4000:4000"
     depends_on:

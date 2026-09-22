@@ -15,7 +15,7 @@ const root = path.resolve(here, "../..");
 const requireServer = createRequire(path.join(root, "server/package.json"));
 const { Client } = requireServer("pg");
 const blockerUrl = pathToFileURL(path.join(here, "block-external-network.mjs")).href;
-const databaseName = `shotdeck_test_16_smoke_${process.pid}_${randomBytes(3).toString("hex")}`;
+const databaseName = `scriptdeck_test_16_smoke_${process.pid}_${randomBytes(3).toString("hex")}`;
 const adminUrl = new URL(process.env.SMOKE_DATABASE_ADMIN_URL || "postgres://app:app@127.0.0.1:5432/postgres");
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const databaseUrl = new URL(adminUrl);
@@ -34,7 +34,7 @@ if (adminUrl.search || adminUrl.hash) {
 if (adminUrl.pathname !== "/postgres") {
   throw new Error("SMOKE_DATABASE_ADMIN_URL must name the postgres administrative database.");
 }
-if (!/^shotdeck_test_16_[a-z0-9_]+$/.test(databaseName)) {
+if (!/^scriptdeck_test_16_[a-z0-9_]+$/.test(databaseName)) {
   throw new Error(`Refusing unsafe smoke database name: ${databaseName}`);
 }
 const databases = createTestDatabases(postgresAdmin(adminUrl));

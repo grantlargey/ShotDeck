@@ -14,7 +14,7 @@ export function createTestDatabases(withAdmin) {
             if (cleanupPromise) throw new Error("Test database cleanup has already started.");
             // PostgreSQL truncates identifiers beyond 63 bytes. Refuse rather
             // than accidentally acquiring or deleting a different database.
-            if (!/^shotdeck_test_[a-z0-9_]+$/.test(name) || name.length > 63) {
+            if (!/^scriptdeck_test_[a-z0-9_]+$/.test(name) || name.length > 63) {
                 throw new Error(`Refusing unsafe test database name: ${name}`);
             }
             const operation = withAdmin(async (query) => {

@@ -57,7 +57,7 @@ async function applyMigration(db, migration) {
 async function runMigrations() {
     const client = await pool.connect();
     try {
-        await client.query("SELECT pg_advisory_lock(hashtextextended('shotdeck-schema-migrations', 0))");
+        await client.query("SELECT pg_advisory_lock(hashtextextended('scriptdeck-schema-migrations', 0))");
 
         const legacy = await legacyTables(client);
         if (legacy.length > 0) {

@@ -17,11 +17,11 @@ jobs:
         env:
           POSTGRES_USER: app
           POSTGRES_PASSWORD: app
-          POSTGRES_DB: shotdeck_test_ci
+          POSTGRES_DB: scriptdeck_test_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U app -d shotdeck_test_ci"
+          --health-cmd "pg_isready -U app -d scriptdeck_test_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -67,4 +67,4 @@ jobs:
       - name: Test server
         run: npm test --prefix server
         env:
-          DATABASE_URL: postgres://app:app@127.0.0.1:5432/shotdeck_test_ci
+          DATABASE_URL: postgres://app:app@127.0.0.1:5432/scriptdeck_test_ci

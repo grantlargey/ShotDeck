@@ -14,7 +14,7 @@ const databases = createTestDatabases(postgresAdmin(baseUrl));
 function databaseName(suffix) {
     if (!/^[a-z0-9_]{1,30}$/.test(suffix)) throw new Error(`Invalid test database suffix: ${suffix}`);
     const name = `${baseName}_${suffix}`;
-    if (!name.startsWith("shotdeck_test_")) throw new Error(`Refusing non-test database name: ${name}`);
+    if (!name.startsWith("scriptdeck_test_")) throw new Error(`Refusing non-test database name: ${name}`);
     return name;
 }
 
