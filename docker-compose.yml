@@ -80,6 +80,11 @@ services:
       s3-init:
         condition: service_completed_successfully
 
+# All local data lives here: the Postgres database in pgdata, and every uploaded
+# cover, screenplay PDF, still and thumbnail in s3data. `docker compose down`,
+# `npm run services:stop` and machine restarts all keep them. Only
+# `npm run services:reset` deletes them: it asks for confirmation first, and
+# there is no backup.
 volumes:
   pgdata:
   s3data:
