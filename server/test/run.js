@@ -121,7 +121,7 @@ async function checkPostgres(url) {
         fail(
             `Postgres isn't reachable at ${url.host}, so the server tests can't create their database.\n` +
                 `${error.message}\n\n` +
-                "Start it with `npm run db:up` from the repository root, then run the tests again. " +
+                "Start it with `npm run services:up` from the repository root, then run the tests again. " +
                 "This command never starts it."
         );
     } finally {
@@ -159,6 +159,7 @@ function testEnvironment(databaseUrl) {
         AWS_SESSION_TOKEN: "",
         AWS_PROFILE: "",
         AWS_ENDPOINT_URL_S3: "http://127.0.0.1:9",
+        S3_PUBLIC_ENDPOINT: "",
         // "true" here would make the SDK skip the endpoint above.
         AWS_IGNORE_CONFIGURED_ENDPOINT_URLS: "false",
         AWS_MAX_ATTEMPTS: "1",

@@ -21,19 +21,65 @@ services:
       retries: 15
       start_period: 5s
 
+  # Local stand-in for S3, so covers, screenplay PDFs and stills work with no
+  # AWS account. The browser talks to it directly at 127.0.0.1:9000 through the
+  # same presigned URLs the app uses against real S3.
+  s3:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: scriptdeck
+      MINIO_ROOT_PASSWORD: scriptdeck-local
+      # The browser uploads and reads media cross-origin from the Vite dev server.
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+    ports:
+      - "127.0.0.1:9000:9000" # S3 API
+      - "127.0.0.1:9001:9001" # web console, sign in with the credentials above
+    volumes:
+      - s3data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # Creates the development bucket once, then exits. It reuses the MinIO image,
+  # which already bundles the `mc` client, so there is no second image to pull.
+  s3-init:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    depends_on:
+      s3:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set local http://s3:9000 scriptdeck scriptdeck-local &&
+        mc mb --ignore-existing local/scriptdeck-local
+    restart: "no"
+
   api:
     profiles: [container-api]
     build: ./server
     env_file:
       - ./server/.env
     environment:
-      # IMPORTANT: inside compose, the host is the service name "db"
+      # Inside Compose, other services are reached by service name.
       DATABASE_URL: postgres://app:app@db:5432/scriptdeck
+      # The API reaches MinIO over the Compose network...
+      AWS_ENDPOINT_URL_S3: http://s3:9000
+      # ...but the URLs it signs are opened by the browser, which reaches MinIO
+      # on the published host port.
+      S3_PUBLIC_ENDPOINT: http://127.0.0.1:9000
     ports:
       - "4000:4000"
     depends_on:
       db:
         condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:
+  s3data:

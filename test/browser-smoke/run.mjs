@@ -256,6 +256,7 @@ try {
     AWS_SESSION_TOKEN: "",
     AWS_PROFILE: "",
     AWS_ENDPOINT_URL_S3: s3Origin,
+    S3_PUBLIC_ENDPOINT: s3Origin,
     AWS_IGNORE_CONFIGURED_ENDPOINT_URLS: "false",
     AWS_MAX_ATTEMPTS: "1",
     AWS_EC2_METADATA_DISABLED: "true",
@@ -319,18 +320,17 @@ try {
   throwIfShuttingDown();
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
   context.setDefaultTimeout(30_000);
-  const interceptedExternal = [];
+  const interceptedMedia = [];
   const interceptedFonts = [];
   const blockedExternal = [];
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.origin === appOrigin || url.origin === apiOrigin) return route.continue();
-    if (
-      url.protocol === "https:" &&
-      url.hostname === `${bucket}.s3.us-east-1.amazonaws.com` &&
-      url.pathname === "/scripts/smoke/script.pdf"
-    ) {
-      interceptedExternal.push(url.toString());
+    // The signed view URL the API hands the browser, addressed path-style at
+    // the S3 stub exactly as local development addresses its S3 container.
+    if (url.origin === s3Origin && url.pathname === `/${bucket}/scripts/smoke/script.pdf`) {
+      assert(url.searchParams.has("X-Amz-Signature"), "the script PDF is fetched through a signed URL");
+      interceptedMedia.push(url.toString());
       return route.fulfill({
         status: 200,
         contentType: "application/pdf",
@@ -531,7 +531,7 @@ try {
   assert.equal(await grid.getByText("00:10:00 – 00:11:06", { exact: true }).count(), 0);
   pass("delete persists and remains deleted after reload");
 
-  assert(interceptedExternal.length >= 1, "each signed PDF load was fulfilled inside Playwright");
+  assert(interceptedMedia.length >= 1, "each signed PDF load was fulfilled inside Playwright");
   assert(interceptedFonts.length >= 1, "external font stylesheets were replaced inside Playwright");
   assert.deepEqual(blockedExternal, [], "no unexpected browser request reached an external origin");
   assert.deepEqual(pageErrors, []);

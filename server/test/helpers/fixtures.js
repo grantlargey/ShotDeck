@@ -4,11 +4,20 @@ import assert from "node:assert/strict";
  * Request bodies shaped like the client's, and records made through the API.
  */
 
-/** A presigned S3 view URL for `key`, signed locally with the test run's dummy bucket and region. */
+/**
+ * A presigned view URL for `key`, signed locally with the test run's dummy
+ * credentials. It points wherever this run configured S3: a custom endpoint is
+ * addressed path-style, and AWS keeps its virtual-hosted bucket hostname.
+ * server/test/s3-endpoint.test.js pins both shapes.
+ */
 export function signedUrlPattern(key) {
-    const host = `${process.env.S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com`;
+    const endpoint =
+        process.env.S3_PUBLIC_ENDPOINT || process.env.AWS_ENDPOINT_URL_S3 || process.env.AWS_ENDPOINT_URL;
+    const base = endpoint
+        ? `${new URL(endpoint).origin}/${process.env.S3_BUCKET}`
+        : `https://${process.env.S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com`;
     const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`^https://${escape(host)}/${escape(key)}\\?.*X-Amz-Signature=[0-9a-f]+`);
+    return new RegExp(`^${escape(base)}/${escape(key)}\\?.*X-Amz-Signature=[0-9a-f]+`);
 }
 
 const SIGNED_URL_KEYS = {

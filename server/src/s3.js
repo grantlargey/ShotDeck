@@ -8,11 +8,41 @@ import { formatUrl } from "@aws-sdk/util-format-url";
 const region = process.env.AWS_REGION;
 const bucket = process.env.S3_BUCKET;
 
+// A custom endpoint points this module at an S3-compatible service instead of
+// AWS, which is how local development runs media without an AWS account.
+//
+// The endpoint the API sends to and the one the browser opens can differ: a
+// containerized API reaches the service over the Compose network, while the
+// browser reaches its published port. S3_PUBLIC_ENDPOINT names the second one
+// when they differ; otherwise both are the same.
+const endpoint = process.env.AWS_ENDPOINT_URL_S3 || process.env.AWS_ENDPOINT_URL || null;
+const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT || endpoint;
+
 if (!region || !bucket) {
   console.warn("Missing AWS_REGION or S3_BUCKET in server/.env");
 }
 
-const s3 = new S3Client({ region });
+// Path-style addressing puts the bucket in the path rather than the hostname,
+// which is what S3-compatible services on a host or container name expect.
+const s3 = new S3Client({ region, ...(endpoint ? { endpoint, forcePathStyle: true } : {}) });
+
+// Presigned URLs are opened by the browser, so they are signed against the
+// public endpoint. It is usually the same client.
+const signingClient =
+  publicEndpoint === endpoint
+    ? s3
+    : new S3Client({ region, endpoint: publicEndpoint, forcePathStyle: true });
+
+// Where a signed view URL points. AWS keeps its virtual-hosted bucket hostname.
+const viewUrlTarget = publicEndpoint
+  ? { ...pickOrigin(publicEndpoint), prefix: `/${bucket}` }
+  : { protocol: "https:", hostname: `${bucket}.s3.${region}.amazonaws.com`, prefix: "" };
+
+/** The protocol and host (including any port) of an endpoint URL. */
+function pickOrigin(value) {
+  const { protocol, host } = new URL(value);
+  return { protocol, hostname: host };
+}
 
 // View URLs are signed from the start of a fixed window, so a key keeps the same
 // URL for the whole window: browsers reuse cached images and the API skips
@@ -112,7 +142,7 @@ export async function createPresignedPutUrl({ key, contentType }) {
     ContentType: contentType,
   });
 
-  const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 300 });
+  const uploadUrl = await getSignedUrl(signingClient, cmd, { expiresIn: 300 });
   return { uploadUrl };
 }
 
@@ -158,9 +188,9 @@ export async function createPresignedGetUrl({ key }) {
   const cached = viewUrlCache.urls.get(key);
   if (cached) return { url: cached };
 
-  const hostname = `${bucket}.s3.${region}.amazonaws.com`;
+  const { protocol, hostname, prefix } = viewUrlTarget;
   const signed = await viewUrlPresigner.presign(
-    { method: "GET", protocol: "https:", hostname, path: `/${encodeKeyPath(key)}`, query: {}, headers: {} },
+    { method: "GET", protocol, hostname, path: `${prefix}/${encodeKeyPath(key)}`, query: {}, headers: {} },
     { expiresIn: VIEW_URL_EXPIRES_SECONDS, signingDate: new Date(windowStart) }
   );
   const url = formatUrl(signed);

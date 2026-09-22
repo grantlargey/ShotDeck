@@ -8,11 +8,11 @@
     "setup": "npm ci --prefix server && npm ci --prefix client",
     "check:unused": "knip --include files,exports,nsExports,dependencies,unlisted,unresolved --no-config-hints",
     "smoke:browser": "node test/browser-smoke/run.mjs",
-    "db:up": "docker compose up -d --wait --wait-timeout 60 db",
-    "db:stop": "docker compose stop db",
-    "db:logs": "docker compose logs -f db",
+    "services:up": "docker compose up -d --wait --wait-timeout 90 db s3 && docker compose run --rm s3-init",
+    "services:stop": "docker compose stop db s3",
+    "services:logs": "docker compose logs -f db s3",
     "db:migrate": "node server/src/migrate.js",
-    "dev": "npm run db:up && concurrently --kill-others --names api,web \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev": "npm run services:up && concurrently --kill-others --names api,web \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "admin": "npm run admin --prefix server --"
   },
   "devDependencies": {
