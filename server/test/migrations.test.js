@@ -1,5 +1,6 @@
 import "./helpers/guard.js";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -13,7 +14,7 @@ import {
 } from "./helpers/databases.js";
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SUFFIXES = ["migrate_fresh", "migrate_legacy", "migrate_order"];
+const SUFFIXES = ["migrate_fresh", "migrate_legacy", "migrate_order", "migrate_upgrade", "migrate_duplicates"];
 
 before(async () => {
     for (const suffix of SUFFIXES) await createTestDatabase(suffix);
@@ -22,7 +23,7 @@ before(async () => {
 after(cleanupTestDatabases);
 
 describe("the numbered migration runner", () => {
-    test("builds only the canonical schema, records version 1 and is idempotent", async () => {
+    test("builds only the canonical schema, records both versions and is idempotent", async () => {
         const first = runServerNode("src/migrate.js", "migrate_fresh");
         assert.equal(first.status, 0, first.stderr);
         assert.match(first.stdout, /Applied migrations: 0001_canonical_schema/);
@@ -36,8 +37,13 @@ describe("the numbered migration runner", () => {
                 tables.rows.map((row) => row.tablename),
                 ["admin_sessions", "admin_users", "annotations", "captured_scenes", "movies", "schema_migrations", "scripts"]
             );
-            const ledger = await db.query("SELECT version, name FROM schema_migrations");
-            assert.deepEqual(ledger.rows, [{ version: 1, name: "0001_canonical_schema" }]);
+            const ledger = await db.query("SELECT version, name FROM schema_migrations ORDER BY version");
+            assert.deepEqual(ledger.rows, [
+                { version: 1, name: "0001_canonical_schema" },
+                { version: 2, name: "0002_annotation_timing" },
+            ]);
+            const columns = await db.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'annotations'");
+            assert.ok(!columns.rows.some((row) => row.column_name === "created_at"));
             const constraints = await db.query(
                 `SELECT conname FROM pg_constraint
                  WHERE conrelid = 'captured_scenes'::regclass
@@ -53,6 +59,51 @@ describe("the numbered migration runner", () => {
         assert.equal(second.status, 0, second.stderr);
         assert.match(second.stdout, /No migrations pending/);
     });
+
+    for (const duplicates of [false, true]) {
+        test(duplicates ? "duplicate timestamps abort migration without dropping shot data" : "upgrades existing annotations without losing shots", async () => {
+            const suffix = duplicates ? "migrate_duplicates" : "migrate_upgrade";
+            const db = await connectDatabase(suffix);
+            const movieId = randomUUID();
+            const firstId = randomUUID();
+            try {
+                // Reproduce the deployed version-1 annotations schema.
+                const canonical = await readFile(path.join(serverDir, "sql/migrations/0001_canonical_schema.sql"), "utf8");
+                await db.query(canonical.replace(
+                    "CONSTRAINT annotations_movie_time_unique UNIQUE (movie_id, time_seconds)",
+                    "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                ));
+                await db.query(`
+                    CREATE INDEX idx_annotations_movie_time ON annotations(movie_id, time_seconds);
+                    CREATE TABLE schema_migrations (version INT PRIMARY KEY, name TEXT NOT NULL);
+                    INSERT INTO schema_migrations VALUES (1, '0001_canonical_schema');
+                `);
+                await db.query("INSERT INTO movies (id, title, director, year, runtime_minutes) VALUES ($1, 'Film', 'Director', 2024, 90)", [movieId]);
+                await db.query("INSERT INTO annotations (id, movie_id, time_seconds, image_key, thumb_key) VALUES ($1, $2, 5425, 'frame.jpg', 'thumb.webp')", [firstId, movieId]);
+                if (duplicates) {
+                    await db.query("INSERT INTO annotations (id, movie_id, time_seconds) VALUES ($1, $2, 5425)", [randomUUID(), movieId]);
+                }
+                const run = runServerNode("src/migrate.js", suffix);
+                const rows = await db.query("SELECT * FROM annotations ORDER BY id");
+                if (duplicates) {
+                    assert.notEqual(run.status, 0);
+                    assert.match(run.stderr, /annotations_movie_time_unique/);
+                    assert.equal(rows.rows.length, 2);
+                    assert.ok(rows.rows.every((row) => row.created_at));
+                    assert.equal((await db.query("SELECT * FROM schema_migrations WHERE version = 2")).rowCount, 0);
+                } else {
+                    assert.equal(run.status, 0, run.stderr);
+                    assert.deepEqual(rows.rows, [{ id: firstId, movie_id: movieId, time_seconds: 5425, image_key: "frame.jpg", thumb_key: "thumb.webp" }]);
+                    await assert.rejects(
+                        db.query("INSERT INTO annotations (id, movie_id, time_seconds) VALUES ($1, $2, 5425)", [randomUUID(), movieId]),
+                        { code: "23505", constraint: "annotations_movie_time_unique" }
+                    );
+                }
+            } finally {
+                await db.end();
+            }
+        });
+    }
 
     test("refuses an incompatible database before creating the ledger", async () => {
         const db = await connectDatabase("migrate_legacy");

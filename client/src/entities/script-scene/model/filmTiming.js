@@ -68,7 +68,7 @@ export function filmTimingErrorWhileTyping(startTime, endTime, runtimeSeconds) {
 }
 
 /**
- * Checks a single typed moment of the film, such as a still's timestamp.
+ * Checks a still's timestamp, allowing one minute beyond a rounded runtime.
  * Returns `{ seconds }`, or `{ error }`.
  */
 export function parseFilmMoment(text, runtimeSeconds) {
@@ -76,8 +76,9 @@ export function parseFilmMoment(text, runtimeSeconds) {
   if (seconds === null) {
     return { error: "Use HH:MM:SS (or MM:SS) for the timestamp." };
   }
-  if (isPastRuntime(seconds, runtimeSeconds)) {
-    return { error: `The timestamp can't be later than the film's runtime (${formatSecondsToHms(runtimeSeconds)}).` };
+  const limit = Number(runtimeSeconds) > 0 ? Number(runtimeSeconds) + 60 : 0;
+  if (isPastRuntime(seconds, limit)) {
+    return { error: `The timestamp can't be later than ${formatSecondsToHms(limit)} (runtime plus one minute).` };
   }
   return { seconds };
 }

@@ -83,7 +83,6 @@ describe("listing a script's captured scenes", () => {
             time_seconds: 100,
             image_key: first.image_key,
             thumb_key: `annotations/${place.movie.id}/thumbs/first.jpg.webp`,
-            created_at: first.created_at,
         });
     });
 });

@@ -75,6 +75,24 @@ export async function ensureMovieExists(db, movieId) {
     if (result.rowCount === 0) throw new HttpError(404, "Movie not found");
 }
 
+/** Serialize shot writes and runtime edits so their timing checks stay valid until commit. */
+export async function withMovieWrite(pool, movieId, work) {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        const result = await client.query("SELECT * FROM movies WHERE id = $1 FOR UPDATE", [movieId]);
+        if (!result.rows[0]) throw new HttpError(404, "Movie not found");
+        const value = await work(client, result.rows[0]);
+        await client.query("COMMIT");
+        return value;
+    } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
 export async function createMovie(db, body) {
     const movie = readMovieBody(body);
     // The browser persists this identity before sending a recoverable film save.
@@ -131,35 +149,46 @@ export async function updateMovieCover(db, id, body) {
 /** Replaces the required fields, and each optional field the body includes. */
 export async function updateMovie(db, id, body) {
     const movie = readMovieBody(body);
-    const saved = await findMovie(db, id);
-    const keepSaved = (value, savedValue) => (value === undefined ? savedValue : value);
+    const row = await withMovieWrite(db, id, async (client, saved) => {
+        if (movie.runtimeMinutes < saved.runtime_minutes) {
+            const outside = await client.query(
+                "SELECT 1 FROM annotations WHERE movie_id = $1 AND time_seconds > $2 LIMIT 1",
+                [id, (movie.runtimeMinutes + 1) * 60]
+            );
+            if (outside.rowCount > 0) {
+                throw new HttpError(400, "The runtime would leave existing shots beyond the one-minute allowance. Update their timestamps first.");
+            }
+        }
+        const keepSaved = (value, savedValue) => (value === undefined ? savedValue : value);
 
-    const result = await db.query(
-        `
-        UPDATE movies
-        SET title = $2,
-            director = $3,
-            writer = $4,
-            cinematographer = $5,
-            year = $6,
-            runtime_minutes = $7,
-            cover_image_key = $8
-        WHERE id = $1
-        RETURNING *
-      `,
-        [
-            id,
-            movie.title,
-            movie.director,
-            keepSaved(movie.writer, saved.writer),
-            keepSaved(movie.cinematographer, saved.cinematographer),
-            movie.year,
-            movie.runtimeMinutes,
-            keepSaved(movie.coverImageKey, saved.cover_image_key),
-        ]
-    );
-    if (!result.rows[0]) throw new HttpError(404, "Movie not found");
-    return toMovieResponse(result.rows[0]);
+        const result = await client.query(
+            `
+            UPDATE movies
+            SET title = $2,
+                director = $3,
+                writer = $4,
+                cinematographer = $5,
+                year = $6,
+                runtime_minutes = $7,
+                cover_image_key = $8
+            WHERE id = $1
+            RETURNING *
+          `,
+            [
+                id,
+                movie.title,
+                movie.director,
+                keepSaved(movie.writer, saved.writer),
+                keepSaved(movie.cinematographer, saved.cinematographer),
+                movie.year,
+                movie.runtimeMinutes,
+                keepSaved(movie.coverImageKey, saved.cover_image_key),
+            ]
+        );
+        if (!result.rows[0]) throw new HttpError(404, "Movie not found");
+        return result.rows[0];
+    });
+    return toMovieResponse(row);
 }
 
 export async function deleteMovie(db, id) {

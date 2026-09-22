@@ -26,7 +26,7 @@ function readStillSeconds(text, runtimeSeconds) {
  * timestamp, replacing its image, and deleting it. The editor owns the forms,
  * their validation, busy and error state, and the requests. After a still is
  * added, saved or deleted, it awaits `onChange()`, which refreshes the stills.
- * `runtimeSeconds` caps timestamps; 0 means the runtime is unknown.
+ * `runtimeSeconds` plus one minute caps timestamps; 0 means the runtime is unknown.
  *
  * The page renders what it returns:
  * - `openAddDialog()` opens the add dialog with an empty form, and `addDialog`
@@ -260,7 +260,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
         <Field
           label="Timestamp"
           required
-          hint={runtimeSeconds ? `Between 00:00:00 and ${formatSecondsToHms(runtimeSeconds)}` : "HH:MM:SS"}
+          hint={runtimeSeconds ? `Between 00:00:00 and ${formatSecondsToHms(Number(runtimeSeconds) + 60)} (includes one-minute allowance)` : "HH:MM:SS"}
         >
           <Input
             disabled={addBusy}

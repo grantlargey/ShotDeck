@@ -45,7 +45,7 @@ URL.revokeObjectURL ??= () => {};
 
 const MOVIE = { id: "m1", title: "Night Diner", runtime_minutes: 120 };
 const SCRIPT = { id: "s1", movie_id: "m1", s3_key: "scripts/m1.pdf", script_url: "https://media.test/m1.pdf" };
-const RUNTIME_LABEL = "02:00:00";
+const SHOT_LIMIT_LABEL = "02:01:00";
 const WITH_IMAGE = {
   id: "a1",
   movie_id: "m1",
@@ -56,7 +56,7 @@ const WITH_IMAGE = {
 const WITHOUT_IMAGE = { id: "a2", movie_id: "m1", time_seconds: 900, image_key: null, image_url: null };
 
 const BAD_TIME = "Use HH:MM:SS (or MM:SS) for the timestamp.";
-const PAST_RUNTIME = `The timestamp can't be later than the film's runtime (${RUNTIME_LABEL}).`;
+const PAST_RUNTIME = `The timestamp can't be later than ${SHOT_LIMIT_LABEL} (runtime plus one minute).`;
 const BAD_RUNTIME = "Runtime must use HH:MM:SS and be at least 00:01:00.";
 
 let stills;
@@ -326,6 +326,18 @@ describe("editing project details inline", () => {
 });
 
 describe("adding a still", () => {
+  it.each(["02:00:25", "02:01:00"])("accepts %s within the one-minute runtime allowance", async (time) => {
+    await renderPage();
+    const dialog = await openAddDialog();
+    chooseFile(dialog, imageFile());
+    typeTime(dialog, time);
+    submitAdd();
+    await waitFor(() => expect(api.createAnnotation).toHaveBeenCalledWith(expect.objectContaining({
+      timeSeconds: time === "02:00:25" ? 7225 : 7260,
+    })));
+    await waitFor(() => expect(queryAddDialog()).toBeNull());
+  });
+
   it("rejects a malformed timestamp and one past the runtime, in the dialog", async () => {
     await renderPage();
     const dialog = await openAddDialog();
@@ -335,7 +347,7 @@ describe("adding a still", () => {
     submitAdd();
     expect(within(addDialog()).getByRole("alert").textContent).toBe(BAD_TIME);
 
-    typeTime(dialog, "02:00:01");
+    typeTime(dialog, "02:01:01");
     submitAdd();
     expect(within(addDialog()).getByRole("alert").textContent).toBe(PAST_RUNTIME);
 
@@ -369,7 +381,7 @@ describe("adding a still", () => {
 
     expect(typeTime(dialog, "10:00").value).toBe("00:10:00");
     expect(typeTime(dialog, "1:2:3:4").value).toBe("1:2:3:4");
-    expect(within(dialog).getByText(`Between 00:00:00 and ${RUNTIME_LABEL}`)).toBeTruthy();
+    expect(within(dialog).getByText(`Between 00:00:00 and ${SHOT_LIMIT_LABEL} (includes one-minute allowance)`)).toBeTruthy();
   });
 
   it("disables submit while adding, then shows a record failure in the dialog and keeps it open", async () => {

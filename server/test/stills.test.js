@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, test } from "node:test";
 import { signInOwner, startApi } from "./helpers/api.js";
-import { assertSameRecords, createMovie, signedUrlPattern } from "./helpers/fixtures.js";
+import { assertSameRecords, createMovie, movieBody, signedUrlPattern } from "./helpers/fixtures.js";
 import { pool } from "../src/db.js";
 
 /*
@@ -16,7 +16,9 @@ const api = await startApi();
 const { cookie } = await signInOwner(api);
 
 const INVALID_STILL = "Invalid body. Expected { time_seconds:number, (optional) image_key:string }";
-const STILL_FIELDS = ["created_at", "id", "image_key", "image_url", "movie_id", "thumb_key", "thumb_url", "time_seconds"];
+const STILL_FIELDS = ["id", "image_key", "image_url", "movie_id", "thumb_key", "thumb_url", "time_seconds"];
+const DUPLICATE_TIME = "A shot already exists at this second for this movie. Choose a different timestamp.";
+const PAST_RUNTIME = "The timestamp cannot exceed the movie's stored runtime plus one minute.";
 
 async function expectError(responsePromise, status, error) {
     const response = await responsePromise;
@@ -35,6 +37,25 @@ async function createStill(movie, body) {
 }
 
 describe("creating a still", () => {
+    test("allows the rounded-runtime allowance through its endpoint and rejects anything beyond it", async () => {
+        const movie = await createMovie(api, cookie, { runtime_minutes: 90 });
+        for (const time_seconds of [0, 5400, 5425, 5460]) {
+            await createStill(movie, { time_seconds });
+        }
+        await expectError(api.post(stillsPath(movie), { cookie, body: { time_seconds: 5461 } }), 400, PAST_RUNTIME);
+        assert.equal((await api.get(stillsPath(movie))).body.length, 4);
+    });
+
+    test("rejects duplicate seconds, including concurrent creates, but allows the same second in another movie", async () => {
+        const movie = await createMovie(api, cookie);
+        const requests = await Promise.all([1, 2].map(() => api.post(stillsPath(movie), { cookie, body: { time_seconds: 42 } })));
+        assert.deepEqual(requests.map((r) => r.status).sort(), [201, 409]);
+        assert.equal(requests.find((r) => r.status === 409).body.error, DUPLICATE_TIME);
+        await expectError(api.post(stillsPath(movie), { cookie, body: { time_seconds: 42 } }), 409, DUPLICATE_TIME);
+        await createStill(await createMovie(api, cookie), { time_seconds: 42 });
+        assert.equal((await api.get(stillsPath(movie))).body.length, 1);
+    });
+
     test("replays an identity without duplicating the still or overwriting later edits", async () => {
         const movie = await createMovie(api, cookie);
         const id = randomUUID();
@@ -45,6 +66,7 @@ describe("creating a still", () => {
         assert.equal((await api.get(stillsPath(movie))).body.length, 1);
         const edited = await api.put(`${stillsPath(movie)}/${id}`, { cookie, body: { time_seconds: 60 } });
         assert.equal(edited.status, 200);
+        await createStill(movie, { time_seconds: 42 });
         const replay = await createStill(movie, body);
         assert.equal(replay.time_seconds, 60);
     });
@@ -101,10 +123,9 @@ describe("creating a still", () => {
         await expectError(api.post(`/movies/${randomUUID()}/annotations`, { cookie, body: { time_seconds: 3 } }), 404, "Movie not found");
     });
 
-    test("leaves whole seconds to the database, which makes a fraction a 500", async (t) => {
-        t.mock.method(console, "error", () => {});
+    test("rejects fractional seconds before reaching the database", async () => {
         const movie = await createMovie(api, cookie);
-        await expectError(api.post(stillsPath(movie), { cookie, body: { time_seconds: 1.5 } }), 500, "Something went wrong on the server.");
+        await expectError(api.post(stillsPath(movie), { cookie, body: { time_seconds: 1.5 } }), 400, INVALID_STILL);
     });
 
     test("requires the sign-in cookie", async () => {
@@ -119,11 +140,11 @@ describe("creating a still", () => {
 });
 
 describe("listing stills", () => {
-    test("is public and lists a movie's stills by time, then creation order", async () => {
+    test("is public and lists a movie's stills by time_seconds regardless of creation order", async () => {
         const movie = await createMovie(api, cookie);
         const late = await createStill(movie, { time_seconds: 90 });
         const earlyFirst = await createStill(movie, { time_seconds: 10, image_key: `annotations/${movie.id}/a.png` });
-        const earlySecond = await createStill(movie, { time_seconds: 10 });
+        const earlySecond = await createStill(movie, { time_seconds: 11 });
 
         const response = await api.get(stillsPath(movie));
         assert.equal(response.status, 200);
@@ -144,6 +165,31 @@ describe("listing stills", () => {
 });
 
 describe("updating a still", () => {
+    test("checks runtime and uniqueness without modifying a rejected shot, and permits its own timestamp", async () => {
+        const movie = await createMovie(api, cookie, { runtime_minutes: 90 });
+        const first = await createStill(movie, { time_seconds: 10 });
+        await createStill(movie, { time_seconds: 20 });
+        const path = `${stillsPath(movie)}/${first.id}`;
+        await expectError(api.put(path, { cookie, body: { time_seconds: 20 } }), 409, DUPLICATE_TIME);
+        await expectError(api.put(path, { cookie, body: { time_seconds: 5461 } }), 400, PAST_RUNTIME);
+        await expectError(api.put(path, { cookie, body: { time_seconds: 10.5 } }), 400, INVALID_STILL);
+        assert.equal((await api.get(stillsPath(movie))).body.find((row) => row.id === first.id).time_seconds, 10);
+        for (const time_seconds of [10, 5425, 5460]) {
+            const response = await api.put(path, { cookie, body: { time_seconds } });
+            assert.equal(response.status, 200, response.text);
+            assert.equal(response.body.time_seconds, time_seconds);
+        }
+    });
+
+    test("concurrent moves to the same second save only one shot", async () => {
+        const movie = await createMovie(api, cookie);
+        const shots = await Promise.all([10, 20].map((time_seconds) => createStill(movie, { time_seconds })));
+        const responses = await Promise.all(shots.map((shot) => api.put(`${stillsPath(movie)}/${shot.id}`, {
+            cookie, body: { time_seconds: 30 },
+        })));
+        assert.deepEqual(responses.map((r) => r.status).sort(), [200, 409]);
+    });
+
     async function stillWithThumbnail() {
         const movie = await createMovie(api, cookie);
         const still = await createStill(movie, { time_seconds: 5, image_key: `annotations/${movie.id}/c.jpg`, title: "Old", body: "Old body" });
@@ -206,6 +252,31 @@ describe("updating a still", () => {
     test("requires the sign-in cookie", async () => {
         const { movie, still } = await stillWithThumbnail();
         await expectError(api.put(`${stillsPath(movie)}/${still.id}`, { body: { time_seconds: 1 } }), 401, "Sign in to make changes.");
+    });
+});
+
+describe("runtime edits with existing shots", () => {
+    test("allows a shot at runtime plus one minute and refuses a shorter runtime", async () => {
+        const movie = await createMovie(api, cookie, { runtime_minutes: 100 });
+        await createStill(movie, { time_seconds: 5460 });
+        const accepted = await api.put(`/movies/${movie.id}`, { cookie, body: movieBody({ runtime_minutes: 90 }) });
+        assert.equal(accepted.status, 200, accepted.text);
+        const rejected = await api.put(`/movies/${movie.id}`, { cookie, body: movieBody({ runtime_minutes: 89 }) });
+        assert.equal(rejected.status, 400, rejected.text);
+        assert.equal((await api.get(`/movies/${movie.id}`)).body.runtime_minutes, 90);
+    });
+
+    test("concurrent runtime shortening and shot creation cannot leave an out-of-bounds shot", async () => {
+        const movie = await createMovie(api, cookie, { runtime_minutes: 100 });
+        const [runtime, shot] = await Promise.all([
+            api.put(`/movies/${movie.id}`, { cookie, body: movieBody({ runtime_minutes: 90 }) }),
+            api.post(stillsPath(movie), { cookie, body: { time_seconds: 6000 } }),
+        ]);
+        assert.ok((runtime.status === 200 && shot.status === 400) || (runtime.status === 400 && shot.status === 201));
+        const stored = (await api.get(`/movies/${movie.id}`)).body;
+        for (const still of (await api.get(stillsPath(movie))).body) {
+            assert.ok(still.time_seconds <= (stored.runtime_minutes + 1) * 60);
+        }
     });
 });
 

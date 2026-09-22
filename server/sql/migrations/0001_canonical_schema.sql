@@ -18,10 +18,8 @@ CREATE TABLE annotations (
   time_seconds INT NOT NULL CHECK (time_seconds >= 0),
   image_key TEXT,
   thumb_key TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  CONSTRAINT annotations_movie_time_unique UNIQUE (movie_id, time_seconds)
 );
-
-CREATE INDEX idx_annotations_movie_time ON annotations(movie_id, time_seconds);
 
 CREATE TABLE scripts (
   id UUID PRIMARY KEY,

@@ -74,11 +74,13 @@ describe("parseFilmMoment", () => {
     expect(parseFilmMoment(text, 0)).toEqual({ error: "Use HH:MM:SS (or MM:SS) for the timestamp." });
   });
 
-  it("caps the moment at a known runtime, including its last second, and treats 0 as unknown", () => {
-    expect(parseFilmMoment("00:02:01", 120)).toEqual({
-      error: "The timestamp can't be later than the film's runtime (00:02:00).",
+  it("allows one extra minute at a known runtime, inclusive, and treats 0 as unknown", () => {
+    expect(parseFilmMoment("00:03:01", 120)).toEqual({
+      error: "The timestamp can't be later than 00:03:00 (runtime plus one minute).",
     });
     expect(parseFilmMoment("00:02:00", 120)).toEqual({ seconds: 120 });
+    expect(parseFilmMoment("00:02:25", 120)).toEqual({ seconds: 145 });
+    expect(parseFilmMoment("00:03:00", 120)).toEqual({ seconds: 180 });
     expect(parseFilmMoment("05:00:00", 0)).toEqual({ seconds: 18000 });
   });
 });

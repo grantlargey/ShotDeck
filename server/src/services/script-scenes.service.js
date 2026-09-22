@@ -233,20 +233,19 @@ const SCENE_COLUMNS_SQL = `
       first_image.id AS first_image_annotation_id,
       first_image.time_seconds AS first_image_annotation_time_seconds,
       first_image.image_key AS first_image_annotation_image_key,
-      first_image.thumb_key AS first_image_annotation_thumb_key,
-      first_image.created_at AS first_image_annotation_created_at`;
+      first_image.thumb_key AS first_image_annotation_thumb_key`;
 
 const SCENE_FROM_SQL = `
     FROM captured_scenes sc
     JOIN scripts s ON s.id = sc.script_id
     LEFT JOIN LATERAL (
-      SELECT ann.id, ann.time_seconds, ann.image_key, ann.thumb_key, ann.created_at
+      SELECT ann.id, ann.time_seconds, ann.image_key, ann.thumb_key
       FROM annotations ann
       WHERE ann.movie_id = s.movie_id
         AND COALESCE(ann.image_key, '') <> ''
         AND ann.time_seconds >= sc.start_time_seconds
         AND ann.time_seconds <= sc.end_time_seconds
-      ORDER BY ann.time_seconds, ann.created_at, ann.id
+      ORDER BY ann.time_seconds
       LIMIT 1
     ) first_image ON TRUE`;
 
@@ -286,7 +285,6 @@ function sceneFromRow(row) {
                   time_seconds: row.first_image_annotation_time_seconds,
                   image_key: row.first_image_annotation_image_key,
                   thumb_key: row.first_image_annotation_thumb_key ?? null,
-                  created_at: row.first_image_annotation_created_at,
               }
             : null,
     };
