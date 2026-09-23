@@ -15,7 +15,10 @@ CREATE TABLE movies (
 CREATE TABLE annotations (
   id UUID PRIMARY KEY,
   movie_id UUID NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
-  time_seconds INT NOT NULL CHECK (time_seconds >= 0),
+  -- A shot's moment in the film, to a tenth of a second. Two shots in the same
+  -- second are told apart by their tenth rather than by pushing one of them
+  -- into the next second, which would move it into the next captured scene.
+  time_seconds NUMERIC(7,1) NOT NULL CHECK (time_seconds >= 0),
   image_key TEXT,
   thumb_key TEXT,
   CONSTRAINT annotations_movie_time_unique UNIQUE (movie_id, time_seconds)

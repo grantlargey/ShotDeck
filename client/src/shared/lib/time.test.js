@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   formatMinutesToHms,
+  formatMomentToHms,
   formatSecondsToHms,
+  normalizeTypedMoment,
   normalizeTypedTime,
+  parseMomentInputToSeconds,
   parseTimeInputToMinutes,
   parseTimeInputToSeconds,
 } from "./time.js";
@@ -85,5 +88,42 @@ describe("normalizeTypedTime", () => {
     expect(normalizeTypedTime("")).toBe("");
     expect(normalizeTypedTime("11:xx")).toBe("11:xx");
     expect(normalizeTypedTime(" 1:60 ")).toBe(" 1:60 ");
+  });
+});
+
+describe("moments, to a tenth of a second", () => {
+  it.each([
+    ["00:10:00.1", 600.1],
+    ["10:00.5", 600.5],
+    ["01:02:03", 3723],
+    ["42.9", 42.9],
+    [" 00:10:00.0 ", 600],
+  ])("reads %j as %s seconds", (text, seconds) => {
+    expect(parseMomentInputToSeconds(text)).toBe(seconds);
+  });
+
+  it.each(["00:10:00.12", "00:10:00.", ".5", "1.5:00", "abc", "", null])("refuses %j", (text) => {
+    expect(parseMomentInputToSeconds(text)).toBeNull();
+  });
+
+  it("rounds a number to a tenth and refuses a negative one", () => {
+    expect(parseMomentInputToSeconds(42.04)).toBe(42);
+    expect(parseMomentInputToSeconds(42.15)).toBeCloseTo(42.2, 5);
+    expect(parseMomentInputToSeconds(-1)).toBeNull();
+  });
+
+  it("shows a tenth only when the moment has one", () => {
+    expect(formatMomentToHms(600)).toBe("00:10:00");
+    expect(formatMomentToHms(600.1)).toBe("00:10:00.1");
+    expect(formatMomentToHms("600.5")).toBe("00:10:00.5");
+    expect(formatMomentToHms(3723.9)).toBe("01:02:03.9");
+    expect(formatMomentToHms(undefined)).toBe("--:--:--");
+    expect(formatMomentToHms(-1, { fallback: "" })).toBe("");
+  });
+
+  it("normalizes a typed moment and leaves unreadable input as typed", () => {
+    expect(normalizeTypedMoment("10:00.5")).toBe("00:10:00.5");
+    expect(normalizeTypedMoment("10:00")).toBe("00:10:00");
+    expect(normalizeTypedMoment("1:2:3:4")).toBe("1:2:3:4");
   });
 });

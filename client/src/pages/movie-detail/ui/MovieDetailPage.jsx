@@ -14,7 +14,7 @@ import { getMovieScript } from "@/shared/api/scripts.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
-import { formatSecondsToHms } from "@/shared/lib/time.js";
+import { formatMomentToHms } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
@@ -35,7 +35,7 @@ import styles from "./MovieDetailPage.module.css";
 const StillFrameButton = memo(function StillFrameButton({ annotation, onHover, onOpen }) {
   const thumbnail = getStillThumbnail(annotation);
   const url = useSignedMediaUrl(thumbnail.key, thumbnail.url);
-  const time = formatSecondsToHms(annotation.time_seconds);
+  const time = formatMomentToHms(annotation.time_seconds);
 
   return (
     <button

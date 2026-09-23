@@ -66,6 +66,44 @@ export function normalizeTypedTime(value) {
   return seconds === null ? value : formatSecondsToHms(seconds);
 }
 
+/*
+ * Moments: a film still's time, kept to a tenth of a second so two shots caught
+ * in the same second keep their order. Runtimes and a captured scene's start
+ * and end stay whole seconds and use the helpers above.
+ */
+
+const TENTHS_PER_SECOND = 10;
+const TYPED_TENTH = /^(.+)\.(\d)$/;
+
+/** Typed time as seconds to a tenth, "HH:MM:SS.s" or any form above, or null. */
+export function parseMomentInputToSeconds(value) {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) return null;
+    return Math.round(value * TENTHS_PER_SECOND) / TENTHS_PER_SECOND;
+  }
+
+  const typed = TYPED_TENTH.exec(String(value ?? "").trim());
+  const seconds = parseTimeInputToSeconds(typed ? typed[1] : value);
+  if (seconds === null) return null;
+  return typed ? (seconds * TENTHS_PER_SECOND + Number(typed[2])) / TENTHS_PER_SECOND : seconds;
+}
+
+/** A moment as HH:MM:SS, carrying its tenth when it has one. */
+export function formatMomentToHms(totalSeconds, options = {}) {
+  const seconds = Number(totalSeconds);
+  if (!Number.isFinite(seconds) || seconds < 0) return options.fallback ?? "--:--:--";
+
+  const tenths = Math.round(seconds * TENTHS_PER_SECOND);
+  const whole = formatSecondsToHms(Math.floor(tenths / TENTHS_PER_SECOND), options);
+  return tenths % TENTHS_PER_SECOND === 0 ? whole : `${whole}.${tenths % TENTHS_PER_SECOND}`;
+}
+
+/** Reformats a typed moment as HH:MM:SS.s, returning input it can't parse as typed. */
+export function normalizeTypedMoment(value) {
+  const seconds = parseMomentInputToSeconds(value);
+  return seconds === null ? value : formatMomentToHms(seconds);
+}
+
 /** Typed time as whole minutes, rounded to the nearest minute, or null when it can't be parsed. */
 export function parseTimeInputToMinutes(value) {
   const seconds = parseTimeInputToSeconds(value);

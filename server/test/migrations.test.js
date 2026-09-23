@@ -15,7 +15,7 @@ import {
 } from "./helpers/databases.js";
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SUFFIXES = ["migrate_fresh", "migrate_legacy", "migrate_order", "migrate_upgrade", "migrate_duplicates", "migrate_scripts", "migrate_scenes", "migrate_touching"];
+const SUFFIXES = ["migrate_fresh", "migrate_legacy", "migrate_order", "migrate_upgrade", "migrate_shared", "migrate_crowded", "migrate_scripts", "migrate_scenes", "migrate_touching"];
 
 before(async () => {
     for (const suffix of SUFFIXES) await createTestDatabase(suffix);
@@ -50,6 +50,13 @@ describe("the numbered migration runner", () => {
             );
             const column = (table, name) => columns.rows.find((row) => row.table_name === table && row.column_name === name);
             assert.equal(column("annotations", "created_at"), undefined);
+            // A shot's moment carries a tenth of a second, so two shots caught
+            // in one second keep their order without leaving it.
+            const moment = await db.query(
+                `SELECT data_type, numeric_scale FROM information_schema.columns
+                 WHERE table_name = 'annotations' AND column_name = 'time_seconds'`
+            );
+            assert.deepEqual(moment.rows, [{ data_type: "numeric", numeric_scale: 1 }]);
             assert.equal(column("scripts", "created_at"), undefined);
             // Every script states its length, and nothing supplies a default for it.
             assert.deepEqual(column("scripts", "page_count"), {
@@ -116,40 +123,88 @@ describe("the numbered migration runner", () => {
         assert.match(second.stdout, /No migrations pending/);
     });
 
-    for (const duplicates of [false, true]) {
-        test(duplicates ? "duplicate timestamps abort migration without dropping shot data" : "upgrades existing annotations without losing shots", async () => {
-            const suffix = duplicates ? "migrate_duplicates" : "migrate_upgrade";
-            const db = await connectDatabase(suffix);
-            const movieId = randomUUID();
-            const firstId = randomUUID();
-            try {
-                await applyV1Schema(db);
-                await db.query("INSERT INTO movies (id, title, director, year, runtime_minutes) VALUES ($1, 'Film', 'Director', 2024, 90)", [movieId]);
-                await db.query("INSERT INTO annotations (id, movie_id, time_seconds, image_key, thumb_key) VALUES ($1, $2, 5425, 'frame.jpg', 'thumb.webp')", [firstId, movieId]);
-                if (duplicates) {
-                    await db.query("INSERT INTO annotations (id, movie_id, time_seconds) VALUES ($1, $2, 5425)", [randomUUID(), movieId]);
-                }
-                const run = runServerNode("src/migrate.js", suffix);
-                const rows = await db.query("SELECT * FROM annotations ORDER BY id");
-                if (duplicates) {
-                    assert.notEqual(run.status, 0);
-                    assert.match(run.stderr, /annotations_movie_time_unique/);
-                    assert.equal(rows.rows.length, 2);
-                    assert.ok(rows.rows.every((row) => row.created_at));
-                    assert.equal((await db.query("SELECT * FROM schema_migrations WHERE version = 2")).rowCount, 0);
-                } else {
-                    assert.equal(run.status, 0, run.stderr);
-                    assert.deepEqual(rows.rows, [{ id: firstId, movie_id: movieId, time_seconds: 5425, image_key: "frame.jpg", thumb_key: "thumb.webp" }]);
-                    await assert.rejects(
-                        db.query("INSERT INTO annotations (id, movie_id, time_seconds) VALUES ($1, $2, 5425)", [randomUUID(), movieId]),
-                        { code: "23505", constraint: "annotations_movie_time_unique" }
-                    );
-                }
-            } finally {
-                await db.end();
+    const SHOT_COLUMNS_SQL = "id, movie_id, time_seconds::float8 AS time_seconds, image_key, thumb_key";
+    const insertMovie = (db, movieId) =>
+        db.query("INSERT INTO movies (id, title, director, year, runtime_minutes) VALUES ($1, 'Film', 'Director', 2024, 90)", [
+            movieId,
+        ]);
+
+    test("upgrades existing annotations without losing shots", async () => {
+        const db = await connectDatabase("migrate_upgrade");
+        const movieId = randomUUID();
+        const firstId = randomUUID();
+        try {
+            await applyV1Schema(db);
+            await insertMovie(db, movieId);
+            await db.query("INSERT INTO annotations (id, movie_id, time_seconds, image_key, thumb_key) VALUES ($1, $2, 5425, 'frame.jpg', 'thumb.webp')", [firstId, movieId]);
+
+            const run = runServerNode("src/migrate.js", "migrate_upgrade");
+            assert.equal(run.status, 0, run.stderr);
+            assert.deepEqual((await db.query(`SELECT ${SHOT_COLUMNS_SQL} FROM annotations`)).rows, [
+                { id: firstId, movie_id: movieId, time_seconds: 5425, image_key: "frame.jpg", thumb_key: "thumb.webp" },
+            ]);
+            await assert.rejects(
+                db.query("INSERT INTO annotations (id, movie_id, time_seconds) VALUES ($1, $2, 5425)", [randomUUID(), movieId]),
+                { code: "23505", constraint: "annotations_movie_time_unique" }
+            );
+        } finally {
+            await db.end();
+        }
+    });
+
+    test("separates shots that shared a second, in the order they were added", async () => {
+        const db = await connectDatabase("migrate_shared");
+        const movieId = randomUUID();
+        const shots = [randomUUID(), randomUUID(), randomUUID()];
+        try {
+            await applyV1Schema(db);
+            await insertMovie(db, movieId);
+            // Written out of order, so only the upload times can put them back in it.
+            for (const added of [2, 0, 1]) {
+                await db.query(
+                    `INSERT INTO annotations (id, movie_id, time_seconds, created_at)
+                     VALUES ($1, $2, 600, NOW() + ($3 || ' seconds')::interval)`,
+                    [shots[added], movieId, added]
+                );
             }
-        });
-    }
+            // The next second is occupied, so a whole second's push would collide.
+            await db.query("INSERT INTO annotations (id, movie_id, time_seconds) VALUES ($1, $2, 601)", [randomUUID(), movieId]);
+
+            const run = runServerNode("src/migrate.js", "migrate_shared");
+            assert.equal(run.status, 0, run.stderr);
+            const rows = await db.query(
+                "SELECT id, time_seconds::float8 AS time_seconds FROM annotations ORDER BY time_seconds"
+            );
+            assert.equal(rows.rowCount, 4);
+            assert.deepEqual(rows.rows.slice(0, 3), [
+                { id: shots[0], time_seconds: 600 },
+                { id: shots[1], time_seconds: 600.1 },
+                { id: shots[2], time_seconds: 600.2 },
+            ]);
+        } finally {
+            await db.end();
+        }
+    });
+
+    test("stops, with the reason, when a second holds more shots than it has tenths", async () => {
+        const db = await connectDatabase("migrate_crowded");
+        const movieId = randomUUID();
+        try {
+            await applyV1Schema(db);
+            await insertMovie(db, movieId);
+            for (let shot = 0; shot < 11; shot += 1) {
+                await db.query("INSERT INTO annotations (id, movie_id, time_seconds) VALUES ($1, $2, 600)", [randomUUID(), movieId]);
+            }
+
+            const run = runServerNode("src/migrate.js", "migrate_crowded");
+            assert.notEqual(run.status, 0);
+            assert.match(run.stderr, /cannot separate more than ten shots, and 1 second\(s\) hold more/);
+            assert.equal((await db.query("SELECT count(*)::int AS shots FROM annotations")).rows[0].shots, 11);
+            assert.equal((await db.query("SELECT * FROM schema_migrations WHERE version = 2")).rowCount, 0);
+        } finally {
+            await db.end();
+        }
+    });
 
     test("gives scripts saved before page counts a placeholder, and holds later ones to the page bounds", async () => {
         const db = await connectDatabase("migrate_scripts");

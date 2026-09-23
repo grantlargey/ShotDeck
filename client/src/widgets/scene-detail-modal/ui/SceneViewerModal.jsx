@@ -6,7 +6,7 @@ import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { formatScenePages } from "@/entities/script-scene/model/scriptLocation.js";
 import { groupScriptTagsByCategory } from "@server/domain/script-tags.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
-import { formatSecondsToHms } from "@/shared/lib/time.js";
+import { formatMomentToHms } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { ImageIcon, ScriptIcon } from "@/shared/ui/icons.jsx";
 import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
@@ -118,7 +118,7 @@ export function SceneViewerModal({
   let meta = "Script";
   if (showStill) {
     meta = still
-      ? [`Film still · ${formatSecondsToHms(still.time_seconds)}`, scene && formatScenePages(scene)]
+      ? [`Film still · ${formatMomentToHms(still.time_seconds)}`, scene && formatScenePages(scene)]
           .filter(Boolean)
           .join(" · ")
       : "Film still";
@@ -224,7 +224,7 @@ function StillImage({ still }) {
     <img
       className={styles.stillImage}
       src={url}
-      alt={`Film still at ${formatSecondsToHms(still.time_seconds)}`}
+      alt={`Film still at ${formatMomentToHms(still.time_seconds)}`}
     />
   );
 }

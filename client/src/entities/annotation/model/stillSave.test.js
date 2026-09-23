@@ -38,6 +38,20 @@ describe("still saves through the editor's interface", () => {
     expect(still.time_seconds).toBe(10);
   });
 
+  it("drops a creation the API refused, so the next save carries the corrected moment", async () => {
+    remote.req.mockRejectedValueOnce(Object.assign(new Error("00:00:10 already holds a shot."), { status: 409 }));
+    const save = createStillSave({ movieId });
+    const image = file();
+    await expect(save({ timeSeconds: 10, file: image })).rejects.toThrow("already holds a shot");
+
+    const still = await save({ timeSeconds: 10.1, file: image });
+    expect(still.time_seconds).toBe(10.1);
+    expect(records.size).toBe(1);
+    // The image is already uploaded, so only the moment is sent again.
+    expect(remote.upload).toHaveBeenCalledTimes(1);
+    expect(remote.req.mock.calls.map(([, init]) => JSON.parse(init.body).time_seconds)).toEqual([10, 10.1]);
+  });
+
   it("resolves a lost creation response before applying a changed image and timestamp to the same still", async () => {
     remote.req.mockImplementationOnce(async (...args) => {
       await write(...args);

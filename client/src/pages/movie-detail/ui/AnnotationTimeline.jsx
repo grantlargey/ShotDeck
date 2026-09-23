@@ -8,7 +8,7 @@ import {
 import { getStillThumbnail } from "@/entities/annotation/model/still.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
-import { formatSecondsToHms } from "@/shared/lib/time.js";
+import { formatMomentToHms, formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./AnnotationTimeline.module.css";
 
 // One density bar per this many pixels of strip width.
@@ -58,7 +58,7 @@ function StillPreview({ annotation, index, percent, total }) {
     <div className={styles.preview} style={{ "--pos": `${percent}%` }} aria-hidden="true">
       <div className={styles.previewFrame}>{url && <img src={url} alt="" />}</div>
       <div className={styles.previewMeta}>
-        <span className={styles.previewTime}>{formatSecondsToHms(annotation.time_seconds)}</span>
+        <span className={styles.previewTime}>{formatMomentToHms(annotation.time_seconds)}</span>
         <span className={styles.previewIndex}>
           {index + 1} of {total}
         </span>
@@ -197,7 +197,7 @@ export function AnnotationTimeline({
         aria-valuemin={1}
         aria-valuemax={count}
         aria-valuenow={valueIndex + 1}
-        aria-valuetext={`Still ${valueIndex + 1} of ${count}, ${formatSecondsToHms(annotations[valueIndex]?.time_seconds)}`}
+        aria-valuetext={`Still ${valueIndex + 1} of ${count}, ${formatMomentToHms(annotations[valueIndex]?.time_seconds)}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

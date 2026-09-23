@@ -85,6 +85,24 @@ describe("listing a script's captured scenes", () => {
             thumb_key: `annotations/${place.movie.id}/thumbs/first.jpg.webp`,
         });
     });
+
+    test("keeps a shot timed within a scene's end second with that scene, not the next", async () => {
+        const place = await createMovieWithScript(api, cookie);
+        const scene = await createScene(api, cookie, place, { start_time_seconds: 60, end_time_seconds: 120 });
+        const next = await createScene(api, cookie, place, { start_time_seconds: 121, end_time_seconds: 180 });
+        const edge = await createStill(place.movie, 120.9, `annotations/${place.movie.id}/edge.jpg`);
+        const after = await createStill(place.movie, 121, `annotations/${place.movie.id}/after.jpg`);
+
+        const listed = (await api.get(scenesPath(place))).body;
+        const firstImage = (id) => listed.find((candidate) => candidate.id === id).first_image_annotation;
+        assert.deepEqual(firstImage(scene.id), {
+            id: edge.id,
+            time_seconds: 120.9,
+            image_key: edge.image_key,
+            thumb_key: null,
+        });
+        assert.equal(firstImage(next.id).id, after.id);
+    });
 });
 
 describe("searching captured scenes", () => {

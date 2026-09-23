@@ -4,7 +4,7 @@ import { parseFilmMoment } from "@/entities/script-scene/model/filmTiming.js";
 import { deleteAnnotation } from "@/shared/api/annotations.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
-import { formatSecondsToHms, normalizeTypedTime } from "@/shared/lib/time.js";
+import { formatMomentToHms, formatSecondsToHms, normalizeTypedMoment } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Dialog } from "@/shared/ui/Dialog.jsx";
@@ -108,7 +108,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
     setEdit(
       edit?.stillId === still.id
         ? null
-        : { stillId: still.id, time: formatSecondsToHms(still.time_seconds, { fallback: "00:00:00" }), file: null }
+        : { stillId: still.id, time: formatMomentToHms(still.time_seconds, { fallback: "00:00:00" }), file: null }
     );
   }
 
@@ -203,7 +203,7 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
                   setEdit((current) => ({ ...current, time: value }));
                 }}
                 onBlur={(e) => {
-                  const value = normalizeTypedTime(e.target.value);
+                  const value = normalizeTypedMoment(e.target.value);
                   setEdit((current) => ({ ...current, time: value }));
                 }}
               />
@@ -260,14 +260,14 @@ export function useStillEditor({ movieId, runtimeSeconds, onChange }) {
         <Field
           label="Timestamp"
           required
-          hint={runtimeSeconds ? `Between 00:00:00 and ${formatSecondsToHms(Number(runtimeSeconds) + 60)} (includes one-minute allowance)` : "HH:MM:SS"}
+          hint={`${runtimeSeconds ? `Between 00:00:00 and ${formatSecondsToHms(Number(runtimeSeconds) + 60)} (includes one-minute allowance)` : "HH:MM:SS"}. Add a tenth, like 00:10:00.5, for a second shot in the same second.`}
         >
           <Input
             disabled={addBusy}
             placeholder="HH:MM:SS"
             value={addTime}
             onChange={(e) => setAddTime(e.target.value)}
-            onBlur={(e) => setAddTime(normalizeTypedTime(e.target.value))}
+            onBlur={(e) => setAddTime(normalizeTypedMoment(e.target.value))}
             required
           />
         </Field>

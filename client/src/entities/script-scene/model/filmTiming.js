@@ -1,4 +1,4 @@
-import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time.js";
+import { formatSecondsToHms, parseMomentInputToSeconds, parseTimeInputToSeconds } from "@/shared/lib/time.js";
 
 /*
  * Film timing: the start and end time within the film that a captured scene
@@ -10,6 +10,10 @@ import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time.j
  * conflict when `a.start <= b.end && b.start <= a.end`, counting both ends, so
  * consecutive scenes must be at least a second apart. A still on a shared
  * second would otherwise belong to two scenes at once.
+ *
+ * A scene's times are whole seconds, and it owns every moment of its end
+ * second. Stills are timed to a tenth, so one at 00:10:00.4 belongs to the
+ * scene ending at 00:10:00 rather than falling between that scene and the next.
  */
 
 /** A stored moment of the film in seconds (a number or numeric string), or null when it's missing or not a number. */
@@ -69,13 +73,13 @@ export function filmTimingErrorWhileTyping(startTime, endTime, runtimeSeconds) {
 }
 
 /**
- * Checks a still's timestamp, allowing one minute beyond a rounded runtime.
- * Returns `{ seconds }`, or `{ error }`.
+ * Checks a still's timestamp, to a tenth of a second, allowing one minute
+ * beyond a rounded runtime. Returns `{ seconds }`, or `{ error }`.
  */
 export function parseFilmMoment(text, runtimeSeconds) {
-  const seconds = parseTimeInputToSeconds(text);
+  const seconds = parseMomentInputToSeconds(text);
   if (seconds === null) {
-    return { error: "Use HH:MM:SS (or MM:SS) for the timestamp." };
+    return { error: "Use HH:MM:SS (or MM:SS) for the timestamp, with a tenth of a second like 00:10:00.5 if you need one." };
   }
   const limit = Number(runtimeSeconds) > 0 ? Number(runtimeSeconds) + 60 : 0;
   if (isPastRuntime(seconds, limit)) {
@@ -92,11 +96,11 @@ export function formatFilmTiming(scene) {
   return `${formatSecondsToHms(start)} – ${formatSecondsToHms(end)}`;
 }
 
-/** Whether a moment falls inside a captured scene's film timing, counting both endpoints. */
+/** Whether a moment falls inside a captured scene's film timing, end second included. */
 export function filmTimingCovers(scene, seconds) {
   const timing = storedTiming(scene);
   const moment = momentSeconds(seconds);
-  return timing !== null && moment !== null && moment >= timing.start && moment <= timing.end;
+  return timing !== null && moment !== null && moment >= timing.start && moment < timing.end + 1;
 }
 
 /**

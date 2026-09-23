@@ -16,7 +16,15 @@ export function createStillSave({ movieId, stillId = null }) {
   let saving = false;
 
   async function finishCreation() {
-    result = await createAnnotation({ movieId, id, ...creation });
+    try {
+      result = await createAnnotation({ movieId, id, ...creation });
+    } catch (error) {
+      // A refusal is the API's verdict on the input, so replaying it would be
+      // refused again: drop it and let the next save carry the corrected
+      // input. An uncertain failure keeps it, to be replayed as it is.
+      if (error?.status >= 400 && error?.status < 500) creation = undefined;
+      throw error;
+    }
     if (result?.id !== id) throw new Error("Still creation returned an unexpected identity");
     created = true;
     // Replaying creation returns the current still. Use the submitted baseline

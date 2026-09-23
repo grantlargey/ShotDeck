@@ -1,11 +1,51 @@
--- Existing duplicate timestamps must be resolved before this migration can run.
--- Rebuild the constraint for both existing databases and fresh canonical schemas.
+-- A shot's moment is now held to a tenth of a second, and no two shots of one
+-- film may share a moment. Shots that shared a second are separated by a tenth
+-- in the order they were added, which leaves each of them inside the captured
+-- scene it belongs to; adding a whole second to one would carry it into the
+-- next scene. Ten shots fit in a second, so a fuller one stops the migration
+-- here, where the reason can be stated, rather than on the constraint below.
+DO $$
+DECLARE crowded INT;
+BEGIN
+  SELECT count(*) INTO crowded FROM (
+    SELECT 1 FROM annotations GROUP BY movie_id, time_seconds HAVING count(*) > 10
+  ) AS crowded_seconds;
+  IF crowded > 0 THEN
+    RAISE EXCEPTION 'A tenth of a second cannot separate more than ten shots, and % second(s) hold more', crowded;
+  END IF;
+END $$;
+
 ALTER TABLE annotations
   DROP CONSTRAINT IF EXISTS annotations_movie_time_unique;
+DROP INDEX IF EXISTS idx_annotations_movie_time;
+ALTER TABLE annotations
+  ALTER COLUMN time_seconds TYPE NUMERIC(7,1) USING time_seconds::numeric(7,1);
+
+-- Only a database that still records when a shot was added has shots sharing a
+-- second to separate, and their upload order is the only record of which came
+-- first. A fresh canonical schema has neither, and needs neither.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'annotations' AND column_name = 'created_at'
+  ) THEN
+    EXECUTE $sql$
+      UPDATE annotations a
+      SET time_seconds = a.time_seconds + (ordered.seq - 1) * 0.1
+      FROM (
+        SELECT id,
+               row_number() OVER (PARTITION BY movie_id, time_seconds ORDER BY created_at, id) AS seq
+        FROM annotations
+      ) AS ordered
+      WHERE ordered.id = a.id AND ordered.seq > 1
+    $sql$;
+  END IF;
+END $$;
+
+ALTER TABLE annotations DROP COLUMN IF EXISTS created_at;
 ALTER TABLE annotations
   ADD CONSTRAINT annotations_movie_time_unique UNIQUE (movie_id, time_seconds);
-DROP INDEX IF EXISTS idx_annotations_movie_time;
-ALTER TABLE annotations DROP COLUMN IF EXISTS created_at;
 
 -- A script's page count now travels with its row, so the film's pages can state
 -- the screenplay's length without downloading the PDF. Nothing recorded when

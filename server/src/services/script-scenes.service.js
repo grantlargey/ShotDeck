@@ -227,7 +227,7 @@ const SCENE_COLUMNS_SQL = `
       sc.end_page, sc.end_y::float8 AS end_y,
       sc.scene_text, sc.tags,
       first_image.id AS first_image_annotation_id,
-      first_image.time_seconds AS first_image_annotation_time_seconds,
+      first_image.time_seconds::float8 AS first_image_annotation_time_seconds,
       first_image.image_key AS first_image_annotation_image_key,
       first_image.thumb_key AS first_image_annotation_thumb_key`;
 
@@ -240,7 +240,9 @@ const SCENE_FROM_SQL = `
       WHERE ann.movie_id = s.movie_id
         AND COALESCE(ann.image_key, '') <> ''
         AND ann.time_seconds >= sc.start_time_seconds
-        AND ann.time_seconds <= sc.end_time_seconds
+        -- A scene owns every moment of its end second, so a shot timed to a
+        -- tenth stays with the scene it was caught in.
+        AND ann.time_seconds < sc.end_time_seconds + 1
       ORDER BY ann.time_seconds
       LIMIT 1
     ) first_image ON TRUE`;

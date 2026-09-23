@@ -65,13 +65,16 @@ describe("filmTimingErrorWhileTyping", () => {
 });
 
 describe("parseFilmMoment", () => {
-  it("reads a typed moment as seconds", () => {
+  it("reads a typed moment as seconds, keeping a tenth", () => {
     expect(parseFilmMoment("01:02:03", 0)).toEqual({ seconds: 3723 });
     expect(parseFilmMoment("2:05", 7200)).toEqual({ seconds: 125 });
+    expect(parseFilmMoment("01:02:03.5", 0)).toEqual({ seconds: 3723.5 });
   });
 
-  it.each(["", "abc", "1:60", "-1:00"])("refuses %j with the timestamp format message", (text) => {
-    expect(parseFilmMoment(text, 0)).toEqual({ error: "Use HH:MM:SS (or MM:SS) for the timestamp." });
+  it.each(["", "abc", "1:60", "-1:00", "1:00.25"])("refuses %j with the timestamp format message", (text) => {
+    expect(parseFilmMoment(text, 0)).toEqual({
+      error: "Use HH:MM:SS (or MM:SS) for the timestamp, with a tenth of a second like 00:10:00.5 if you need one.",
+    });
   });
 
   it("allows one extra minute at a known runtime, inclusive, and treats 0 as unknown", () => {
@@ -118,15 +121,18 @@ describe("momentSeconds", () => {
 describe("filmTimingCovers", () => {
   const covered = scene("a", 600, 720);
 
-  it("covers moments inside the timing, including both endpoints", () => {
+  it("covers moments inside the timing, including every moment of the end second", () => {
     expect(filmTimingCovers(covered, 600)).toBe(true);
     expect(filmTimingCovers(covered, 660)).toBe(true);
     expect(filmTimingCovers(covered, 720)).toBe(true);
+    // A shot caught a tenth after the scene's last second is still its own.
+    expect(filmTimingCovers(covered, 720.9)).toBe(true);
     expect(filmTimingCovers(covered, "720")).toBe(true);
   });
 
   it("doesn't cover moments outside it, or anything without usable timing", () => {
     expect(filmTimingCovers(covered, 599)).toBe(false);
+    expect(filmTimingCovers(covered, 599.9)).toBe(false);
     expect(filmTimingCovers(covered, 721)).toBe(false);
     expect(filmTimingCovers(covered, null)).toBe(false);
     expect(filmTimingCovers(scene("b", 600, null), 600)).toBe(false);

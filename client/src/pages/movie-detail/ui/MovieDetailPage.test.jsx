@@ -59,9 +59,11 @@ const WITH_IMAGE = {
   image_key: "stills/a1.jpg",
   image_url: "https://media.test/a1.jpg",
 };
-const WITHOUT_IMAGE = { id: "a2", movie_id: "m1", time_seconds: 900, image_key: null, image_url: null };
+// Timed to a tenth, as a second shot caught in the same second would be.
+const WITHOUT_IMAGE = { id: "a2", movie_id: "m1", time_seconds: 900.5, image_key: null, image_url: null };
 
-const BAD_TIME = "Use HH:MM:SS (or MM:SS) for the timestamp.";
+const BAD_TIME =
+  "Use HH:MM:SS (or MM:SS) for the timestamp, with a tenth of a second like 00:10:00.5 if you need one.";
 const PAST_RUNTIME = `The timestamp can't be later than ${SHOT_LIMIT_LABEL} (runtime plus one minute).`;
 const BAD_RUNTIME = "Runtime must use HH:MM:SS and be at least 00:01:00.";
 
@@ -386,8 +388,13 @@ describe("adding a still", () => {
     const dialog = await openAddDialog();
 
     expect(typeTime(dialog, "10:00").value).toBe("00:10:00");
+    expect(typeTime(dialog, "10:00.5").value).toBe("00:10:00.5");
     expect(typeTime(dialog, "1:2:3:4").value).toBe("1:2:3:4");
-    expect(within(dialog).getByText(`Between 00:00:00 and ${SHOT_LIMIT_LABEL} (includes one-minute allowance)`)).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        `Between 00:00:00 and ${SHOT_LIMIT_LABEL} (includes one-minute allowance). Add a tenth, like 00:10:00.5, for a second shot in the same second.`
+      )
+    ).toBeTruthy();
   });
 
   it("disables submit while adding, then shows a record failure in the dialog and keeps it open", async () => {
@@ -531,7 +538,7 @@ describe("editing a still in the viewer", () => {
   it("requires an image when the still has none", async () => {
     await renderPage();
     api.updateAnnotation.mockResolvedValue({ ...WITHOUT_IMAGE });
-    openStill("00:15:00");
+    openStill("00:15:00.5");
     fireEvent.click(viewerButton("Edit"));
 
     fireEvent.click(viewerButton("Save"));
@@ -546,7 +553,7 @@ describe("editing a still in the viewer", () => {
     expect(api.updateAnnotation).toHaveBeenCalledWith({
       movieId: "m1",
       annotationId: "a2",
-      timeSeconds: 900,
+      timeSeconds: 900.5,
       imageKey: "annotations/m1/upload.png",
     });
     expect(within(viewer()).queryByRole("alert")).toBeNull();
@@ -743,7 +750,7 @@ describe("closing the viewer", () => {
 
   it.each([
     ["save", "00:05:00"],
-    ["delete", "00:15:00"],
+    ["delete", "00:15:00.5"],
   ])("still refreshes the stills when a %s succeeds afterwards", async (kind, reopenAt) => {
     await renderPage();
     const request = startHeldRequest(kind);
@@ -761,7 +768,7 @@ describe("closing the viewer", () => {
     await renderPage();
     const request = startHeldRequest(kind);
     fireEvent.click(viewerButton("Close"));
-    openStill("00:15:00");
+    openStill("00:15:00.5");
     fireEvent.click(viewerButton("Edit"));
 
     await settle(() => request.resolve());

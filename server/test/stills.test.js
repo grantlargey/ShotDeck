@@ -15,9 +15,14 @@ import { pool } from "../src/db.js";
 const api = await startApi();
 const { cookie } = await signInOwner(api);
 
-const INVALID_STILL = "Invalid body. Expected { time_seconds:number, (optional) image_key:string }";
+const INVALID_STILL =
+    "Invalid body. Expected { time_seconds:number to a tenth of a second, (optional) image_key:string }";
 const STILL_FIELDS = ["id", "image_key", "image_url", "movie_id", "thumb_key", "thumb_url", "time_seconds"];
-const DUPLICATE_TIME = "A shot already exists at this second for this movie. Choose a different timestamp.";
+
+/** The 409 for a moment another shot holds, naming the next free tenth of that second. */
+function takenMoment(time, free) {
+    return `${time} already holds a shot. The next free moment in that second is ${free}. To place this shot earlier than the ones already there, retime those first.`;
+}
 const PAST_RUNTIME = "The timestamp cannot exceed the movie's stored runtime plus one minute.";
 
 async function expectError(responsePromise, status, error) {
@@ -46,14 +51,57 @@ describe("creating a still", () => {
         assert.equal((await api.get(stillsPath(movie))).body.length, 4);
     });
 
-    test("rejects duplicate seconds, including concurrent creates, but allows the same second in another movie", async () => {
+    test("rejects a moment another shot holds, including concurrent creates, but allows it in another movie", async () => {
         const movie = await createMovie(api, cookie);
         const requests = await Promise.all([1, 2].map(() => api.post(stillsPath(movie), { cookie, body: { time_seconds: 42 } })));
         assert.deepEqual(requests.map((r) => r.status).sort(), [201, 409]);
-        assert.equal(requests.find((r) => r.status === 409).body.error, DUPLICATE_TIME);
-        await expectError(api.post(stillsPath(movie), { cookie, body: { time_seconds: 42 } }), 409, DUPLICATE_TIME);
+        // The loser is refused by the constraint or by the check before it, and
+        // reads the same either way.
+        assert.equal(requests.find((r) => r.status === 409).body.error, takenMoment("00:00:42", "00:00:42.1"));
+        await expectError(
+            api.post(stillsPath(movie), { cookie, body: { time_seconds: 42 } }),
+            409,
+            takenMoment("00:00:42", "00:00:42.1")
+        );
         await createStill(await createMovie(api, cookie), { time_seconds: 42 });
         assert.equal((await api.get(stillsPath(movie))).body.length, 1);
+    });
+
+    test("keeps two shots caught in the same second apart by a tenth", async () => {
+        const movie = await createMovie(api, cookie);
+        const first = await createStill(movie, { time_seconds: 42 });
+        const second = await createStill(movie, { time_seconds: 42.1 });
+
+        assert.equal(typeof second.time_seconds, "number");
+        assert.deepEqual(
+            (await api.get(stillsPath(movie))).body.map((row) => row.time_seconds),
+            [42, 42.1]
+        );
+        await expectError(
+            api.put(`${stillsPath(movie)}/${first.id}`, { cookie, body: { time_seconds: 42.1 } }),
+            409,
+            takenMoment("00:00:42.1", "00:00:42.2")
+        );
+        assert.equal((await api.get(stillsPath(movie))).body[0].time_seconds, 42);
+    });
+
+    test("names a free moment below a taken one, and refuses a second with none left", async () => {
+        const movie = await createMovie(api, cookie);
+        for (const time_seconds of [42.8, 42.9]) await createStill(movie, { time_seconds });
+        await expectError(
+            api.post(stillsPath(movie), { cookie, body: { time_seconds: 42.8 } }),
+            409,
+            "00:00:42.8 already holds a shot. Nothing later in that second is free, but 00:00:42 is. To keep this shot after the ones already there, retime those first."
+        );
+
+        for (const time_seconds of [42, 42.1, 42.2, 42.3, 42.4, 42.5, 42.6, 42.7]) {
+            await createStill(movie, { time_seconds });
+        }
+        await expectError(
+            api.post(stillsPath(movie), { cookie, body: { time_seconds: 42.3 } }),
+            409,
+            "00:00:42.3 already holds a shot. Every tenth of 00:00:42 is taken, so choose another second."
+        );
     });
 
     test("replays an identity without duplicating the still or overwriting later edits", async () => {
@@ -123,9 +171,13 @@ describe("creating a still", () => {
         await expectError(api.post(`/movies/${randomUUID()}/annotations`, { cookie, body: { time_seconds: 3 } }), 404, "Movie not found");
     });
 
-    test("rejects fractional seconds before reaching the database", async () => {
+    test("keeps a tenth of a second and rejects anything finer", async () => {
         const movie = await createMovie(api, cookie);
-        await expectError(api.post(stillsPath(movie), { cookie, body: { time_seconds: 1.5 } }), 400, INVALID_STILL);
+        const still = await createStill(movie, { time_seconds: 1.5 });
+        assert.equal(still.time_seconds, 1.5);
+        for (const time_seconds of [1.25, 1.05, 0.01]) {
+            await expectError(api.post(stillsPath(movie), { cookie, body: { time_seconds } }), 400, INVALID_STILL);
+        }
     });
 
     test("requires the sign-in cookie", async () => {
@@ -170,9 +222,9 @@ describe("updating a still", () => {
         const first = await createStill(movie, { time_seconds: 10 });
         await createStill(movie, { time_seconds: 20 });
         const path = `${stillsPath(movie)}/${first.id}`;
-        await expectError(api.put(path, { cookie, body: { time_seconds: 20 } }), 409, DUPLICATE_TIME);
+        await expectError(api.put(path, { cookie, body: { time_seconds: 20 } }), 409, takenMoment("00:00:20", "00:00:20.1"));
         await expectError(api.put(path, { cookie, body: { time_seconds: 5461 } }), 400, PAST_RUNTIME);
-        await expectError(api.put(path, { cookie, body: { time_seconds: 10.5 } }), 400, INVALID_STILL);
+        await expectError(api.put(path, { cookie, body: { time_seconds: 10.55 } }), 400, INVALID_STILL);
         assert.equal((await api.get(stillsPath(movie))).body.find((row) => row.id === first.id).time_seconds, 10);
         for (const time_seconds of [10, 5425, 5460]) {
             const response = await api.put(path, { cookie, body: { time_seconds } });
