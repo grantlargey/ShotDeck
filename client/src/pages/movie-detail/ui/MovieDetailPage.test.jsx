@@ -37,6 +37,12 @@ vi.mock("@/shared/api/movies.js", () => ({ getMovie: api.getMovie, updateMovie: 
 vi.mock("@/shared/api/scripts.js", () => ({ getMovieScript: api.getMovieScript, saveScript: api.saveScript }));
 vi.mock("@/shared/api/scriptScenes.js", () => ({ listScriptScenes: api.listScriptScenes }));
 vi.mock("@/shared/api/uploads.js", () => ({ getViewUrlForKey: api.getViewUrlForKey, uploadMediaFile: api.uploadMediaFile }));
+// The film save reads a script's page count straight from pdf.js.
+vi.mock("pdfjs-dist", () => ({
+  GlobalWorkerOptions: {},
+  getDocument: () => ({ promise: Promise.resolve({ numPages: 121 }), destroy: async () => {} }),
+}));
+vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "worker-stub" }));
 vi.mock("@/entities/session/model/useSession.js", () => ({ useSession: () => session }));
 
 // jsdom has no object URLs; the add dialog previews the picked image with one.
@@ -258,7 +264,7 @@ describe("loading the project's script", () => {
     expect(await screen.findByRole("button", { name: "Open script" })).toBeTruthy();
     expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
     expect(api.saveScript).toHaveBeenCalledTimes(2);
-    expect(api.saveScript).toHaveBeenLastCalledWith({ movieId: "m1", key: "scripts/m1/upload.pdf" });
+    expect(api.saveScript).toHaveBeenLastCalledWith({ movieId: "m1", key: "scripts/m1/upload.pdf", pageCount: 121 });
   });
 
   it("consumes the one script object and opens it", async () => {

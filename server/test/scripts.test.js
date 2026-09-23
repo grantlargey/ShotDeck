@@ -18,8 +18,8 @@ import {
 const api = await startApi();
 const { cookie } = await signInOwner(api);
 
-const INVALID_SCRIPT = "Invalid body. Expected { s3_key:string }";
-const SCRIPT_FIELDS = ["created_at", "id", "movie_id", "s3_key", "script_url"];
+const INVALID_SCRIPT = "Invalid body. Expected { s3_key:string, page_count:int }";
+const SCRIPT_FIELDS = ["id", "movie_id", "page_count", "s3_key", "script_url"];
 
 async function expectError(responsePromise, status, error) {
     const response = await responsePromise;
@@ -31,35 +31,46 @@ describe("saving a movie's script", () => {
     test("returns 201 with the script and a signed view URL, trimming the key", async () => {
         const movie = await createMovie(api, cookie);
         const key = `scripts/${movie.id}/draft.pdf`;
-        const response = await api.post(`/movies/${movie.id}/scripts`, { cookie, body: { s3_key: `  ${key}  ` } });
+        const body = { s3_key: `  ${key}  `, page_count: 118 };
+        const response = await api.post(`/movies/${movie.id}/scripts`, { cookie, body });
 
         assert.equal(response.status, 201, response.text);
         assert.deepEqual(Object.keys(response.body).sort(), SCRIPT_FIELDS);
         assert.equal(response.body.movie_id, movie.id);
         assert.equal(response.body.s3_key, key);
+        assert.equal(response.body.page_count, 118);
         assert.match(response.body.script_url, signedUrlPattern(key));
     });
 
-    test("saving again replaces the file but keeps the script's id and creation time, still with 201", async () => {
+    test("saving again replaces the file and its page count but keeps the script's id, still with 201", async () => {
         const movie = await createMovie(api, cookie);
         const first = await saveScript(api, cookie, movie);
-        const response = await api.post(`/movies/${movie.id}/scripts`, { cookie, body: { s3_key: `scripts/${movie.id}/v2.pdf` } });
+        const body = { s3_key: `scripts/${movie.id}/v2.pdf`, page_count: 97 };
+        const response = await api.post(`/movies/${movie.id}/scripts`, { cookie, body });
 
         assert.equal(response.status, 201, response.text);
         assert.equal(response.body.id, first.id);
-        assert.equal(response.body.created_at, first.created_at);
         assert.equal(response.body.s3_key, `scripts/${movie.id}/v2.pdf`);
+        assert.equal(response.body.page_count, 97);
+        assert.notEqual(first.page_count, 97);
     });
 
-    test("requires a key under scripts/, checked before the movie is looked up", async () => {
+    test("requires a key under scripts/ and a whole page count, checked before the movie is looked up", async () => {
         const movie = await createMovie(api, cookie);
-        for (const body of [{}, { s3_key: 5 }, { s3_key: "   " }, { s3_key: `covers/${movie.id}/a.pdf` }]) {
+        const key = `scripts/${movie.id}/a.pdf`;
+        const invalid = [
+            {}, { s3_key: 5 }, { s3_key: "   " }, { s3_key: `covers/${movie.id}/a.pdf` },
+            { s3_key: key }, { s3_key: key, page_count: 0 }, { s3_key: key, page_count: -1 },
+            { s3_key: key, page_count: 1.5 }, { s3_key: key, page_count: "12" },
+            { s3_key: key, page_count: null }, { s3_key: key, page_count: 100001 },
+        ];
+        for (const body of invalid) {
             await expectError(api.post(`/movies/${movie.id}/scripts`, { cookie, body }), 400, INVALID_SCRIPT);
         }
         await expectError(api.post(`/movies/${movie.id}/scripts`, { cookie }), 400, INVALID_SCRIPT);
         await expectError(api.post(`/movies/${randomUUID()}/scripts`, { cookie, body: {} }), 400, INVALID_SCRIPT);
         await expectError(
-            api.post(`/movies/${randomUUID()}/scripts`, { cookie, body: { s3_key: "scripts/x/a.pdf" } }),
+            api.post(`/movies/${randomUUID()}/scripts`, { cookie, body: { s3_key: "scripts/x/a.pdf", page_count: 3 } }),
             404,
             "Movie not found"
         );

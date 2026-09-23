@@ -71,10 +71,10 @@ export async function createMovie(api, cookie, overrides = {}) {
     return response.body;
 }
 
-export async function saveScript(api, cookie, movie) {
+export async function saveScript(api, cookie, movie, overrides = {}) {
     const response = await api.post(`/movies/${movie.id}/scripts`, {
         cookie,
-        body: { s3_key: `scripts/${movie.id}/script.pdf` },
+        body: { s3_key: `scripts/${movie.id}/script.pdf`, page_count: 120, ...overrides },
     });
     assert.equal(response.status, 201, response.text);
     return response.body;

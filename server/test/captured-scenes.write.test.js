@@ -14,7 +14,7 @@ const MESSAGES = {
         "Invalid body. start_time_seconds and end_time_seconds must be integers between 0 and 2147483647 where end >= start.",
     scriptLocation: "Invalid body. script_location must contain start and end scene anchors.",
     sceneAnchor:
-        "Invalid body. Each scene anchor needs a whole page from 1 to 100000, a whole line from 0 to 100000, finite top and bottom, and text.",
+        "Invalid body. Each scene anchor needs a whole page from 1 to 300, a whole line from 0 to 100000, finite top and bottom, and text.",
     reversedPair: "Invalid body. The start anchor must come before or on the same line as the end anchor.",
     sceneText: "Invalid body. scene_text must be a non-empty string.",
     rawText: "Invalid body. raw_text must be a non-empty string.",

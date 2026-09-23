@@ -20,6 +20,12 @@ vi.mock("@/shared/api/movies.js", () => ({
 }));
 vi.mock("@/shared/api/scripts.js", () => ({ saveScript: api.saveScript }));
 vi.mock("@/shared/api/uploads.js", () => ({ uploadMediaFile: api.uploadMediaFile }));
+// The film save reads a script's page count straight from pdf.js.
+vi.mock("pdfjs-dist", () => ({
+  GlobalWorkerOptions: {},
+  getDocument: () => ({ promise: Promise.resolve({ numPages: 121 }), destroy: async () => {} }),
+}));
+vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "worker-stub" }));
 vi.mock("@/entities/session/model/useSession.js", () => ({ useSession: () => ({ user: { id: "admin-1" } }) }));
 
 const MOVIE = {

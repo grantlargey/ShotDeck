@@ -4,14 +4,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useFilmSave } from "./filmSave.js";
 
 const remote = vi.hoisted(() => ({ createMovie: vi.fn(), updateMovie: vi.fn(), updateMovieCover: vi.fn(), saveScript: vi.fn(), uploadMediaFile: vi.fn() }));
+const pdf = vi.hoisted(() => ({ getDocument: vi.fn() }));
 vi.mock("@/shared/api/movies.js", () => ({ createMovie: remote.createMovie, updateMovie: remote.updateMovie, updateMovieCover: remote.updateMovieCover }));
 vi.mock("@/shared/api/scripts.js", () => ({ saveScript: remote.saveScript }));
 vi.mock("@/shared/api/uploads.js", () => ({ uploadMediaFile: remote.uploadMediaFile }));
+// pdf.js itself is the external edge now that filmSave reads the page count.
+vi.mock("pdfjs-dist", () => ({
+  GlobalWorkerOptions: {},
+  getDocument: pdf.getDocument,
+}));
+vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "worker-stub" }));
 
 const form = { title: "Night Diner", director: "Ada Park", writer: "", cinematographer: "", year: "2024", runtime_hms: "02:00:00" };
 const file = (text = "script") => new File([text], "script.pdf", { type: "application/pdf" });
 const cover = () => new File(["cover"], "cover.png", { type: "image/png" });
 const open = (props = {}) => renderHook(() => useFilmSave({ ownerId: "admin-1", ...props }));
+const pdfPages = (numPages) => pdf.getDocument.mockReturnValue({ promise: Promise.resolve({ numPages }), destroy: async () => {} });
+const pdfUnreadable = () => pdf.getDocument.mockImplementationOnce(() => ({ promise: Promise.reject(new Error("not a screenplay")), destroy: async () => {} }));
 
 async function submit(hook, input) {
   let result;
@@ -32,6 +41,8 @@ beforeEach(() => {
   remote.updateMovieCover.mockResolvedValue({});
   remote.uploadMediaFile.mockImplementation(async ({ movieId, type, uploadId }) => `${type}/${movieId}/${uploadId}`);
   remote.saveScript.mockImplementation(async ({ movieId, key }) => ({ id: "script-1", movie_id: movieId, s3_key: key }));
+  pdf.getDocument.mockReset();
+  pdfPages(118);
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -115,6 +126,42 @@ describe("film-save recovery through the caller's interface", () => {
     expect((await submit(recovered, { scriptFile: file() })).error).toBeUndefined();
     expect(remote.uploadMediaFile.mock.calls[1][0].uploadId).toBe(uploadId);
     expect(remote.createMovie).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses an unreadable script before any write, then sends the page count it reads", async () => {
+    pdfUnreadable();
+    const hook = open();
+    const refused = await submit(hook, { form, scriptFile: file() });
+    expect(refused.error.message).toBe("That script PDF could not be read. Choose a different file.");
+    expect(remote.createMovie).not.toHaveBeenCalled();
+    expect(localStorage.length).toBe(0);
+
+    pdfPages(121);
+    expect((await submit(hook, { form, scriptFile: file() })).error).toBeUndefined();
+    expect(remote.saveScript.mock.calls[0][0].pageCount).toBe(121);
+  });
+
+  it("refuses a PDF longer than a screenplay before any write", async () => {
+    pdfPages(301);
+    const hook = open();
+    const refused = await submit(hook, { form, scriptFile: file() });
+    expect(refused.error.message).toBe("A script can be at most 300 pages. That PDF has 301.");
+    expect(remote.createMovie).not.toHaveBeenCalled();
+    expect(remote.uploadMediaFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps a script's page count for an attachment retry that no longer holds the file", async () => {
+    pdfPages(121);
+    remote.saveScript.mockRejectedValueOnce(new Error("attachment response lost"));
+    const first = open();
+    await submit(first, { form, scriptFile: file() });
+    const movieId = remote.createMovie.mock.calls[0][0].id;
+    first.unmount();
+
+    const recovered = open({ movieId });
+    pdf.getDocument.mockImplementation(() => { throw new Error("the file is gone"); });
+    expect((await submit(recovered, {})).error).toBeUndefined();
+    expect(remote.saveScript.mock.calls[1][0].pageCount).toBe(121);
   });
 
   it("allocates a new upload when replacement content has the same filename", async () => {

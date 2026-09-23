@@ -7,6 +7,7 @@ import { createTestDatabases, postgresAdmin } from "./database-lifetime.js";
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const LEGACY_SCHEMA_PATH = path.join(serverDir, "test/fixtures/legacy-schema.sql");
+const V1_SCHEMA_PATH = path.join(serverDir, "test/fixtures/v1-schema.sql");
 const baseUrl = new URL(process.env.DATABASE_URL);
 const baseName = baseUrl.pathname.slice(1);
 const databases = createTestDatabases(postgresAdmin(baseUrl));
@@ -40,6 +41,15 @@ export async function connectDatabase(suffix) {
 
 export async function applyLegacySchema(client) {
     await client.query(await readFile(LEGACY_SCHEMA_PATH, "utf8"));
+}
+
+/** The schema as version 1 deployed, for exercising an upgrade in place. */
+export async function applyV1Schema(client) {
+    await client.query(await readFile(V1_SCHEMA_PATH, "utf8"));
+    await client.query(`
+        CREATE TABLE schema_migrations (version INT PRIMARY KEY, name TEXT NOT NULL);
+        INSERT INTO schema_migrations VALUES (1, '0001_canonical_schema');
+    `);
 }
 
 export function runServerNode(script, suffix, args = []) {

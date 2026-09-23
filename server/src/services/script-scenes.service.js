@@ -11,7 +11,8 @@ import { HttpError } from "../utils/http-error.js";
 const SCENE_NOT_FOUND = "Script scene annotation not found";
 const SEARCH_RESULT_LIMIT = 500;
 const MAX_INT = 2_147_483_647;
-const MAX_PAGE_OR_LINE = 100_000;
+const MAX_PAGE = 300;
+const MAX_LINE = 100_000;
 const TAXONOMY_TAGS = new Set(SCRIPT_TAG_CATEGORIES.flatMap((category) => category.tags.map((tag) => tag.value)));
 
 const INVALID_BODY = {
@@ -19,7 +20,7 @@ const INVALID_BODY = {
         "Invalid body. start_time_seconds and end_time_seconds must be integers between 0 and 2147483647 where end >= start.",
     scriptLocation: "Invalid body. script_location must contain start and end scene anchors.",
     sceneAnchor:
-        "Invalid body. Each scene anchor needs a whole page from 1 to 100000, a whole line from 0 to 100000, finite top and bottom, and text.",
+        `Invalid body. Each scene anchor needs a whole page from 1 to ${MAX_PAGE}, a whole line from 0 to ${MAX_LINE}, finite top and bottom, and text.`,
     reversedPair: "Invalid body. The start anchor must come before or on the same line as the end anchor.",
     sceneText: "Invalid body. scene_text must be a non-empty string.",
     rawText: "Invalid body. raw_text must be a non-empty string.",
@@ -142,10 +143,10 @@ function readAnchor(value) {
     if (
         !Number.isInteger(value.page) ||
         value.page < 1 ||
-        value.page > MAX_PAGE_OR_LINE ||
+        value.page > MAX_PAGE ||
         !Number.isInteger(value.line) ||
         value.line < 0 ||
-        value.line > MAX_PAGE_OR_LINE ||
+        value.line > MAX_LINE ||
         !Number.isFinite(value.top) ||
         !Number.isFinite(value.bottom) ||
         typeof value.text !== "string"

@@ -10,13 +10,14 @@ export function getScript(movieId, scriptId) {
 }
 
 /**
- * Attaches an uploaded script to the film. Upload progress belongs to the
- * film-save module, so attachment can be retried without another upload.
+ * Attaches an uploaded script to the film, with the page count read from the
+ * PDF. Upload progress belongs to the film-save module, so attachment can be
+ * retried without another upload.
  */
-export async function saveScript({ movieId, key }) {
+export async function saveScript({ movieId, key, pageCount }) {
   return req(`/movies/${encodeURIComponent(movieId)}/scripts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ s3_key: key }),
+    body: JSON.stringify({ s3_key: key, page_count: pageCount }),
   });
 }

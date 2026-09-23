@@ -1,3 +1,7 @@
+-- The schema as version 1 was actually deployed, frozen here so the migration
+-- tests can upgrade a realistic old database. 0001_canonical_schema.sql is kept
+-- current with the live schema instead, so it cannot serve as this baseline.
+
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE TABLE movies (
@@ -18,29 +22,33 @@ CREATE TABLE annotations (
   time_seconds INT NOT NULL CHECK (time_seconds >= 0),
   image_key TEXT,
   thumb_key TEXT,
-  CONSTRAINT annotations_movie_time_unique UNIQUE (movie_id, time_seconds)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_annotations_movie_time ON annotations(movie_id, time_seconds);
 
 CREATE TABLE scripts (
   id UUID PRIMARY KEY,
-  movie_id UUID NOT NULL UNIQUE REFERENCES movies(id) ON DELETE CASCADE,
+  movie_id UUID NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
   s3_key TEXT NOT NULL,
-  page_count INT NOT NULL CHECK (page_count BETWEEN 1 AND 300)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX idx_scripts_movie_id_unique ON scripts(movie_id);
 
 CREATE TABLE captured_scenes (
   id UUID PRIMARY KEY,
   script_id UUID NOT NULL REFERENCES scripts(id) ON DELETE CASCADE,
   start_time_seconds INT NOT NULL CHECK (start_time_seconds >= 0),
   end_time_seconds INT NOT NULL CHECK (end_time_seconds >= start_time_seconds),
-  start_page INT NOT NULL CHECK (start_page BETWEEN 1 AND 300),
+  start_page INT NOT NULL CHECK (start_page BETWEEN 1 AND 100000),
   start_line INT NOT NULL CHECK (start_line BETWEEN 0 AND 100000),
   start_top DOUBLE PRECISION NOT NULL
     CHECK (start_top > '-Infinity'::float8 AND start_top < 'Infinity'::float8),
   start_bottom DOUBLE PRECISION NOT NULL
     CHECK (start_bottom > '-Infinity'::float8 AND start_bottom < 'Infinity'::float8),
   start_text TEXT NOT NULL,
-  end_page INT NOT NULL CHECK (end_page BETWEEN 1 AND 300),
+  end_page INT NOT NULL CHECK (end_page BETWEEN 1 AND 100000),
   end_line INT NOT NULL CHECK (end_line BETWEEN 0 AND 100000),
   end_top DOUBLE PRECISION NOT NULL
     CHECK (end_top > '-Infinity'::float8 AND end_top < 'Infinity'::float8),

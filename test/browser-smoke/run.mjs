@@ -281,7 +281,8 @@ try {
     "INSERT INTO movies(id, title, director, year, runtime_minutes) VALUES ($1, $2, $3, $4, $5)",
     [movieId, "Browser smoke film", "Synthetic Director", 2026, 120]
   );
-  await database.query("INSERT INTO scripts(id, movie_id, s3_key) VALUES ($1, $2, $3)", [
+  // make-pdf.mjs builds the synthetic screenplay with three pages.
+  await database.query("INSERT INTO scripts(id, movie_id, s3_key, page_count) VALUES ($1, $2, $3, 3)", [
     scriptId,
     movieId,
     "scripts/smoke/script.pdf",

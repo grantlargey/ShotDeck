@@ -46,11 +46,11 @@ describe("script location presentation", () => {
   });
 
   it("validates the complete canonical anchor contract in one predicate", () => {
-    expect(isValidScriptLocation(location([1, 0], [100000, 100000]))).toBe(true);
+    expect(isValidScriptLocation(location([1, 0], [300, 100000]))).toBe(true);
 
     for (const invalid of [
       { start: anchor(0, 0), end: anchor(1, 1) },
-      { start: anchor(1, 0), end: anchor(100001, 1) },
+      { start: anchor(1, 0), end: anchor(301, 1) },
       { start: anchor(1, 0), end: anchor(1, 100001) },
       { start: anchor(1, 0), end: anchor(1, 1, { text: null }) },
       { start: anchor(1, 0), end: anchor(1, 1, { top: Number.NaN }) },

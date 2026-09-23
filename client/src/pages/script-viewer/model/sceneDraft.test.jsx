@@ -278,7 +278,7 @@ describe("capture and canonical save contract", () => {
   });
 
   it.each([
-    ["page above the contract cap", { end: { page: 100001 } }],
+    ["page above the contract cap", { end: { page: 301 } }],
     ["line above the contract cap", { end: { line: 100001 } }],
     ["non-string anchor text", { end: { text: null } }],
     ["non-finite geometry", { end: { top: Number.NaN } }],

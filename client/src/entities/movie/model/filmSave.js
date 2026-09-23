@@ -5,21 +5,23 @@ import { uploadMediaFile } from "@/shared/api/uploads.js";
 import { ValidationError } from "@/shared/lib/errors.js";
 import { buildMovieSavePayload } from "./movieForms.js";
 
-const PREFIX = "scriptdeck:film-save:v1:";
+const PREFIX = "scriptdeck:film-save:v2:";
 const STORAGE_ERROR = "Unable to store film-save recovery. Allow site storage and try again.";
 const CHANGED_ERROR = "This film save changed in another page. Reload before continuing.";
+const MAX_SCRIPT_PAGES = 300;
 
 function readJob(value) {
   if (!value) return null;
   const job = JSON.parse(value);
   if (
-    job.version !== 1 || typeof job.movieId !== "string" || typeof job.created !== "boolean" ||
+    job.version !== 2 || typeof job.movieId !== "string" || typeof job.created !== "boolean" ||
     (job.form !== null && (typeof job.form !== "object" || Array.isArray(job.form))) ||
     !["cover", "script"].every((kind) => job[kind] === null || (
       typeof job[kind]?.uploadId === "string" && typeof job[kind]?.fingerprint === "string" &&
       typeof job[kind]?.name === "string" && typeof job[kind]?.attached === "boolean" &&
       (job[kind]?.key === null || typeof job[kind]?.key === "string")
-    ))
+    )) ||
+    (job.script !== null && !Number.isInteger(job.script.pageCount))
   ) throw new Error("Invalid film-save recovery record");
   return job;
 }
@@ -35,6 +37,43 @@ async function fingerprint(file) {
   });
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return `${file.type}:${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+// pdf.js is imported on demand, so visitors who never attach a script never
+// download the renderer.
+async function readPdfPageCount(file) {
+  const [pdfjs, worker] = await Promise.all([
+    import("pdfjs-dist"),
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+  ]);
+  pdfjs.GlobalWorkerOptions.workerSrc ||= worker.default;
+
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  try {
+    return (await task.promise).numPages;
+  } finally {
+    task.destroy().catch(() => {});
+  }
+}
+
+// A script's length is read from the PDF before it is uploaded, so the saved
+// row always records it — even when the save is finished from a later session
+// that no longer holds the file. The API holds page counts to the same ceiling;
+// checking it here names the real problem instead of surfacing a 400.
+async function scriptPageCount(file) {
+  let pageCount;
+  try {
+    pageCount = await readPdfPageCount(file);
+  } catch {
+    pageCount = 0;
+  }
+  if (!Number.isInteger(pageCount) || pageCount < 1) {
+    throw new ValidationError("That script PDF could not be read. Choose a different file.");
+  }
+  if (pageCount > MAX_SCRIPT_PAGES) {
+    throw new ValidationError(`A script can be at most ${MAX_SCRIPT_PAGES} pages. That PDF has ${pageCount}.`);
+  }
+  return pageCount;
 }
 
 function createSave({ movieId, ownerId }) {
@@ -133,8 +172,9 @@ function createSave({ movieId, ownerId }) {
       for (const [kind, file] of [["cover", coverFile], ["script", scriptFile]]) {
         if (file) selected[kind] = { file, fingerprint: await fingerprint(file) };
       }
+      if (selected.script) selected.script.pageCount = await scriptPageCount(scriptFile);
       job ??= {
-        version: 1, movieId: movieId || crypto.randomUUID(), created: Boolean(movieId),
+        version: 2, movieId: movieId || crypto.randomUUID(), created: Boolean(movieId),
         form: null, creationPayload: null, savedPayload: null, cover: null, script: null,
       };
       job.form = nextForm ? { ...nextForm } : null;
@@ -144,6 +184,7 @@ function createSave({ movieId, ownerId }) {
           job[kind] = {
             name: selectedFile.file.name, fingerprint: selectedFile.fingerprint,
             uploadId: crypto.randomUUID(), key: null, attached: false,
+            ...(kind === "script" ? { pageCount: selectedFile.pageCount } : {}),
           };
         }
       }
@@ -185,7 +226,7 @@ function createSave({ movieId, ownerId }) {
         if (kind === "cover") {
           await updateMovieCover(job.movieId, media.key);
         } else {
-          script = await saveScript({ movieId: job.movieId, key: media.key });
+          script = await saveScript({ movieId: job.movieId, key: media.key, pageCount: media.pageCount });
         }
         media.attached = true;
         checkpoint();

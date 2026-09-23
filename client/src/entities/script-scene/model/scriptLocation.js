@@ -9,6 +9,11 @@
  * only on unsaved drafts and return no page range or scroll target.
  */
 
+// The bounds the API holds anchors to: a page within a screenplay's length,
+// and a line within a page.
+const MAX_PAGE = 300;
+const MAX_LINE = 100000;
+
 /** Orders anchors by `(page, line)`: negative when `left` comes first, zero on the same line. */
 export function compareAnchors(left, right) {
   return left.page - right.page || left.line - right.line;
@@ -20,10 +25,10 @@ function isSceneAnchor(anchor) {
     anchor !== null &&
     Number.isInteger(anchor.page) &&
     anchor.page >= 1 &&
-    anchor.page <= 100000 &&
+    anchor.page <= MAX_PAGE &&
     Number.isInteger(anchor.line) &&
     anchor.line >= 0 &&
-    anchor.line <= 100000 &&
+    anchor.line <= MAX_LINE &&
     Number.isFinite(anchor.top) &&
     Number.isFinite(anchor.bottom) &&
     typeof anchor.text === "string"
