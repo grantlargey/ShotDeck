@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { withTransaction } from "../db.js";
 import { createPresignedGetUrl } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
 import { ensureMovieExists } from "./movies.service.js";
@@ -28,8 +29,13 @@ async function withScriptViewUrl(row) {
  * Saving a movie's script replaces the file of the movie's one script row. The
  * page count comes from the browser, which reads the PDF before uploading it;
  * the API never parses the file.
+ *
+ * A different file makes every captured scene's anchors point into a document
+ * that no longer exists, so replacing the PDF deletes the script's scenes and
+ * their tags. Saving the same key again is the attachment retry the film-save
+ * journal performs after a lost response, and keeps them.
  */
-export async function saveScript(db, movieId, body) {
+export async function saveScript(pool, movieId, body) {
     const { s3_key, page_count } = body || {};
     const trimmedKey = typeof s3_key === "string" ? s3_key.trim() : "";
     const pages = Number.isInteger(page_count) ? page_count : 0;
@@ -38,19 +44,30 @@ export async function saveScript(db, movieId, body) {
         throw new HttpError(400, "Invalid body. Expected { s3_key:string, page_count:int }");
     }
 
-    await ensureMovieExists(db, movieId);
+    await ensureMovieExists(pool, movieId);
 
-    const result = await db.query(
-        `
-        INSERT INTO scripts (id, movie_id, s3_key, page_count)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (movie_id)
-        DO UPDATE SET s3_key = EXCLUDED.s3_key, page_count = EXCLUDED.page_count
-        RETURNING *
-      `,
-        [uuidv4(), movieId, trimmedKey, pages]
-    );
-    return withScriptViewUrl(result.rows[0]);
+    const row = await withTransaction(pool, async (client) => {
+        const existing = await client.query("SELECT id, s3_key FROM scripts WHERE movie_id = $1 FOR UPDATE", [
+            movieId,
+        ]);
+        const previous = existing.rows[0];
+        if (previous && previous.s3_key !== trimmedKey) {
+            await client.query("DELETE FROM captured_scenes WHERE script_id = $1", [previous.id]);
+        }
+
+        const result = await client.query(
+            `
+            INSERT INTO scripts (id, movie_id, s3_key, page_count)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (movie_id)
+            DO UPDATE SET s3_key = EXCLUDED.s3_key, page_count = EXCLUDED.page_count
+            RETURNING *
+          `,
+            [uuidv4(), movieId, trimmedKey, pages]
+        );
+        return result.rows[0];
+    });
+    return withScriptViewUrl(row);
 }
 
 export async function listScripts(db, movieId) {

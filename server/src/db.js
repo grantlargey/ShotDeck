@@ -28,3 +28,19 @@ export const pool = new pg.Pool({
 pool.on("error", (err) => {
   console.error("Idle database connection error:", err.message);
 });
+
+/** Runs `work` in one transaction, rolling back and rethrowing if it throws. */
+export async function withTransaction(pool, work) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}

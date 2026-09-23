@@ -6,6 +6,8 @@ import {
     assertSameRecords,
     createMovie,
     createMovieWithScript,
+    createScene,
+    scenesPath,
     saveScript,
     signedUrlPattern,
 } from "./helpers/fixtures.js";
@@ -53,6 +55,35 @@ describe("saving a movie's script", () => {
         assert.equal(response.body.s3_key, `scripts/${movie.id}/v2.pdf`);
         assert.equal(response.body.page_count, 97);
         assert.notEqual(first.page_count, 97);
+    });
+
+    test("a different file deletes the script's captured scenes; the same file keeps them", async () => {
+        const place = await createMovieWithScript(api, cookie);
+        const scene = await createScene(api, cookie, place);
+        const path = scenesPath(place);
+        assert.equal((await api.get(path)).body.length, 1);
+
+        // An attachment retry sends the key it already saved, and must not
+        // destroy the tagging done since.
+        const retry = await api.post(`/movies/${place.movie.id}/scripts`, {
+            cookie,
+            body: { s3_key: place.script.s3_key, page_count: 120 },
+        });
+        assert.equal(retry.status, 201, retry.text);
+        assert.deepEqual(
+            (await api.get(path)).body.map((row) => row.id),
+            [scene.id]
+        );
+
+        // A replacement leaves every anchor pointing into a document that is no
+        // longer there, so the scenes go with it.
+        const replaced = await api.post(`/movies/${place.movie.id}/scripts`, {
+            cookie,
+            body: { s3_key: `scripts/${place.movie.id}/v2.pdf`, page_count: 97 },
+        });
+        assert.equal(replaced.status, 201, replaced.text);
+        assert.equal(replaced.body.id, place.script.id);
+        assert.deepEqual((await api.get(path)).body, []);
     });
 
     test("requires a key under scripts/ and a whole page count, checked before the movie is looked up", async () => {

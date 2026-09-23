@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { withTransaction } from "../db.js";
 import { SCRIPT_TAG_CATEGORIES } from "../domain/script-tags.js";
 import { HttpError } from "../utils/http-error.js";
 
@@ -327,19 +328,4 @@ async function writeScene(db, { scriptId, sceneId, input }) {
         [id, ...values]
     );
     return id;
-}
-
-async function withTransaction(pool, work) {
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
-        const result = await work(client);
-        await client.query("COMMIT");
-        return result;
-    } catch (error) {
-        await client.query("ROLLBACK").catch(() => {});
-        throw error;
-    } finally {
-        client.release();
-    }
 }

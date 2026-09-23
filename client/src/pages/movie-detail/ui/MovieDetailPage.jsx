@@ -189,6 +189,16 @@ export default function MovieDetailPage() {
 
   async function saveScriptPdf() {
     if (!scriptFile) return;
+    // Scene anchors point into the PDF they were captured from, so replacing it
+    // deletes the script's captured scenes and the tagging on them.
+    if (
+      script &&
+      !window.confirm(
+        "Replace this script? Every scene captured from it, and the tags on those scenes, will be deleted. This can't be undone."
+      )
+    ) {
+      return;
+    }
     setErr("");
 
     try {
