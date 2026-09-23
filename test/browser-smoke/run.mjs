@@ -473,8 +473,8 @@ try {
   const grid = page.getByRole("region", { name: /^Scenes in this script/ });
   await grid.getByText("00:10:00 – 00:11:00", { exact: true }).click();
   assert.equal(await panel.getByRole("textbox", { name: "Start", exact: true }).inputValue(), "00:10:00");
-  await panel.getByText("Start · p. 1 · line 1", { exact: true }).waitFor();
-  await panel.getByText("End · p. 1 · line 8", { exact: true }).waitFor();
+  await panel.getByText("Start anchor", { exact: true }).locator("..").getByText("Page 1", { exact: true }).waitFor();
+  await panel.getByText("End anchor", { exact: true }).locator("..").getByText("Page 1", { exact: true }).waitFor();
   pass("reload restores canonical text, timing, and script location from the real API");
 
   await panel.getByRole("textbox", { name: "End", exact: true }).fill("00:11:06");
@@ -501,7 +501,7 @@ try {
   await setTiming(panel, "00:10:30", "00:11:30");
   const writesBeforeTimingRefusal = sceneWrites.length;
   await panel.getByRole("button", { name: "Save scene", exact: true }).click();
-  await page.getByText(/film timing overlaps the scene at 00:10:00 – 00:11:06/).waitFor();
+  await page.getByText(/film timing shares a second with the scene at 00:10:00 – 00:11:06/).waitFor();
   await page.waitForTimeout(250);
   assert.equal(sceneWrites.length, writesBeforeTimingRefusal);
   pass("the client refuses a film-timing overlap before sending a request");
