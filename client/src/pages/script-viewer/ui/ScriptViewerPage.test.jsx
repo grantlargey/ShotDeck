@@ -638,8 +638,8 @@ describe("overlap, request races and navigation", () => {
     await renderViewer(ScriptViewerRoute, { scenes: [later, earlier] });
     const cards = within(savedScenesGrid()).getAllByRole("button");
     expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
-      "Night Diner, Page 1, EARLIER LOCATION",
-      "Night Diner, Page 3, LATER LOCATION",
+      "Night Diner, EARLIER LOCATION",
+      "Night Diner, LATER LOCATION",
     ]);
     expect(fakeApi.listScriptScenes).toHaveBeenCalledWith("m1", "s1");
   });
@@ -693,7 +693,8 @@ describe("delete races, visitor navigation and load failures", () => {
     expect(queryAnnotator()).toBeNull();
     clickSceneBar(2, otherScene.id);
     const dialog = within(screen.getByRole("dialog"));
-    expect(dialog.getByText("Page 2 · 00:05:00 – 00:06:00")).toBeTruthy();
+    // A visitor reads film timing alone; PDF page numbers stay on admin surfaces.
+    expect(dialog.getByText("00:05:00 – 00:06:00")).toBeTruthy();
     click(dialog.getByRole("button", { name: "Show in script" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(

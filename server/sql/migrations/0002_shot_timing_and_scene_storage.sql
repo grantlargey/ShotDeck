@@ -47,21 +47,18 @@ ALTER TABLE annotations DROP COLUMN IF EXISTS created_at;
 ALTER TABLE annotations
   ADD CONSTRAINT annotations_movie_time_unique UNIQUE (movie_id, time_seconds);
 
--- A script's page count now travels with its row, so the film's pages can state
--- the screenplay's length without downloading the PDF. Nothing recorded when
--- scripts predating this column were attached, and SQL cannot read a PDF, so
--- they are backfilled with 1 and carry that until the script is saved again.
-ALTER TABLE scripts DROP COLUMN IF EXISTS created_at;
+-- A script row keeps only what identifies its file. Its creation timestamp was
+-- never read, and neither was a page count: the viewer takes a screenplay's
+-- length from the PDF it has already loaded, so storing it said nothing the
+-- file did not. Dropping it here also clears the column from any database that
+-- built the canonical schema while it still had one.
 ALTER TABLE scripts
-  ADD COLUMN IF NOT EXISTS page_count INT NOT NULL DEFAULT 1;
-ALTER TABLE scripts ALTER COLUMN page_count DROP DEFAULT;
+  DROP COLUMN IF EXISTS created_at,
+  DROP COLUMN IF EXISTS page_count;
 
--- Page counts and scene anchors are both held to the length of a screenplay
--- rather than an arbitrary ceiling. Rebuild the checks by name so existing
--- databases are tightened and fresh canonical schemas stay unchanged.
-ALTER TABLE scripts DROP CONSTRAINT IF EXISTS scripts_page_count_check;
-ALTER TABLE scripts
-  ADD CONSTRAINT scripts_page_count_check CHECK (page_count BETWEEN 1 AND 300);
+-- Scene anchors are held to the length of a screenplay rather than an arbitrary
+-- ceiling. Rebuild the checks by name so existing databases are tightened and
+-- fresh canonical schemas stay unchanged.
 ALTER TABLE captured_scenes DROP CONSTRAINT IF EXISTS captured_scenes_start_page_check;
 ALTER TABLE captured_scenes
   ADD CONSTRAINT captured_scenes_start_page_check CHECK (start_page BETWEEN 1 AND 300);

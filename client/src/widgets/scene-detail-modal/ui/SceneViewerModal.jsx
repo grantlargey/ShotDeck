@@ -3,7 +3,6 @@ import {
   displayScriptSceneText,
 } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
-import { formatScenePages } from "@/entities/script-scene/model/scriptLocation.js";
 import { groupScriptTagsByCategory } from "@server/domain/script-tags.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatMomentToHms } from "@/shared/lib/time.js";
@@ -117,13 +116,9 @@ export function SceneViewerModal({
 
   let meta = "Script";
   if (showStill) {
-    meta = still
-      ? [`Film still · ${formatMomentToHms(still.time_seconds)}`, scene && formatScenePages(scene)]
-          .filter(Boolean)
-          .join(" · ")
-      : "Film still";
+    meta = still ? `Film still · ${formatMomentToHms(still.time_seconds)}` : "Film still";
   } else if (scene) {
-    meta = [formatScenePages(scene), formatFilmTiming(scene)].filter(Boolean).join(" · ");
+    meta = formatFilmTiming(scene);
   }
 
   let counter = null;

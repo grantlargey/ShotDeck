@@ -20,8 +20,7 @@ function readJob(value) {
       typeof job[kind]?.uploadId === "string" && typeof job[kind]?.fingerprint === "string" &&
       typeof job[kind]?.name === "string" && typeof job[kind]?.attached === "boolean" &&
       (job[kind]?.key === null || typeof job[kind]?.key === "string")
-    )) ||
-    (job.script !== null && !Number.isInteger(job.script.pageCount))
+    ))
   ) throw new Error("Invalid film-save recovery record");
   return job;
 }
@@ -56,11 +55,10 @@ async function readPdfPageCount(file) {
   }
 }
 
-// A script's length is read from the PDF before it is uploaded, so the saved
-// row always records it — even when the save is finished from a later session
-// that no longer holds the file. The API holds page counts to the same ceiling;
-// checking it here names the real problem instead of surfacing a 400.
-async function scriptPageCount(file) {
+// Nothing stores a script's length, but reading it before the upload refuses a
+// PDF the viewer could not open, and one longer than a scene anchor's page can
+// address, while the file chooser is still in front of the admin.
+async function checkScriptPdf(file) {
   let pageCount;
   try {
     pageCount = await readPdfPageCount(file);
@@ -73,7 +71,6 @@ async function scriptPageCount(file) {
   if (pageCount > MAX_SCRIPT_PAGES) {
     throw new ValidationError(`A script can be at most ${MAX_SCRIPT_PAGES} pages. That PDF has ${pageCount}.`);
   }
-  return pageCount;
 }
 
 function createSave({ movieId, ownerId }) {
@@ -172,7 +169,7 @@ function createSave({ movieId, ownerId }) {
       for (const [kind, file] of [["cover", coverFile], ["script", scriptFile]]) {
         if (file) selected[kind] = { file, fingerprint: await fingerprint(file) };
       }
-      if (selected.script) selected.script.pageCount = await scriptPageCount(scriptFile);
+      if (selected.script) await checkScriptPdf(scriptFile);
       job ??= {
         version: 2, movieId: movieId || crypto.randomUUID(), created: Boolean(movieId),
         form: null, creationPayload: null, savedPayload: null, cover: null, script: null,
@@ -184,7 +181,6 @@ function createSave({ movieId, ownerId }) {
           job[kind] = {
             name: selectedFile.file.name, fingerprint: selectedFile.fingerprint,
             uploadId: crypto.randomUUID(), key: null, attached: false,
-            ...(kind === "script" ? { pageCount: selectedFile.pageCount } : {}),
           };
         }
       }
@@ -226,7 +222,7 @@ function createSave({ movieId, ownerId }) {
         if (kind === "cover") {
           await updateMovieCover(job.movieId, media.key);
         } else {
-          script = await saveScript({ movieId: job.movieId, key: media.key, pageCount: media.pageCount });
+          script = await saveScript({ movieId: job.movieId, key: media.key });
         }
         media.attached = true;
         checkpoint();

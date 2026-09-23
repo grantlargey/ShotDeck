@@ -266,7 +266,7 @@ describe("loading the project's script", () => {
     expect(await screen.findByRole("button", { name: "Open script" })).toBeTruthy();
     expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
     expect(api.saveScript).toHaveBeenCalledTimes(2);
-    expect(api.saveScript).toHaveBeenLastCalledWith({ movieId: "m1", key: "scripts/m1/upload.pdf", pageCount: 121 });
+    expect(api.saveScript).toHaveBeenLastCalledWith({ movieId: "m1", key: "scripts/m1/upload.pdf" });
   });
 
   it("consumes the one script object and opens it", async () => {

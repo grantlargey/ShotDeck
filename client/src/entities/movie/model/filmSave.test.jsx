@@ -128,7 +128,7 @@ describe("film-save recovery through the caller's interface", () => {
     expect(remote.createMovie).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses an unreadable script before any write, then sends the page count it reads", async () => {
+  it("refuses an unreadable script before any write, then accepts a readable one", async () => {
     pdfUnreadable();
     const hook = open();
     const refused = await submit(hook, { form, scriptFile: file() });
@@ -138,7 +138,7 @@ describe("film-save recovery through the caller's interface", () => {
 
     pdfPages(121);
     expect((await submit(hook, { form, scriptFile: file() })).error).toBeUndefined();
-    expect(remote.saveScript.mock.calls[0][0].pageCount).toBe(121);
+    expect(remote.saveScript).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a PDF longer than a screenplay before any write", async () => {
@@ -150,7 +150,7 @@ describe("film-save recovery through the caller's interface", () => {
     expect(remote.uploadMediaFile).not.toHaveBeenCalled();
   });
 
-  it("keeps a script's page count for an attachment retry that no longer holds the file", async () => {
+  it("finishes an attachment retry from a later session that no longer holds the file", async () => {
     pdfPages(121);
     remote.saveScript.mockRejectedValueOnce(new Error("attachment response lost"));
     const first = open();
@@ -161,7 +161,8 @@ describe("film-save recovery through the caller's interface", () => {
     const recovered = open({ movieId });
     pdf.getDocument.mockImplementation(() => { throw new Error("the file is gone"); });
     expect((await submit(recovered, {})).error).toBeUndefined();
-    expect(remote.saveScript.mock.calls[1][0].pageCount).toBe(121);
+    // The retry re-attaches the object already uploaded, without reading the PDF.
+    expect(remote.saveScript.mock.calls[1][0].key).toBe(remote.saveScript.mock.calls[0][0].key);
   });
 
   it("allocates a new upload when replacement content has the same filename", async () => {

@@ -14,10 +14,10 @@ export function getScript(movieId, scriptId) {
  * PDF. Upload progress belongs to the film-save module, so attachment can be
  * retried without another upload.
  */
-export async function saveScript({ movieId, key, pageCount }) {
+export async function saveScript({ movieId, key }) {
   return req(`/movies/${encodeURIComponent(movieId)}/scripts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ s3_key: key, page_count: pageCount }),
+    body: JSON.stringify({ s3_key: key }),
   });
 }

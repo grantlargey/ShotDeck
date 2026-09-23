@@ -58,13 +58,9 @@ describe("the numbered migration runner", () => {
             );
             assert.deepEqual(moment.rows, [{ data_type: "numeric", numeric_scale: 1 }]);
             assert.equal(column("scripts", "created_at"), undefined);
-            // Every script states its length, and nothing supplies a default for it.
-            assert.deepEqual(column("scripts", "page_count"), {
-                table_name: "scripts",
-                column_name: "page_count",
-                is_nullable: "NO",
-                column_default: null,
-            });
+            // A script row identifies its file and nothing else. The viewer
+            // takes a screenplay's length from the PDF it has already loaded.
+            assert.equal(column("scripts", "page_count"), undefined);
             // A captured scene keeps only what can't be recomputed from the PDF.
             const sceneColumns = await db.query(
                 `SELECT column_name FROM information_schema.columns
@@ -110,8 +106,8 @@ describe("the numbered migration runner", () => {
                 named("captured_scenes_no_script_location_overlap").def,
                 /numrange\(\(\(\(start_page\)::numeric \* \(1000\)::numeric\) \+ start_y\)/
             );
-            // Page counts and scene anchors share one screenplay-length ceiling.
-            for (const name of ["scripts_page_count_check", "captured_scenes_start_page_check", "captured_scenes_end_page_check"]) {
+            // Scene anchors are held to a screenplay's length.
+            for (const name of ["captured_scenes_start_page_check", "captured_scenes_end_page_check"]) {
                 assert.match(named(name).def, /<= 300\)/, name);
             }
         } finally {
@@ -206,7 +202,7 @@ describe("the numbered migration runner", () => {
         }
     });
 
-    test("gives scripts saved before page counts a placeholder, and holds later ones to the page bounds", async () => {
+    test("carries a script over with only the columns that identify its file", async () => {
         const db = await connectDatabase("migrate_scripts");
         const movieId = randomUUID();
         const scriptId = randomUUID();
@@ -217,26 +213,11 @@ describe("the numbered migration runner", () => {
 
             const run = runServerNode("src/migrate.js", "migrate_scripts");
             assert.equal(run.status, 0, run.stderr);
+            // Neither the creation timestamp nor a page count survives, because
+            // nothing ever read either one back.
             assert.deepEqual((await db.query("SELECT * FROM scripts")).rows, [
-                { id: scriptId, movie_id: movieId, s3_key: "scripts/film/draft.pdf", page_count: 1 },
+                { id: scriptId, movie_id: movieId, s3_key: "scripts/film/draft.pdf" },
             ]);
-
-            // A second film, so these inserts can only fail on the page count.
-            const otherId = randomUUID();
-            await db.query("INSERT INTO movies (id, title, director, year, runtime_minutes) VALUES ($1, 'Other', 'Director', 2024, 90)", [otherId]);
-            await assert.rejects(
-                db.query("INSERT INTO scripts (id, movie_id, s3_key) VALUES ($1, $2, 'scripts/other/v2.pdf')", [randomUUID(), otherId]),
-                { code: "23502", column: "page_count" }
-            );
-            for (const pages of [0, 301]) {
-                await assert.rejects(
-                    db.query(
-                        "INSERT INTO scripts (id, movie_id, s3_key, page_count) VALUES ($1, $2, 'scripts/other/v2.pdf', $3)",
-                        [randomUUID(), otherId, pages]
-                    ),
-                    { code: "23514" }
-                );
-            }
         } finally {
             await db.end();
         }

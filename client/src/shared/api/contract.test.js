@@ -62,12 +62,12 @@ describe("script endpoints", () => {
     ]);
   });
 
-  it("attaches an uploaded script with the canonical key and page-count body", async () => {
-    await saveScript({ movieId: "movie/1", key: "scripts/movie-1.pdf", pageCount: 118 });
+  it("attaches an uploaded script with the canonical key", async () => {
+    await saveScript({ movieId: "movie/1", key: "scripts/movie-1.pdf" });
     expect(dependencies.req).toHaveBeenCalledWith("/movies/movie%2F1/scripts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ s3_key: "scripts/movie-1.pdf", page_count: 118 }),
+      body: JSON.stringify({ s3_key: "scripts/movie-1.pdf" }),
     });
   });
 });

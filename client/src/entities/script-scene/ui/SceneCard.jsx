@@ -10,7 +10,6 @@ import {
   safeScriptSceneTags,
 } from "../model/capturedScene.js";
 import { formatFilmTiming } from "../model/filmTiming.js";
-import { formatScenePages } from "../model/scriptLocation.js";
 import { getScriptTagLabel } from "@server/domain/script-tags.js";
 import styles from "./SceneCard.module.css";
 
@@ -46,7 +45,6 @@ export function SceneCard({
   const imageKey = still?.thumb_key || still?.image_key || null;
   const imageUrl = useSignedMediaUrl(imageKey);
   const cardTitle = title ?? (scene?.movie_title || "Unknown title");
-  const pages = formatScenePages(scene);
 
   function handleKeyDown(event) {
     if (event.target !== event.currentTarget) return;
@@ -62,7 +60,7 @@ export function SceneCard({
       className={cx(styles.card, split && styles.split, selected && styles.selected)}
       aria-pressed={onKeyActivate ? selected : undefined}
       aria-haspopup={hasPopup ? "dialog" : undefined}
-      aria-label={[cardTitle, pages, heading].filter(Boolean).join(", ")}
+      aria-label={[cardTitle, heading].filter(Boolean).join(", ")}
       title={tooltip}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -92,7 +90,6 @@ export function SceneCard({
       <div className={styles.meta}>
         <div className={styles.titleRow}>
           <span className={styles.title}>{cardTitle}</span>
-          {pages && <span className={styles.pages}>{pages}</span>}
         </div>
         <div className={styles.subRow}>
           <span>{formatFilmTiming(scene)}</span>

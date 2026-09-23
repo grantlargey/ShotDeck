@@ -27,8 +27,7 @@ CREATE TABLE annotations (
 CREATE TABLE scripts (
   id UUID PRIMARY KEY,
   movie_id UUID NOT NULL UNIQUE REFERENCES movies(id) ON DELETE CASCADE,
-  s3_key TEXT NOT NULL,
-  page_count INT NOT NULL CHECK (page_count BETWEEN 1 AND 300)
+  s3_key TEXT NOT NULL
 );
 
 CREATE TABLE captured_scenes (

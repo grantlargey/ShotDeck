@@ -55,7 +55,13 @@ export function scenePageRange(scene) {
   return { pageStart: location.start.page, pageEnd: location.end.page };
 }
 
-/** "Page 3" or "Pages 3–4", or "" while an unsaved draft has incomplete anchors. */
+/**
+ * "Page 3" or "Pages 3–4", or "" while an unsaved draft has incomplete anchors.
+ * These are the PDF's page numbers, which a screenplay's own numbering doesn't
+ * match: title and preface pages sit in front of its page 1. They label the
+ * draft an admin is capturing, beside the anchors they came from, and are kept
+ * off anything a visitor reads.
+ */
 export function formatScenePages(scene) {
   const range = scenePageRange(scene);
   if (!range) return "";

@@ -9,9 +9,6 @@ import { ensureMovieExists } from "./movies.service.js";
  * owns script validation, the script SQL and the script response shape.
  */
 
-/** A screenplay's length, matching the page bounds scene anchors are held to. */
-const MAX_PAGE_COUNT = 300;
-
 /** The script row, with a signed view URL for its PDF or null when signing fails. */
 async function withScriptViewUrl(row) {
     if (!row.s3_key) return { ...row, script_url: null };
@@ -27,8 +24,8 @@ async function withScriptViewUrl(row) {
 
 /**
  * Saving a movie's script replaces the file of the movie's one script row. The
- * page count comes from the browser, which reads the PDF before uploading it;
- * the API never parses the file.
+ * API never parses the PDF; the browser reads whatever it needs from the file
+ * it already has.
  *
  * A different file makes every captured scene's anchors point into a document
  * that no longer exists, so replacing the PDF deletes the script's scenes and
@@ -36,12 +33,11 @@ async function withScriptViewUrl(row) {
  * journal performs after a lost response, and keeps them.
  */
 export async function saveScript(pool, movieId, body) {
-    const { s3_key, page_count } = body || {};
+    const { s3_key } = body || {};
     const trimmedKey = typeof s3_key === "string" ? s3_key.trim() : "";
-    const pages = Number.isInteger(page_count) ? page_count : 0;
 
-    if (!trimmedKey || !trimmedKey.startsWith("scripts/") || pages < 1 || pages > MAX_PAGE_COUNT) {
-        throw new HttpError(400, "Invalid body. Expected { s3_key:string, page_count:int }");
+    if (!trimmedKey || !trimmedKey.startsWith("scripts/")) {
+        throw new HttpError(400, "Invalid body. Expected { s3_key:string }");
     }
 
     await ensureMovieExists(pool, movieId);
@@ -57,13 +53,13 @@ export async function saveScript(pool, movieId, body) {
 
         const result = await client.query(
             `
-            INSERT INTO scripts (id, movie_id, s3_key, page_count)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO scripts (id, movie_id, s3_key)
+            VALUES ($1, $2, $3)
             ON CONFLICT (movie_id)
-            DO UPDATE SET s3_key = EXCLUDED.s3_key, page_count = EXCLUDED.page_count
+            DO UPDATE SET s3_key = EXCLUDED.s3_key
             RETURNING *
           `,
-            [uuidv4(), movieId, trimmedKey, pages]
+            [uuidv4(), movieId, trimmedKey]
         );
         return result.rows[0];
     });
