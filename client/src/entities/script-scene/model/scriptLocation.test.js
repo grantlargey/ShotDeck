@@ -8,8 +8,9 @@ import {
   sceneScrollTarget,
 } from "./scriptLocation.js";
 
+// A screenplay's leading is 12pt, so line N's baseline sits 12pt below line 0's.
 function anchor(page, line, fields = {}) {
-  return { page, line, top: 100 + line * 12, bottom: 110 + line * 12, text: `line ${line}`, ...fields };
+  return { page, y: 96 + line * 12, ...fields };
 }
 
 function location(start, end) {
@@ -21,10 +22,10 @@ function scene(id, start, end) {
 }
 
 describe("script location presentation", () => {
-  it("orders anchors by page then line", () => {
+  it("orders anchors by page then baseline", () => {
     expect(compareAnchors(anchor(2, 30), anchor(3, 0))).toBeLessThan(0);
     expect(compareAnchors(anchor(3, 4), anchor(3, 5))).toBeLessThan(0);
-    expect(compareAnchors(anchor(3, 5), anchor(3, 5, { top: 0 }))).toBe(0);
+    expect(compareAnchors(anchor(3, 5), anchor(3, 5))).toBe(0);
   });
 
   it("derives pages, labels and scroll target from the anchor pair", () => {
@@ -33,7 +34,7 @@ describe("script location presentation", () => {
     expect(scenePageRange(onePage)).toEqual({ pageStart: 3, pageEnd: 3 });
     expect(formatScenePages(onePage)).toBe("Page 3");
     expect(formatScenePages(severalPages)).toBe("Pages 3–5");
-    expect(sceneScrollTarget(severalPages)).toEqual({ page: 3, offsetPt: 100 });
+    expect(sceneScrollTarget(severalPages)).toEqual({ page: 3, offsetPt: 86.16 });
   });
 
   it("has no derived location for an incomplete unsaved draft", () => {
@@ -46,14 +47,15 @@ describe("script location presentation", () => {
   });
 
   it("validates the complete canonical anchor contract in one predicate", () => {
-    expect(isValidScriptLocation(location([1, 0], [300, 100000]))).toBe(true);
+    expect(isValidScriptLocation({ start: anchor(1, 0), end: { page: 300, y: 1000 } })).toBe(true);
 
     for (const invalid of [
       { start: anchor(0, 0), end: anchor(1, 1) },
       { start: anchor(1, 0), end: anchor(301, 1) },
-      { start: anchor(1, 0), end: anchor(1, 100001) },
-      { start: anchor(1, 0), end: anchor(1, 1, { text: null }) },
-      { start: anchor(1, 0), end: anchor(1, 1, { top: Number.NaN }) },
+      { start: anchor(1, 0), end: { page: 1, y: 1000.1 } },
+      { start: anchor(1, 0), end: { page: 1, y: -0.1 } },
+      { start: anchor(1, 0), end: anchor(1, 1, { y: Number.NaN }) },
+      { start: anchor(1, 0), end: { page: 1 } },
       { start: anchor(2, 0), end: anchor(1, 1) },
     ]) {
       expect(isValidScriptLocation(invalid)).toBe(false);
@@ -66,7 +68,7 @@ describe("findOverlappingScriptLocation", () => {
     return findOverlappingScriptLocation([other], draftLocation) === other;
   }
 
-  it("overlaps shared boundary lines and allows adjacent lines", () => {
+  it("overlaps shared boundary baselines and allows adjacent lines", () => {
     const other = scene("other", [2, 3], [2, 8]);
     expect(overlaps(other, location([2, 8], [3, 1]))).toBe(true);
     expect(overlaps(other, location([1, 20], [2, 3]))).toBe(true);

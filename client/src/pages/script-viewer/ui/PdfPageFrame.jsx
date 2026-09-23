@@ -1,15 +1,16 @@
 import { memo, useState } from "react";
 import { Page } from "react-pdf";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
-import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
+import { findLineAtY, lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./PdfPageFrame.module.css";
 
 const OVERLAY_CONTROL = "[data-overlay-control]";
 const LETTER_ASPECT_RATIO = 11 / 8.5;
 
-function AnchorMarker({ kind, anchor, scale, onRemove }) {
-  const y = (kind === "start" ? anchor.top : anchor.bottom) * scale;
+function AnchorMarker({ kind, anchor, pageIndex, scale, onRemove }) {
+  const box = lineBoxAt(anchor.y, findLineAtY(pageIndex, anchor.y, Infinity)?.fontSize);
+  const y = (kind === "start" ? box.top : box.bottom) * scale;
   const label = kind === "start" ? "Start" : "End";
 
   return (
@@ -179,8 +180,12 @@ export const PdfPageFrame = memo(function PdfPageFrame({
             );
           })}
 
-          {startAnchor && <AnchorMarker kind="start" anchor={startAnchor} scale={scale} onRemove={onRemoveAnchor} />}
-          {endAnchor && <AnchorMarker kind="end" anchor={endAnchor} scale={scale} onRemove={onRemoveAnchor} />}
+          {startAnchor && (
+            <AnchorMarker kind="start" anchor={startAnchor} pageIndex={pageIndex} scale={scale} onRemove={onRemoveAnchor} />
+          )}
+          {endAnchor && (
+            <AnchorMarker kind="end" anchor={endAnchor} pageIndex={pageIndex} scale={scale} onRemove={onRemoveAnchor} />
+          )}
         </div>
       )}
     </div>

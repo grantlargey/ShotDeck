@@ -81,47 +81,39 @@ export async function saveScript(api, cookie, movie, overrides = {}) {
 }
 
 /** A movie with its script, ready for captured scenes. */
-export async function createMovieWithScript(api, cookie) {
-    const movie = await createMovie(api, cookie);
+export async function createMovieWithScript(api, cookie, overrides = {}) {
+    const movie = await createMovie(api, cookie, overrides);
     return { movie, script: await saveScript(api, cookie, movie) };
 }
 
-/** A version-2 scene anchor pair, as the script viewer saves it. */
+/**
+ * A scene anchor pair, as the script viewer saves it. Anchors are baselines in
+ * PDF points; a screenplay's leading is 12pt, so line N sits 12pt below line 0.
+ */
 export function anchorPair({ startPage = 1, startLine = 0, endPage = startPage, endLine = startLine + 4 } = {}) {
     return {
-        start: {
-            page: startPage,
-            line: startLine,
-            top: 100 + startLine * 12,
-            bottom: 112 + startLine * 12,
-            text: "INT. NIGHT DINER - NIGHT",
-        },
-        end: {
-            page: endPage,
-            line: endLine,
-            top: 100 + endLine * 12,
-            bottom: 112 + endLine * 12,
-            text: "Mara pours the coffee.",
-        },
+        start: { page: startPage, y: 96 + startLine * 12 },
+        end: { page: endPage, y: 96 + endLine * 12 },
     };
 }
 
 const SCENE_TEXT = "## INT. NIGHT DINER - NIGHT\n\nMara pours the coffee.";
 
-// Each body gets its own lines, so scenes in one script share a line only when a
-// test passes the same script_location on purpose.
-let nextStartLine = 0;
+// Each body gets its own page, so scenes in one script share a location only
+// when a test passes the same script_location on purpose. Tests that build a
+// pair by hand use the low pages, so these start well above them.
+const FIRST_GENERATED_PAGE = 100;
+let nextStartPage = FIRST_GENERATED_PAGE;
 
 /** A captured-scene body shaped like the script viewer's save payload. */
 export function sceneBody(overrides = {}) {
-    const startLine = nextStartLine;
-    nextStartLine += 10;
+    const startPage = nextStartPage;
+    nextStartPage = nextStartPage >= 300 ? FIRST_GENERATED_PAGE : nextStartPage + 1;
     return {
         start_time_seconds: 60,
         end_time_seconds: 120,
-        script_location: anchorPair({ startLine }),
+        script_location: anchorPair({ startPage }),
         scene_text: SCENE_TEXT,
-        raw_text: "INT. NIGHT DINER - NIGHT\nMara pours the coffee.",
         tags: [TAGS.protagonist],
         ...overrides,
     };

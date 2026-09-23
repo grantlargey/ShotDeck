@@ -19,6 +19,7 @@ import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { isTypingTarget } from "@/shared/lib/keyboard.js";
+import { lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { CloseIcon } from "@/shared/ui/icons.jsx";
@@ -51,9 +52,9 @@ const RECAPTURE_LABELS = {
   revert: "Revert to captured text",
 };
 
-// Asked before saving stale text with the current anchors' location and raw text.
+// Asked before saving stale text with the current anchors' location.
 const STALE_SAVE_PROMPT =
-  "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location and raw text will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
+  "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
 
 function parsePageParam(value) {
   const page = Number(value);
@@ -261,7 +262,7 @@ function ScriptViewerPage() {
 
   function jumpToAnchor(kind) {
     const anchor = draft.anchors[kind];
-    if (anchor) scrollToPoint(anchor.page, anchor.top);
+    if (anchor) scrollToPoint(anchor.page, lineBoxAt(anchor.y).top);
   }
 
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -454,9 +455,11 @@ function ScriptViewerPage() {
                       devicePixelRatio={windowing.pixelRatio}
                       startAnchor={showAnchorMarkers && anchors.start?.page === pageNumber ? anchors.start : null}
                       endAnchor={showAnchorMarkers && anchors.end?.page === pageNumber ? anchors.end : null}
-                      rangeTop={inRange ? (pageNumber === anchors.start.page ? anchors.start.top : 0) : null}
+                      rangeTop={
+                        inRange ? (pageNumber === anchors.start.page ? lineBoxAt(anchors.start.y).top : 0) : null
+                      }
                       rangeBottom={
-                        inRange ? (pageNumber === anchors.end.page ? anchors.end.bottom : Infinity) : null
+                        inRange ? (pageNumber === anchors.end.page ? lineBoxAt(anchors.end.y).bottom : Infinity) : null
                       }
                       sceneSegments={sceneSegmentsByPage.get(pageNumber) || NO_SEGMENTS}
                       activeSceneId={canEdit ? draftSceneId : focusSceneId}

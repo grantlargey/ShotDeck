@@ -199,16 +199,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-.anchorSnippet,
+.anchorPage,
 .anchorPlaceholder {
   overflow: hidden;
   font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.anchorSnippet {
-  font-family: var(--font-script);
 }
 
 .anchorPlaceholder {

@@ -1,22 +1,29 @@
+import { lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
+
 /*
  * Script location: the required start and end scene anchors of a captured
  * scene. The HTTP contract and scene draft use the same shape:
- * `{ start: { page, line, top, bottom, text }, end: { ... } }`.
+ * `{ start: { page, y }, end: { page, y } }`, where `y` is the baseline of a
+ * text line in PDF points at scale 1 with a top-left origin.
  *
- * Captured scenes of the same script can't overlap. Two locations overlap
- * when their inclusive `(page, line)` ranges share a line. Adjacent lines are
- * allowed. Stored locations are valid by contract; incomplete locations exist
- * only on unsaved drafts and return no page range or scroll target.
+ * Baselines are used rather than a line's box because boxes overlap their
+ * neighbours: a screenplay's leading is smaller than its ascent plus descent.
+ * Baselines don't overlap, so ordering and adjacency are exact.
+ *
+ * Captured scenes of the same script can't overlap. Two locations overlap when
+ * their inclusive `(page, y)` ranges share a point. Adjacent lines are allowed.
+ * Stored locations are valid by contract; incomplete locations exist only on
+ * unsaved drafts and return no page range or scroll target.
  */
 
 // The bounds the API holds anchors to: a page within a screenplay's length,
-// and a line within a page.
+// and a baseline within a page.
 const MAX_PAGE = 300;
-const MAX_LINE = 100000;
+const MAX_Y = 1000;
 
-/** Orders anchors by `(page, line)`: negative when `left` comes first, zero on the same line. */
+/** Orders anchors by `(page, y)`: negative when `left` comes first, zero on the same line. */
 export function compareAnchors(left, right) {
-  return left.page - right.page || left.line - right.line;
+  return left.page - right.page || left.y - right.y;
 }
 
 function isSceneAnchor(anchor) {
@@ -26,12 +33,9 @@ function isSceneAnchor(anchor) {
     Number.isInteger(anchor.page) &&
     anchor.page >= 1 &&
     anchor.page <= MAX_PAGE &&
-    Number.isInteger(anchor.line) &&
-    anchor.line >= 0 &&
-    anchor.line <= MAX_LINE &&
-    Number.isFinite(anchor.top) &&
-    Number.isFinite(anchor.bottom) &&
-    typeof anchor.text === "string"
+    Number.isFinite(anchor.y) &&
+    anchor.y >= 0 &&
+    anchor.y <= MAX_Y
   );
 }
 
@@ -58,16 +62,20 @@ export function formatScenePages(scene) {
   return range.pageEnd > range.pageStart ? `Pages ${range.pageStart}–${range.pageEnd}` : `Page ${range.pageStart}`;
 }
 
-/** The stored scene's start anchor, or null for an incomplete unsaved draft. */
+/**
+ * Where to scroll to show a stored scene: the top of its start line, not the
+ * baseline, so the line is fully in view. Null for an incomplete unsaved draft.
+ */
 export function sceneScrollTarget(scene) {
   const location = scene?.script_location;
-  return isValidScriptLocation(location) ? { page: location.start.page, offsetPt: location.start.top } : null;
+  if (!isValidScriptLocation(location)) return null;
+  return { page: location.start.page, offsetPt: lineBoxAt(location.start.y).top };
 }
 
 /**
- * The first captured scene whose script location shares a line with
- * `location`, or null. Skips the scene with `excludeSceneId`, usually the
- * draft's own saved scene. Incomplete unsaved draft locations aren't compared.
+ * The first captured scene whose script location overlaps `location`, or null.
+ * Skips the scene with `excludeSceneId`, usually the draft's own saved scene.
+ * Incomplete unsaved draft locations aren't compared.
  */
 export function findOverlappingScriptLocation(scenes, location, excludeSceneId) {
   if (!isValidScriptLocation(location)) return null;

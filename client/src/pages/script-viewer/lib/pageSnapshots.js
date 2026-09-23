@@ -1,3 +1,5 @@
+import { lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
+
 const TARGET_WIDTH_PX = 1100;
 const MAX_PAGES = 6;
 const CROP_MARGIN_PT = 36;
@@ -31,10 +33,13 @@ export async function renderSelectionSnapshots(pdfDocument, anchors) {
     context.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: context, viewport }).promise;
 
-    const top = pageNumber === start.page ? Math.max(0, Math.floor((start.top - CROP_MARGIN_PT) * scale)) : 0;
+    const top =
+      pageNumber === start.page
+        ? Math.max(0, Math.floor((lineBoxAt(start.y).top - CROP_MARGIN_PT) * scale))
+        : 0;
     const bottom =
       pageNumber === end.page
-        ? Math.min(canvas.height, Math.ceil((end.bottom + CROP_MARGIN_PT) * scale))
+        ? Math.min(canvas.height, Math.ceil((lineBoxAt(end.y).bottom + CROP_MARGIN_PT) * scale))
         : canvas.height;
 
     const cropped = document.createElement("canvas");

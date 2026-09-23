@@ -12,15 +12,9 @@ import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
 import { ScriptIcon, SplitViewIcon } from "@/shared/ui/icons.jsx";
-import { Select } from "@/shared/ui/Input.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
-import {
-  buildFilterGroups,
-  countSceneTags,
-  SCENE_SORT_OPTIONS,
-  sortScenes,
-} from "../model/sceneBrowse.js";
+import { buildFilterGroups, countSceneTags } from "../model/sceneBrowse.js";
 import FilterSidebar from "./FilterSidebar.jsx";
 import styles from "./ScriptSearchPage.module.css";
 
@@ -48,7 +42,6 @@ export default function ScriptSearchPage() {
   const selectedTags = useMemo(() => (tagKey ? tagKey.split(TAG_SEPARATOR) : []), [tagKey]);
   const cardLayout = searchParams.get("preview") === "stills" ? "split" : "script";
   const [match, setMatch] = useState("all");
-  const [sort, setSort] = useState("recent");
   const [response, setResponse] = useState({ key: null, rows: [], error: "" });
   // Unfiltered result set, used for the per-tag counts in the sidebar.
   const [catalog, setCatalog] = useState([]);
@@ -90,7 +83,8 @@ export default function ScriptSearchPage() {
       .catch(() => {});
   }, []);
 
-  const results = useMemo(() => sortScenes(response.rows, sort), [response.rows, sort]);
+  // The API returns scenes in film title then film time order.
+  const results = response.rows;
   const tagCounts = useMemo(() => countSceneTags(catalog), [catalog]);
   const filterGroups = buildFilterGroups();
   const titleCount = useMemo(() => new Set(results.map((row) => row.movie_id)).size, [results]);
@@ -167,16 +161,6 @@ export default function ScriptSearchPage() {
               value={cardLayout}
               onChange={setCardLayout}
             />
-            <label className={styles.sortControl}>
-              <span>Sort by</span>
-              <Select className={styles.sortSelect} value={sort} onChange={(e) => setSort(e.target.value)}>
-                {SCENE_SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-            </label>
           </div>
         </div>
 

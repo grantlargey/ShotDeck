@@ -57,12 +57,8 @@ function AnchorRow({ kind, anchor, onJump, onRemove }) {
     <div className={styles.anchorRow}>
       <span className={badgeClass}>{label[0]}</span>
       <span className={styles.anchorText}>
-        <span className={styles.anchorLocation}>
-          {label} · p. {anchor.page} · line {anchor.line + 1}
-        </span>
-        <span className={styles.anchorSnippet} title={anchor.text}>
-          {anchor.text}
-        </span>
+        <span className={styles.anchorLocation}>{label} anchor</span>
+        <span className={styles.anchorPage}>Page {anchor.page}</span>
       </span>
       <span className={styles.anchorActions}>
         <IconButton

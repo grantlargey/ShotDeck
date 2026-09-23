@@ -18,12 +18,12 @@ function compareText(left, right) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Captured scenes in the server's order: start page, start line, then id. */
+/** Captured scenes in the server's order: start page, start baseline, then id. */
 export function sortScriptScenes(rows) {
   return [...(Array.isArray(rows) ? rows : [])].sort(
     (a, b) =>
       a.script_location.start.page - b.script_location.start.page ||
-      a.script_location.start.line - b.script_location.start.line ||
+      a.script_location.start.y - b.script_location.start.y ||
       compareText(a.id, b.id)
   );
 }

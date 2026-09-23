@@ -116,11 +116,8 @@ export function sceneRow(fields) {
     start_time_seconds: 0,
     end_time_seconds: 0,
     tags: [],
-    created_at: "2026-09-01T00:00:00.000Z",
-    updated_at: "2026-09-01T00:00:00.000Z",
     script_location: scriptLocation(page1, 0, page1, 0),
     scene_text: "Action.",
-    raw_text: "Action.",
     first_image_annotation: null,
     ...fields,
   };
@@ -129,6 +126,7 @@ export function sceneRow(fields) {
 
 // Scene text saved by hand, so it differs from what p3 captures today.
 export const SAVED_TEXT = "## EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.";
+// The same text as plain words: what an AI request sends when no capture exists.
 export const SAVED_RAW = "EXT. PARKING LOT - NIGHT\n\nA truck idles in the lot while someone watches the diner.";
 
 /** A saved scene anchored on p3 lines 1–4. */
@@ -139,7 +137,6 @@ export const savedScene = sceneRow({
   tags: ["character-focus:protagonist", "conflict-type:character-vs-self"],
   script_location: scriptLocation(page3, 0, page3, 3),
   scene_text: SAVED_TEXT,
-  raw_text: SAVED_RAW,
 });
 
 export const OTHER_TEXT = "### SAM\n\n> > (quietly)\n>\n> Then coffee. And the booth by the window.";
@@ -152,5 +149,4 @@ export const otherScene = sceneRow({
   tags: ["character-focus:supporting-character"],
   script_location: scriptLocation(page2, 0, page2, 3),
   scene_text: OTHER_TEXT,
-  raw_text: "SAM\n\n(quietly)\n\nThen coffee. And the booth by the window.",
 });

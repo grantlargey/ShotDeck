@@ -1,6 +1,21 @@
 const ASCENT_RATIO = 0.82;
 const DESCENT_RATIO = 0.24;
 const AVERAGE_CHAR_WIDTH_RATIO = 0.6;
+/** Screenplays are set in 12pt, the fallback for a line that isn't indexed yet. */
+const NOMINAL_FONT_SIZE = 12;
+
+/**
+ * The top and bottom of a text line drawn from its baseline, which is what a
+ * scene anchor stores. An indexed line carries its own font size; anchors
+ * resolved before their page is indexed fall back to a screenplay's.
+ *
+ * Boxes deliberately overlap their neighbours, because a screenplay's leading
+ * is smaller than ascent plus descent. Anchors are compared as baselines for
+ * that reason, and converted to boxes only for drawing.
+ */
+export function lineBoxAt(baseline, fontSize = NOMINAL_FONT_SIZE) {
+  return { top: baseline - fontSize * ASCENT_RATIO, bottom: baseline + fontSize * DESCENT_RATIO };
+}
 
 /**
  * Joins positioned text runs into one line, inserting a space wherever the
@@ -80,8 +95,7 @@ export function buildPageTextLines(textContent, viewport, pageNumber) {
       index,
       baseline: line.baseline,
       fontSize: line.fontSize,
-      top: line.baseline - line.fontSize * ASCENT_RATIO,
-      bottom: line.baseline + line.fontSize * DESCENT_RATIO,
+      ...lineBoxAt(line.baseline, line.fontSize),
       left: items[0].x,
       right: Math.max(...items.map((item) => item.right)),
       text,

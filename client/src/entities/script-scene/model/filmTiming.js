@@ -6,9 +6,10 @@ import { formatSecondsToHms, parseTimeInputToSeconds } from "@/shared/lib/time.j
  * stores seconds. A runtime of 0 means the film's runtime is unknown, so no
  * time is capped.
  *
- * Captured scenes of the same script can't overlap. Two timings overlap when
- * `a.start < b.end && b.start < a.end`, so scenes that only touch are fine,
- * and a zero-length timing overlaps only a scene that strictly contains it.
+ * Captured scenes of the same script can't share a second of film. Two timings
+ * conflict when `a.start <= b.end && b.start <= a.end`, counting both ends, so
+ * consecutive scenes must be at least a second apart. A still on a shared
+ * second would otherwise belong to two scenes at once.
  */
 
 /** A stored moment of the film in seconds (a number or numeric string), or null when it's missing or not a number. */
@@ -99,9 +100,10 @@ export function filmTimingCovers(scene, seconds) {
 }
 
 /**
- * The first captured scene whose film timing overlaps `timing` (`{ start, end }`
- * in seconds), or null. Skips the scene with `excludeSceneId`, usually the
- * draft's own saved scene, and scenes without usable timing.
+ * The first captured scene whose film timing shares a second with `timing`
+ * (`{ start, end }` in seconds), or null. Skips the scene with
+ * `excludeSceneId`, usually the draft's own saved scene, and scenes without
+ * usable timing.
  */
 export function findOverlappingFilmTiming(scenes, timing, excludeSceneId) {
   const start = momentSeconds(timing?.start);
@@ -111,7 +113,7 @@ export function findOverlappingFilmTiming(scenes, timing, excludeSceneId) {
   for (const scene of Array.isArray(scenes) ? scenes : []) {
     if (excludeSceneId && scene?.id === excludeSceneId) continue;
     const other = storedTiming(scene);
-    if (other && start < other.end && other.start < end) return scene;
+    if (other && start <= other.end && other.start <= end) return scene;
   }
   return null;
 }

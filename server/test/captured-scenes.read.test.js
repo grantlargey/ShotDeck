@@ -88,24 +88,26 @@ describe("listing a script's captured scenes", () => {
 });
 
 describe("searching captured scenes", () => {
-    test("is public, returns every movie most-recently-updated first and adds movie_title", async () => {
-        const first = await createMovieWithScript(api, cookie);
-        const second = await createMovieWithScript(api, cookie);
-        const older = await createScene(api, cookie, first);
-        const newer = await createScene(api, cookie, second);
-        const touched = await api.put(`${scenesPath(first)}/${older.id}`, {
+    test("is public, orders by film title then film time, and adds movie_title", async () => {
+        const zulu = await createMovieWithScript(api, cookie, { title: "Zulu Diner" });
+        const alpha = await createMovieWithScript(api, cookie, { title: "Alpha Diner" });
+        // Saved newest-first and out of title order, so neither can pass by accident.
+        const late = await createScene(api, cookie, alpha, { start_time_seconds: 900, end_time_seconds: 960 });
+        const early = await createScene(api, cookie, alpha, { start_time_seconds: 10, end_time_seconds: 20 });
+        const other = await createScene(api, cookie, zulu);
+        const touched = await api.put(`${scenesPath(alpha)}/${late.id}`, {
             cookie,
-            body: sceneBody({ tags: [TAGS.revelation] }),
+            body: sceneBody({ tags: [TAGS.revelation], start_time_seconds: 900, end_time_seconds: 960 }),
         });
         assert.equal(touched.status, 200, touched.text);
 
         const response = await api.get("/script-scenes");
         assert.equal(response.status, 200);
-        assert.deepEqual(onlyMine(response.body, [older, newer]), [older.id, newer.id]);
-        const result = response.body.find((scene) => scene.id === older.id);
+        assert.deepEqual(onlyMine(response.body, [late, early, other]), [early.id, late.id, other.id]);
+        const result = response.body.find((scene) => scene.id === late.id);
         const { movie_title: movieTitle, ...scene } = result;
         assert.deepEqual(scene, touched.body);
-        assert.equal(movieTitle, first.movie.title);
+        assert.equal(movieTitle, "Alpha Diner");
     });
 
     test("includes movie_title when the allowed movie title is empty", async () => {
@@ -155,14 +157,16 @@ describe("searching captured scenes", () => {
 
     test("ignores q and limit and returns at most 500", async () => {
         const place = await createMovieWithScript(api, cookie);
+        // Two scenes to a page and a second of film each, so none of them share
+        // a location or a second.
         await pool.query(
             `INSERT INTO captured_scenes (
                id, script_id, start_time_seconds, end_time_seconds,
-               start_page, start_line, start_top, start_bottom, start_text,
-               end_page, end_line, end_top, end_bottom, end_text, scene_text, raw_text
+               start_page, start_y, end_page, end_y, scene_text
              )
-             SELECT gen_random_uuid(), $1, 0, 0, 1, n * 2, n * 12, n * 12 + 10, 'Start',
-                    1, n * 2, n * 12, n * 12 + 10, 'End', 'Text', 'Text'
+             SELECT gen_random_uuid(), $1, n * 2, n * 2,
+                    (n + 1) / 2, CASE WHEN n % 2 = 1 THEN 100 ELSE 300 END,
+                    (n + 1) / 2, CASE WHEN n % 2 = 1 THEN 200 ELSE 400 END, 'Text'
              FROM generate_series(1, 501) AS n`,
             [place.script.id]
         );

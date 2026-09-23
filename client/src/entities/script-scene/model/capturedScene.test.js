@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { displayScriptSceneText, getSceneScriptPath, sortScriptScenes } from "./capturedScene.js";
 
 function anchor(page, line) {
-  return { page, line, top: line * 12, bottom: line * 12 + 10, text: `line ${line}` };
+  return { page, y: 96 + line * 12 };
 }
 
 function scene(id, page = 1, line = 0, fields = {}) {
@@ -34,7 +34,7 @@ describe("displayScriptSceneText", () => {
 });
 
 describe("sortScriptScenes", () => {
-  it("orders by start page, start line and id", () => {
+  it("orders by start page, start baseline and id", () => {
     const rows = [scene("z", 3, 1), scene("b", 1, 4), scene("a", 1, 4), scene("first", 1, 0)];
     expect(sortScriptScenes(rows).map(({ id }) => id)).toEqual(["first", "a", "b", "z"]);
   });

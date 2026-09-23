@@ -44,8 +44,6 @@ export function sceneRowFromPayload(id, payload) {
     tags: payload.tags,
     script_location: payload.script_location,
     scene_text: payload.scene_text,
-    raw_text: payload.raw_text,
-    updated_at: "2026-09-14T00:00:00.000Z",
   });
 }
 

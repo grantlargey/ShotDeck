@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/shared/lib/errors.js";
+import { lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { captureAnchoredRange } from "../model/captureRange.js";
 import {
   annotator,
@@ -78,12 +79,16 @@ const CAPTURE_MARKDOWN = [
   "### SAM",
   `> > (quietly)\n>\n> ${SAM_SPEECH}`,
 ].join("\n\n");
-const CAPTURE_PLAIN = [DINER, RAIN, BELL, "MAYA", MAYA_SPEECH, "SAM", "(quietly)", SAM_SPEECH].join("\n\n");
 const AI_MARKDOWN = "## INT. ROADSIDE DINER - NIGHT\n\nRain falls while Maya wipes the counter.";
 const SAVED_TIMING = "00:10:00 – 00:11:00";
 const STALE_SAVE_PROMPT =
-  "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location and raw text will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
+  "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
 const RECAPTURE_PROMPT = "Replace the current text with a fresh capture from the anchors? Your text edits will be lost.";
+
+function anchorPage(kind) {
+  const label = inPanel().getByText(`${kind} anchor`);
+  return label.parentElement.textContent.replace(`${kind} anchor`, "");
+}
 
 function inPanel() {
   return within(annotator());
@@ -144,7 +149,6 @@ describe("canonical capture and persistence", () => {
       end_time_seconds: 120,
       script_location: scriptLocation(page1, 0, page2, 3),
       scene_text: CAPTURE_MARKDOWN,
-      raw_text: CAPTURE_PLAIN,
       tags: [],
     });
 
@@ -157,9 +161,9 @@ describe("canonical capture and persistence", () => {
     expect(inPanel().getByText("New scene", { selector: "p" })).toBeTruthy();
     click(sceneCard("00:01:00 – 00:02:00"));
 
-    expect(inPanel().getByText("Start · p. 1 · line 1")).toBeTruthy();
-    expect(inPanel().getByText("End · p. 2 · line 4")).toBeTruthy();
-    expect(inPanel().getAllByText(DINER).length).toBeGreaterThanOrEqual(2);
+    expect(anchorPage("Start")).toBe("Page 1");
+    expect(anchorPage("End")).toBe("Page 2");
+    expect(inPanel().getByText(DINER)).toBeTruthy();
     click(inPanel().getByRole("button", { name: "Update scene" }));
     await waitFor(() => expect(pending.saves).toHaveLength(2));
     expect(lastSavePayload()).toEqual(pending.saves[0].args.at(-1));
@@ -168,7 +172,7 @@ describe("canonical capture and persistence", () => {
   it("makes a cleared saved location unsaveable until undo restores and captures it", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedScene], sceneId: savedScene.id });
     publishWholeScript();
-    expect(inPanel().getByText("Start · p. 3 · line 1")).toBeTruthy();
+    expect(anchorPage("Start")).toBe("Page 3");
 
     click(inPanel().getByRole("button", { name: "Clear" }));
     click(inPanel().getByRole("button", { name: "Update scene" }));
@@ -213,7 +217,6 @@ describe("canonical capture and persistence", () => {
     await waitFor(() => expect(pending.saves).toHaveLength(1));
     expect(lastSavePayload()).toMatchObject({
       scene_text: SAVED_TEXT,
-      raw_text: expect.stringContaining("Nobody gets out"),
       script_location: scriptLocation(page3, 0, page3, 4),
     });
   });
@@ -272,7 +275,7 @@ describe("editor, indexing and AI", () => {
     click(inDialog().getByRole("button", { name: "Accept proposal" }));
     click(inPanel().getByRole("button", { name: "Update scene" }));
     await waitFor(() => expect(pending.saves).toHaveLength(1));
-    expect(lastSavePayload()).toMatchObject({ scene_text: AI_MARKDOWN, raw_text: expect.stringContaining("EXT. PARKING LOT") });
+    expect(lastSavePayload()).toMatchObject({ scene_text: AI_MARKDOWN });
   });
 
   it.each([
@@ -304,7 +307,6 @@ describe("editor, indexing and AI", () => {
     await waitFor(() => expect(pending.saves).toHaveLength(1));
     expect(lastSavePayload()).toMatchObject({
       scene_text: expect.stringContaining("INT. DINER - LATE NIGHT"),
-      raw_text: expect.stringContaining("Rain streaks the windows of an empty roadside diner at\n\nmidnight"),
     });
     expect(window.confirm).not.toHaveBeenCalled();
   });
@@ -332,7 +334,7 @@ describe("editor, indexing and AI", () => {
 
     hoverLine(2, 4);
     pressKey("]");
-    expect(inPanel().getAllByText("Maya pours two cups and slides one across the counter.")).toHaveLength(2);
+    expect(inPanel().getAllByText("Maya pours two cups and slides one across the counter.")).toHaveLength(1);
   });
 
   it("keeps a pending AI request's selection baseline when anchors move", async () => {
@@ -380,13 +382,13 @@ describe("draft interaction guards", () => {
     expect(pressKey("[")).toBe(false);
     hoverLine(1, 7);
     expect(pressKey("]")).toBe(false);
-    hoverLine(1, 4);
+    hoverLine(2, 3);
     expect(pressKey("]", { altKey: true })).toBe(true);
-    expect(inPanel().getByText("End · p. 1 · line 8")).toBeTruthy();
+    expect(anchorPage("End")).toBe("Page 1");
     expect(pressKey("]")).toBe(false);
-    expect(inPanel().getByText("End · p. 1 · line 5")).toBeTruthy();
+    expect(anchorPage("End")).toBe("Page 2");
     expect(pressKey("z", { ctrlKey: true })).toBe(false);
-    expect(inPanel().getByText("End · p. 1 · line 8")).toBeTruthy();
+    expect(anchorPage("End")).toBe("Page 1");
 
     openEditor();
     expect(pressKey("z", { metaKey: true })).toBe(true);
@@ -396,7 +398,7 @@ describe("draft interaction guards", () => {
     hoverLine(1, 3);
     expect(pressKey("[")).toBe(true);
     pressKey("Escape");
-    expect(inPanel().getByText("Start · p. 1 · line 1")).toBeTruthy();
+    expect(anchorPage("Start")).toBe("Page 1");
   });
 
   it("keeps a dirty scene open when switching is canceled and discards it only after confirmation", async () => {
@@ -456,7 +458,6 @@ describe("stale-text save decisions", () => {
     expect(lastSavePayload()).toMatchObject({
       script_location: scriptLocation(page1, 0, page1, 4),
       scene_text: [`## ${DINER}`, RAIN, BELL].join("\n\n"),
-      raw_text: [DINER, RAIN, BELL].join("\n\n"),
     });
   });
 
@@ -478,7 +479,6 @@ describe("stale-text save decisions", () => {
     await waitFor(() => expect(pending.saves).toHaveLength(1));
     expect(lastSavePayload()).toMatchObject({
       scene_text: AI_MARKDOWN,
-      raw_text: [DINER, RAIN, BELL].join("\n\n"),
       script_location: scriptLocation(page1, 0, page1, 4),
     });
     typeTime("End", "00:11:30");
@@ -509,19 +509,26 @@ describe("overlap, request races and navigation", () => {
     expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
   });
 
-  it("refuses overlapping film timing without a request, then saves timing that only touches", async () => {
+  it("refuses overlapping film timing without a request, then saves timing a second clear of it", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [otherScene] });
     publishWholeScript();
     placeAnchorsWithKeys([3, 0], [3, 4]);
     setTiming("00:05:30", "00:07:00");
     click(inPanel().getByRole("button", { name: "Save scene" }));
-    expect(screen.getByText("This scene's film timing overlaps the scene at 00:05:00 – 00:06:00. Scenes can touch but not overlap.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This scene's film timing shares a second with the scene at 00:05:00 – 00:06:00. Scenes must be at least a second apart."
+      )
+    ).toBeTruthy();
     expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
     typeTime("Start", "00:06:00");
     click(inPanel().getByRole("button", { name: "Save scene" }));
+    expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
+    typeTime("Start", "00:06:01");
+    click(inPanel().getByRole("button", { name: "Save scene" }));
     await waitFor(() => expect(pending.saves).toHaveLength(1));
     expect(lastSavePayload()).toMatchObject({
-      start_time_seconds: 360,
+      start_time_seconds: 361,
       end_time_seconds: 420,
       script_location: scriptLocation(page3, 0, page3, 4),
     });
@@ -599,7 +606,7 @@ describe("overlap, request races and navigation", () => {
       await waitFor(() => expect(windowingDouble.scrollToPage).toHaveBeenCalled());
       expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(
         3,
-        expect.objectContaining({ offsetPx: 86.2 })
+        expect.objectContaining({ offsetPx: 86.16 })
       );
       expect(Boolean(queryAnnotator())).toBe(admin);
     }
@@ -607,8 +614,8 @@ describe("overlap, request races and navigation", () => {
 
   it("draws saved scene bars from the canonical location", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedScene, otherScene] });
-    expect(frameProps(2).sceneSegments[0]).toMatchObject({ scene: otherScene, top: 86.2, bottom: 134.9 });
-    expect(frameProps(3).sceneSegments[0]).toMatchObject({ scene: savedScene, top: 86.2, bottom: 158.9 });
+    expect(frameProps(2).sceneSegments[0]).toMatchObject({ scene: otherScene, top: 86.16, bottom: 134.88 });
+    expect(frameProps(3).sceneSegments[0]).toMatchObject({ scene: savedScene, top: 86.16, bottom: 158.88 });
   });
 
   it("keeps the loaded scenes in canonical location order", async () => {
@@ -691,7 +698,7 @@ describe("delete races, visitor navigation and load failures", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(
       2,
-      expect.objectContaining({ offsetPx: otherScene.script_location.start.top })
+      expect.objectContaining({ offsetPx: lineBoxAt(otherScene.script_location.start.y).top })
     );
     expect(queryAnnotator()).toBeNull();
   });

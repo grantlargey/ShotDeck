@@ -72,8 +72,8 @@ function createEmptyDraft(generation = 0) {
 
 function withAnchors(draft, anchors) {
   if (anchorPairKey(anchors) === anchorPairKey(draft.anchors) && hasAnyAnchor(anchors) === hasAnyAnchor(draft.anchors)) {
-    const sameStart = draft.anchors.start?.line === anchors.start?.line && draft.anchors.start?.page === anchors.start?.page;
-    const sameEnd = draft.anchors.end?.line === anchors.end?.line && draft.anchors.end?.page === anchors.end?.page;
+    const sameStart = draft.anchors.start?.y === anchors.start?.y && draft.anchors.start?.page === anchors.start?.page;
+    const sameEnd = draft.anchors.end?.y === anchors.end?.y && draft.anchors.end?.page === anchors.end?.page;
     if (sameStart && sameEnd) return { ...draft, anchors };
   }
   return {
@@ -269,7 +269,7 @@ const CAPTURE_UNAVAILABLE_ERRORS = {
  * text, and script location overlap. The draft's own saved scene is excluded.
  * Scene text is saved as shown. Raw text always comes from the current capture.
  * Stale scene text sets `confirmStaleText` because it will be stored with the
- * current location and raw text.
+ * current location.
  */
 function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, scenes }) {
   const savedScene = draft.savedScene;
@@ -280,7 +280,7 @@ function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, sce
   const timingOverlap = findOverlappingFilmTiming(scenes, timing, savedScene?.id);
   if (timingOverlap) {
     return {
-      error: `This scene's film timing overlaps the scene at ${formatFilmTiming(timingOverlap)}. Scenes can touch but not overlap.`,
+      error: `This scene's film timing shares a second with the scene at ${formatFilmTiming(timingOverlap)}. Scenes must be at least a second apart.`,
     };
   }
   if (!capture) {
@@ -304,7 +304,6 @@ function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, sce
       end_time_seconds: timing.end,
       script_location: draft.anchors,
       scene_text: text,
-      raw_text: capture.plainText,
       tags: draft.tags,
     },
     confirmStaleText: isTextStale(draft, capture),

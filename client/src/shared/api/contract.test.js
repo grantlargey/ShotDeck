@@ -20,11 +20,10 @@ const SCENE_BODY = {
   start_time_seconds: 60,
   end_time_seconds: 90,
   script_location: {
-    start: { page: 1, line: 2, top: 10, bottom: 20, text: "INT. DINER - NIGHT" },
-    end: { page: 2, line: 3, top: 30, bottom: 40, text: "CUT TO:" },
+    start: { page: 1, y: 120 },
+    end: { page: 2, y: 156 },
   },
   scene_text: "## INT. DINER - NIGHT",
-  raw_text: "INT. DINER - NIGHT",
   tags: ["tone:dread"],
 };
 

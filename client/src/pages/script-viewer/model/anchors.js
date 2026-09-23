@@ -1,11 +1,11 @@
 import { compareAnchors } from "@/entities/script-scene/model/scriptLocation.js";
-import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
+import { findLineAtY, lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
 
 /*
  * Scene anchors while an admin captures a scene: placement and swapping,
  * stable keys, resolving a stored anchor against the current PDF index, and
- * the saved scenes' bars in the page margin. Anchors are PDF points at scale
- * 1 with a top-left origin.
+ * the saved scenes' bars in the page margin. An anchor is a page and the
+ * baseline of a text line, in PDF points at scale 1 with a top-left origin.
  */
 
 const POSITION_SCALE = 100000;
@@ -17,17 +17,11 @@ function round1(value) {
 }
 
 export function createLineAnchor(page, line) {
-  return {
-    page: page.pageNumber,
-    line: line.index,
-    top: round1(line.top),
-    bottom: round1(line.bottom),
-    text: line.text.slice(0, 120),
-  };
+  return { page: page.pageNumber, y: round1(line.baseline) };
 }
 
 function anchorKey(anchor) {
-  return anchor ? `${anchor.page}:${anchor.line}` : "";
+  return anchor ? `${anchor.page}:${anchor.y}` : "";
 }
 
 export function anchorPairKey(anchors) {
@@ -50,9 +44,7 @@ export function placeAnchor(anchors, kind, anchor) {
 /** Resolves a stored anchor to the current indexed line. */
 export function resolveAnchorLine(page, anchor) {
   if (!page || !anchor) return null;
-  const byIndex = page.lines[anchor.line];
-  if (byIndex && Math.abs(byIndex.top - anchor.top) < 2) return byIndex;
-  return findLineAtY(page, (anchor.top + anchor.bottom) / 2, Infinity);
+  return findLineAtY(page, anchor.y, Infinity);
 }
 
 function documentPosition(page, y) {
@@ -65,8 +57,8 @@ export function buildSceneSegmentsByPage(scenes) {
     .map((scene) => ({
       scene,
       location: {
-        start: { page: scene.script_location.start.page, y: scene.script_location.start.top },
-        end: { page: scene.script_location.end.page, y: scene.script_location.end.bottom },
+        start: { page: scene.script_location.start.page, y: lineBoxAt(scene.script_location.start.y).top },
+        end: { page: scene.script_location.end.page, y: lineBoxAt(scene.script_location.end.y).bottom },
       },
     }))
     .sort(

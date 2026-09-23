@@ -1,24 +1,5 @@
-import {
-  safeScriptSceneTags,
-  sortScriptScenes,
-} from "@/entities/script-scene/model/capturedScene.js";
+import { safeScriptSceneTags } from "@/entities/script-scene/model/capturedScene.js";
 import { SCRIPT_TAG_CATEGORIES } from "@server/domain/script-tags.js";
-
-export const SCENE_SORT_OPTIONS = [
-  { value: "recent", label: "Recently updated" },
-  { value: "title", label: "Title & page" },
-];
-
-/**
- * The API already returns scenes newest-first; "title" regroups them by movie
- * while keeping script page order inside each title.
- */
-export function sortScenes(scenes, sortKey) {
-  if (sortKey !== "title") return scenes;
-  return sortScriptScenes(scenes).sort((a, b) =>
-    String(a.movie_title || "").localeCompare(String(b.movie_title || ""))
-  );
-}
 
 export function countSceneTags(scenes) {
   const counts = new Map();

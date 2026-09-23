@@ -34,44 +34,27 @@ CREATE TABLE captured_scenes (
   start_time_seconds INT NOT NULL CHECK (start_time_seconds >= 0),
   end_time_seconds INT NOT NULL CHECK (end_time_seconds >= start_time_seconds),
   start_page INT NOT NULL CHECK (start_page BETWEEN 1 AND 300),
-  start_line INT NOT NULL CHECK (start_line BETWEEN 0 AND 100000),
-  start_top DOUBLE PRECISION NOT NULL
-    CHECK (start_top > '-Infinity'::float8 AND start_top < 'Infinity'::float8),
-  start_bottom DOUBLE PRECISION NOT NULL
-    CHECK (start_bottom > '-Infinity'::float8 AND start_bottom < 'Infinity'::float8),
-  start_text TEXT NOT NULL,
+  start_y NUMERIC(5,1) NOT NULL CHECK (start_y BETWEEN 0 AND 1000),
   end_page INT NOT NULL CHECK (end_page BETWEEN 1 AND 300),
-  end_line INT NOT NULL CHECK (end_line BETWEEN 0 AND 100000),
-  end_top DOUBLE PRECISION NOT NULL
-    CHECK (end_top > '-Infinity'::float8 AND end_top < 'Infinity'::float8),
-  end_bottom DOUBLE PRECISION NOT NULL
-    CHECK (end_bottom > '-Infinity'::float8 AND end_bottom < 'Infinity'::float8),
-  end_text TEXT NOT NULL,
+  end_y NUMERIC(5,1) NOT NULL CHECK (end_y BETWEEN 0 AND 1000),
   scene_text TEXT NOT NULL CHECK (scene_text ~ '[^[:space:]]'),
-  raw_text TEXT NOT NULL CHECK (raw_text ~ '[^[:space:]]'),
   tags JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(tags) = 'array'),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  location_start_key BIGINT
-    GENERATED ALWAYS AS (start_page::bigint * 1000000 + start_line) STORED,
-  location_end_key BIGINT
-    GENERATED ALWAYS AS (end_page::bigint * 1000000 + end_line) STORED,
   CONSTRAINT captured_scenes_anchors_ordered
-    CHECK ((start_page, start_line) <= (end_page, end_line)),
+    CHECK ((start_page, start_y) <= (end_page, end_y)),
   CONSTRAINT captured_scenes_no_film_timing_overlap
     EXCLUDE USING gist (
       script_id WITH =,
-      int4range(start_time_seconds, end_time_seconds, '[)') WITH &&
-    ) WHERE (start_time_seconds < end_time_seconds),
+      int8range(start_time_seconds, end_time_seconds, '[]') WITH &&
+    ),
   CONSTRAINT captured_scenes_no_script_location_overlap
     EXCLUDE USING gist (
       script_id WITH =,
-      int8range(location_start_key, location_end_key, '[]') WITH &&
+      numrange(start_page::numeric * 1000 + start_y, end_page::numeric * 1000 + end_y, '[]') WITH &&
     )
 );
 
 CREATE INDEX captured_scenes_script_location_idx
-ON captured_scenes (script_id, start_page, start_line);
+ON captured_scenes (script_id, start_page, start_y);
 
 CREATE INDEX captured_scenes_tags_idx ON captured_scenes USING GIN (tags);
 

@@ -6,7 +6,7 @@ vi.mock("@/shared/api/annotations.js", () => ({ listAnnotations: vi.fn() }));
 vi.mock("@/shared/api/scriptScenes.js", () => ({ listScriptScenes: vi.fn() }));
 
 function anchor(page, line) {
-  return { page, line, top: line * 12, bottom: line * 12 + 10, text: `line ${line}` };
+  return { page, y: 96 + line * 12 };
 }
 
 function scene(id, page, text) {
@@ -16,7 +16,6 @@ function scene(id, page, text) {
     script_id: "script-1",
     script_location: { start: anchor(page, 0), end: anchor(page, 1) },
     scene_text: text,
-    raw_text: text,
     start_time_seconds: page * 60,
     end_time_seconds: page * 60 + 30,
     tags: [],

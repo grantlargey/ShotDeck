@@ -146,25 +146,29 @@ describe("findOverlappingFilmTiming", () => {
     ["overlaps by one second at the start", { start: 719, end: 800 }],
     ["overlaps by one second at the end", { start: 500, end: 601 }],
     ["is zero-length strictly inside", { start: 660, end: 660 }],
+    ["shares only its end second", { start: 720, end: 840 }],
+    ["shares only its start second", { start: 480, end: 600 }],
+    ["is zero-length on its start second", { start: 600, end: 600 }],
+    ["is zero-length on its end second", { start: 720, end: 720 }],
   ])("finds a scene when the timing %s", (_, timing) => {
     expect(findOverlappingFilmTiming([saved], timing)).toBe(saved);
   });
 
   it.each([
-    ["touches its end", { start: 720, end: 840 }],
-    ["touches its start", { start: 480, end: 600 }],
-    ["is zero-length at its start", { start: 600, end: 600 }],
-    ["is zero-length at its end", { start: 720, end: 720 }],
+    ["starts the second after it ends", { start: 721, end: 840 }],
+    ["ends the second before it starts", { start: 480, end: 599 }],
+    ["is zero-length the second after it ends", { start: 721, end: 721 }],
     ["is entirely before it", { start: 0, end: 60 }],
   ])("allows a timing that %s", (_, timing) => {
     expect(findOverlappingFilmTiming([saved], timing)).toBeNull();
   });
 
-  it("finds a zero-length scene only when the timing strictly contains it", () => {
+  it("finds a zero-length scene from any timing covering its second", () => {
     const moment = scene("moment", 660, 660);
     expect(findOverlappingFilmTiming([moment], { start: 600, end: 720 })).toBe(moment);
-    expect(findOverlappingFilmTiming([moment], { start: 660, end: 720 })).toBeNull();
-    expect(findOverlappingFilmTiming([moment], { start: 660, end: 660 })).toBeNull();
+    expect(findOverlappingFilmTiming([moment], { start: 660, end: 720 })).toBe(moment);
+    expect(findOverlappingFilmTiming([moment], { start: 660, end: 660 })).toBe(moment);
+    expect(findOverlappingFilmTiming([moment], { start: 661, end: 720 })).toBeNull();
   });
 
   it("skips the excluded scene and scenes without usable timing, and returns the first match", () => {

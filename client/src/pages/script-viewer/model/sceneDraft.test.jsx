@@ -32,7 +32,6 @@ const RAIN =
   "Rain streaks the windows of an empty roadside diner at midnight. MAYA, thirties, wipes the counter in slow circles.";
 const BELL = "A bell over the door rings. SAM steps in from the storm, shaking water from a battered canvas coat and hat.";
 const P1_SHORT_MARKDOWN = [`## ${DINER}`, RAIN, BELL].join("\n\n");
-const P1_SHORT_PLAIN = [DINER, RAIN, BELL].join("\n\n");
 
 function renderDraft(index = FULL_INDEX, options = {}) {
   return renderHook(({ currentIndex }) => useSceneDraft(currentIndex), {
@@ -117,9 +116,9 @@ describe("committed view and stable interface", () => {
       request = actions.startProposal();
     });
 
-    expect(request.snapshotAnchors.end).toMatchObject({ page: 1, line: 7 });
+    expect(request.snapshotAnchors.end).toMatchObject({ page: 1, y: 216 });
     expect(request.capturedText).toContain("Coffee is all I can do.");
-    expect(view(result).draft.anchors.end).toMatchObject({ page: 1, line: 4 });
+    expect(view(result).draft.anchors.end).toMatchObject({ page: 1, y: 168 });
   });
 
   it("builds from committed timing and normalizes only after the field commits", () => {
@@ -208,13 +207,11 @@ describe("capture and canonical save contract", () => {
       end_time_seconds: 120,
       script_location: scriptLocation(page1, 0, page1, 4),
       scene_text: P1_SHORT_MARKDOWN,
-      raw_text: P1_SHORT_PLAIN,
       tags: ["tone:dread"],
     });
     expect(confirmStaleText).toBe(false);
     expect(Object.keys(payload).sort()).toEqual([
       "end_time_seconds",
-      "raw_text",
       "scene_text",
       "script_location",
       "start_time_seconds",
@@ -249,7 +246,6 @@ describe("capture and canonical save contract", () => {
           id: "missing-page",
           script_location: scriptLocation(page1, 0, page2, 3),
           scene_text: "## SAVED\n\nText.",
-          raw_text: "SAVED\n\nText.",
         })
       )
     );
@@ -260,7 +256,7 @@ describe("capture and canonical save contract", () => {
 
   it("reports unreadable when an indexed anchor page has no resolvable lines", () => {
     const emptyPage = positionedPage(5, []);
-    const emptyAnchor = { page: 5, line: 0, top: 90, bottom: 102, text: "missing" };
+    const emptyAnchor = { page: 5, y: 96 };
     const { result } = renderDraft(textIndexFrom([emptyPage], { complete: true }));
     run(result, (actions) =>
       actions.loadScene(
@@ -268,7 +264,6 @@ describe("capture and canonical save contract", () => {
           id: "empty-page",
           script_location: { start: emptyAnchor, end: emptyAnchor },
           scene_text: "## SAVED\n\nText.",
-          raw_text: "SAVED\n\nText.",
         })
       )
     );
@@ -279,10 +274,10 @@ describe("capture and canonical save contract", () => {
 
   it.each([
     ["page above the contract cap", { end: { page: 301 } }],
-    ["line above the contract cap", { end: { line: 100001 } }],
-    ["non-string anchor text", { end: { text: null } }],
-    ["non-finite geometry", { end: { top: Number.NaN } }],
-    ["reversed anchors", { start: { page: 3, line: 4 }, end: { page: 3, line: 0 } }],
+    ["a baseline above the contract cap", { end: { y: 1000.1 } }],
+    ["a negative baseline", { end: { y: -1 } }],
+    ["non-finite geometry", { end: { y: Number.NaN } }],
+    ["reversed anchors", { start: { page: 3, y: 144 }, end: { page: 3, y: 96 } }],
   ])("refuses capture for a location with %s", (_, changes) => {
     const valid = scriptLocation(page3, 0, page3, 4);
     const invalid = {
@@ -302,7 +297,6 @@ describe("capture and canonical save contract", () => {
           id: "artifact-only",
           script_location: scriptLocation(artifactPage, 0, artifactPage, 0),
           scene_text: "## SAVED SCENE",
-          raw_text: "Previous raw text.",
         })
       )
     );
@@ -335,7 +329,7 @@ describe("capture and canonical save contract", () => {
 
     expect(save(result)).toMatchObject({
       confirmStaleText: false,
-      payload: { scene_text: "## EDITED\n\nHand-written text.", raw_text: P1_SHORT_PLAIN },
+      payload: { scene_text: "## EDITED\n\nHand-written text." },
     });
   });
 });
@@ -362,7 +356,7 @@ describe("anchors, indexing and editor identity", () => {
     expect(view(result).draft.anchors).toEqual(scriptLocation(page1, 0, page2, 3));
     expect(view(result).draft.canUndoAnchors).toBe(true);
     run(result, (actions) => actions.undoAnchors());
-    expect(view(result).draft.anchors).toMatchObject({ start: expect.objectContaining({ page: 2, line: 3 }), end: null });
+    expect(view(result).draft.anchors).toMatchObject({ start: expect.objectContaining({ page: 2, y: 132 }), end: null });
   });
 
   it("keeps the editor identity when an index update leaves captured text unchanged", () => {
@@ -438,13 +432,13 @@ describe("index publication and proposal races", () => {
     });
     expect(save(result)).toMatchObject({
       confirmStaleText: false,
-      payload: { scene_text: edited, raw_text: view(result).draft.capturedPlainText },
+      payload: { scene_text: edited },
     });
     run(result, (actions) => actions.recapture());
     expect(view(result).draft).toMatchObject({
       textOrigin: "capture",
       recaptureOption: "none",
-      editorKey: capturedEditorKey(1, "1:0-2:3"),
+      editorKey: capturedEditorKey(1, "1:96-2:132"),
     });
   });
 
@@ -465,7 +459,7 @@ describe("index publication and proposal races", () => {
     run(result, (actions) => actions.acceptProposal());
     expect(save(result)).toMatchObject({
       confirmStaleText: false,
-      payload: { scene_text: "## SECOND AI\n\nMore words.", raw_text: view(result).draft.capturedPlainText },
+      payload: { scene_text: "## SECOND AI\n\nMore words." },
     });
   });
 
@@ -585,16 +579,16 @@ describe("re-capture, editor identity and anchor history", () => {
     place(result, "start", page1, 0);
     place(result, "end", page1, 7);
     const captured = view(result).draft.editorKey;
-    expect(captured).toEqual(capturedEditorKey(0, "1:0-1:7"));
+    expect(captured).toEqual(capturedEditorKey(0, "1:96-1:216"));
     run(result, (actions) => actions.editText("## EDITED\n\nText."));
     place(result, "end", page1, 4);
     expect(view(result).draft.editorKey).toBe(captured);
     run(result, (actions) => actions.recapture());
-    expect(view(result).draft.editorKey).toEqual(capturedEditorKey(1, "1:0-1:4"));
+    expect(view(result).draft.editorKey).toEqual(capturedEditorKey(1, "1:96-1:168"));
     acceptProposal(result, "## AI\n\nText.");
-    expect(view(result).draft.editorKey).toBe("2:1:0-1:4");
+    expect(view(result).draft.editorKey).toBe("2:1:96-1:168");
     run(result, (actions) => actions.loadScene(savedScene));
-    expect(view(result).draft.editorKey).toBe("3:3:0-3:3");
+    expect(view(result).draft.editorKey).toBe("3:3:96-3:156");
     run(result, (actions) => actions.reset());
     expect(view(result).draft.editorKey).toBe("4:");
   });
@@ -606,7 +600,7 @@ describe("re-capture, editor identity and anchor history", () => {
     }
     for (let undo = 1; undo <= 50; undo += 1) run(result, (actions) => actions.undoAnchors());
     expect(view(result).draft.canUndoAnchors).toBe(false);
-    expect(view(result).draft.anchors.start).toMatchObject({ page: 1, line: 0 });
+    expect(view(result).draft.anchors.start).toMatchObject({ page: 1, y: 96 });
 
     const second = renderDraft();
     place(second.result, "start", page1, 0);

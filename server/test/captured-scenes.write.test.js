@@ -13,31 +13,26 @@ const MESSAGES = {
     filmTiming:
         "Invalid body. start_time_seconds and end_time_seconds must be integers between 0 and 2147483647 where end >= start.",
     scriptLocation: "Invalid body. script_location must contain start and end scene anchors.",
-    sceneAnchor:
-        "Invalid body. Each scene anchor needs a whole page from 1 to 300, a whole line from 0 to 100000, finite top and bottom, and text.",
-    reversedPair: "Invalid body. The start anchor must come before or on the same line as the end anchor.",
+    sceneAnchor: "Invalid body. Each scene anchor needs a whole page from 1 to 300 and a y from 0 to 1000.",
+    reversedPair: "Invalid body. The start anchor must come before or at the end anchor.",
     sceneText: "Invalid body. scene_text must be a non-empty string.",
-    rawText: "Invalid body. raw_text must be a non-empty string.",
     tags: "Invalid body. tags must be an array of strings.",
     sceneNotFound: "Script scene annotation not found",
     scriptNotFound: "Script not found",
-    filmTimingOverlap: "This scene's film timing overlaps another scene in this script.",
-    scriptLocationOverlap: "This scene's script location shares lines with another scene in this script.",
+    filmTimingOverlap: "This scene's film timing shares a second with another scene in this script.",
+    scriptLocationOverlap: "This scene's script location overlaps another scene in this script.",
 };
 
 const SCENE_FIELDS = [
-    "created_at",
     "end_time_seconds",
     "first_image_annotation",
     "id",
     "movie_id",
-    "raw_text",
     "scene_text",
     "script_id",
     "script_location",
     "start_time_seconds",
     "tags",
-    "updated_at",
 ];
 
 function without(body, ...fields) {
@@ -96,7 +91,6 @@ describe("creating a captured scene", () => {
         assert.equal(response.body.script_id, place.script.id);
         assert.deepEqual(response.body.script_location, body.script_location);
         assert.equal(response.body.scene_text, body.scene_text);
-        assert.equal(response.body.raw_text, body.raw_text);
         assert.deepEqual(response.body.tags, body.tags);
         assert.equal(response.body.first_image_annotation, null);
     });
@@ -115,7 +109,6 @@ describe("creating a captured scene", () => {
             [{ ...valid, script_location: { start: { ...valid.script_location.start, page: 0 }, end: valid.script_location.end } }, MESSAGES.sceneAnchor],
             [{ ...valid, script_location: anchorPair({ startLine: 20, endLine: 10 }) }, MESSAGES.reversedPair],
             [{ ...valid, scene_text: " \n\t " }, MESSAGES.sceneText],
-            [{ ...valid, raw_text: "" }, MESSAGES.rawText],
             [without(valid, "tags"), MESSAGES.tags],
         ];
         for (const [body, message] of invalid) await expectError(postScene(place, body), 400, message);
@@ -138,16 +131,16 @@ describe("creating a captured scene", () => {
         );
     });
 
-    test("requires bounded, finite anchors and permits empty anchor text", async () => {
+    test("requires a bounded page and a finite baseline within the page", async () => {
         const place = await newPlace();
         const pair = anchorPair();
         for (const start of [
-            { ...pair.start, page: 100_001 },
-            { ...pair.start, line: -1 },
-            { ...pair.start, line: 100_001 },
-            { ...pair.start, top: null },
-            { ...pair.start, bottom: "1" },
-            { ...pair.start, text: null },
+            { ...pair.start, page: 301 },
+            { ...pair.start, page: 0 },
+            { ...pair.start, y: -0.1 },
+            { ...pair.start, y: 1000.1 },
+            { ...pair.start, y: null },
+            { ...pair.start, y: "1" },
         ]) {
             await expectError(
                 postScene(place, sceneBody({ script_location: { start, end: pair.end } })),
@@ -155,11 +148,13 @@ describe("creating a captured scene", () => {
                 MESSAGES.sceneAnchor
             );
         }
+        // The page's whole height is in range, and a fractional baseline is kept.
         const response = await postScene(
             place,
-            sceneBody({ script_location: { start: { ...pair.start, text: "" }, end: pair.end } })
+            sceneBody({ script_location: { start: { page: 1, y: 0 }, end: { page: 1, y: 1000 } } })
         );
         assert.equal(response.status, 201, response.text);
+        assert.deepEqual(response.body.script_location, { start: { page: 1, y: 0 }, end: { page: 1, y: 1000 } });
     });
 
     test("trims, drops blanks and deduplicates taxonomy tags in first-seen order", async () => {
@@ -208,7 +203,7 @@ describe("creating a captured scene", () => {
 });
 
 describe("overlap rules", () => {
-    test("film timing rejects overlap, allows touching, and checks it before script location", async () => {
+    test("film timing rejects overlap and touching, and checks it before script location", async () => {
         const place = await newPlace();
         const saved = await createScene(api, cookie, place, { start_time_seconds: 10, end_time_seconds: 20 });
         await expectError(
@@ -217,14 +212,20 @@ describe("overlap rules", () => {
             MESSAGES.filmTimingOverlap,
             expectedConflict("film_timing", saved)
         );
-        const touching = await postScene(
-            place,
-            sceneBody({ start_time_seconds: 20, end_time_seconds: 30, script_location: anchorPair({ startLine: 50 }) })
+        await expectError(
+            postScene(place, sceneBody({ start_time_seconds: 20, end_time_seconds: 30, script_location: anchorPair({ startLine: 50 }) })),
+            409,
+            MESSAGES.filmTimingOverlap,
+            expectedConflict("film_timing", saved)
         );
-        assert.equal(touching.status, 201, touching.text);
+        const clear = await postScene(
+            place,
+            sceneBody({ start_time_seconds: 21, end_time_seconds: 30, script_location: anchorPair({ startLine: 50 }) })
+        );
+        assert.equal(clear.status, 201, clear.text);
     });
 
-    test("a zero-length timing overlaps only a scene that strictly contains it", async () => {
+    test("a zero-length timing conflicts with any scene covering its second", async () => {
         const place = await newPlace();
         const saved = await createScene(api, cookie, place, { start_time_seconds: 10, end_time_seconds: 20 });
         await expectError(
@@ -233,18 +234,24 @@ describe("overlap rules", () => {
             MESSAGES.filmTimingOverlap,
             expectedConflict("film_timing", saved)
         );
+        await expectError(
+            postScene(place, sceneBody({ start_time_seconds: 20, end_time_seconds: 20, script_location: anchorPair({ startLine: 60 }) })),
+            409,
+            MESSAGES.filmTimingOverlap,
+            expectedConflict("film_timing", saved)
+        );
         assert.equal(
             (
                 await postScene(
                     place,
-                    sceneBody({ start_time_seconds: 20, end_time_seconds: 20, script_location: anchorPair({ startLine: 60 }) })
+                    sceneBody({ start_time_seconds: 21, end_time_seconds: 21, script_location: anchorPair({ startLine: 60 }) })
                 )
             ).status,
             201
         );
     });
 
-    test("script locations reject a shared line and allow adjacent lines", async () => {
+    test("script locations reject a shared baseline and allow adjacent lines", async () => {
         const place = await newPlace();
         const saved = await createScene(api, cookie, place, {
             start_time_seconds: 0,
@@ -288,14 +295,12 @@ describe("updating and deleting a captured scene", () => {
             start_time_seconds: 30,
             end_time_seconds: 40,
             scene_text: "Changed scene text",
-            raw_text: "Changed raw text",
             tags: [TAGS.revelation],
             script_location: anchorPair({ startPage: 3, startLine: 1 }),
         });
         const response = await putScene(place, saved.id, body);
         assert.equal(response.status, 200, response.text);
         assert.equal(response.body.id, saved.id);
-        assert.equal(response.body.created_at, saved.created_at);
         assert.equal(response.body.scene_text, body.scene_text);
         assert.deepEqual(response.body.script_location, body.script_location);
     });
@@ -312,27 +317,20 @@ describe("updating and deleting a captured scene", () => {
 });
 
 describe("database overlap constraints", () => {
-    async function insertDirect(db, place, { id = randomUUID(), timing = [100, 110], location = anchorPair({ startLine: 500 }) } = {}) {
+    async function insertDirect(db, place, { id = randomUUID(), timing = [100, 110], location = anchorPair({ startLine: 50 }) } = {}) {
         await db.query(
             `INSERT INTO captured_scenes (
                id, script_id, start_time_seconds, end_time_seconds,
-               start_page, start_line, start_top, start_bottom, start_text,
-               end_page, end_line, end_top, end_bottom, end_text, scene_text, raw_text, tags
-             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Text','Text','[]')`,
+               start_page, start_y, end_page, end_y, scene_text, tags
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Text','[]')`,
             [
                 id,
                 place.script.id,
                 ...timing,
                 location.start.page,
-                location.start.line,
-                location.start.top,
-                location.start.bottom,
-                location.start.text,
+                location.start.y,
                 location.end.page,
-                location.end.line,
-                location.end.top,
-                location.end.bottom,
-                location.end.text,
+                location.end.y,
             ]
         );
         return id;
@@ -361,7 +359,7 @@ describe("database overlap constraints", () => {
 
     test("a constraint race maps script location to a 409 with null conflict details", async () => {
         const place = await newPlace();
-        const shared = anchorPair({ startLine: 700, endLine: 704 });
+        const shared = anchorPair({ startLine: 60, endLine: 64 });
         const holder = await pool.connect();
         try {
             await holder.query("BEGIN");
@@ -399,7 +397,7 @@ describe("concurrent zero-length saves", () => {
                     sceneBody({
                         start_time_seconds: 15,
                         end_time_seconds: 15,
-                        script_location: anchorPair({ startLine: 800 }),
+                        script_location: anchorPair({ startLine: 20 }),
                     })
                 ),
                 postScene(
@@ -407,7 +405,7 @@ describe("concurrent zero-length saves", () => {
                     sceneBody({
                         start_time_seconds: 10,
                         end_time_seconds: 20,
-                        script_location: anchorPair({ startLine: 900 }),
+                        script_location: anchorPair({ startLine: 40 }),
                     })
                 ),
             ];

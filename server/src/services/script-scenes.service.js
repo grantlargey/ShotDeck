@@ -11,25 +11,24 @@ import { HttpError } from "../utils/http-error.js";
 const SCENE_NOT_FOUND = "Script scene annotation not found";
 const SEARCH_RESULT_LIMIT = 500;
 const MAX_INT = 2_147_483_647;
+// A page within a screenplay, and a baseline y within a page in PDF points.
 const MAX_PAGE = 300;
-const MAX_LINE = 100_000;
+const MAX_Y = 1000;
 const TAXONOMY_TAGS = new Set(SCRIPT_TAG_CATEGORIES.flatMap((category) => category.tags.map((tag) => tag.value)));
 
 const INVALID_BODY = {
     filmTiming:
         "Invalid body. start_time_seconds and end_time_seconds must be integers between 0 and 2147483647 where end >= start.",
     scriptLocation: "Invalid body. script_location must contain start and end scene anchors.",
-    sceneAnchor:
-        `Invalid body. Each scene anchor needs a whole page from 1 to ${MAX_PAGE}, a whole line from 0 to ${MAX_LINE}, finite top and bottom, and text.`,
-    reversedPair: "Invalid body. The start anchor must come before or on the same line as the end anchor.",
+    sceneAnchor: `Invalid body. Each scene anchor needs a whole page from 1 to ${MAX_PAGE} and a y from 0 to ${MAX_Y}.`,
+    reversedPair: "Invalid body. The start anchor must come before or at the end anchor.",
     sceneText: "Invalid body. scene_text must be a non-empty string.",
-    rawText: "Invalid body. raw_text must be a non-empty string.",
     tags: "Invalid body. tags must be an array of strings.",
 };
 
 const CONFLICT_MESSAGES = {
-    film_timing: "This scene's film timing overlaps another scene in this script.",
-    script_location: "This scene's script location shares lines with another scene in this script.",
+    film_timing: "This scene's film timing shares a second with another scene in this script.",
+    script_location: "This scene's script location overlaps another scene in this script.",
 };
 
 /** Creates a scene when `sceneId` is null, and otherwise replaces that saved scene. */
@@ -67,7 +66,7 @@ export async function listScriptScenes(db, { movieId, scriptId }) {
     const result = await db.query(
         `${SCENE_SELECT_SQL}
          WHERE s.movie_id = $1 AND sc.script_id = $2
-         ORDER BY sc.start_page, sc.start_line, sc.id`,
+         ORDER BY sc.start_page, sc.start_y, sc.id`,
         [movieId, scriptId]
     );
     return result.rows.map(sceneFromRow);
@@ -96,7 +95,7 @@ export async function searchScriptScenes(db, { tags, match }) {
          ${SCENE_FROM_SQL}
          JOIN movies m ON m.id = s.movie_id
          ${filter}
-         ORDER BY sc.updated_at DESC
+         ORDER BY m.title, sc.start_time_seconds, sc.id
          LIMIT ${SEARCH_RESULT_LIMIT}`,
         values
     );
@@ -124,9 +123,8 @@ function readSceneBody(body) {
     }
     const start = readAnchor(location.start);
     const end = readAnchor(location.end);
-    if (compareLines(start, end) > 0) throw invalidBody(INVALID_BODY.reversedPair);
+    if (compareAnchors(start, end) > 0) throw invalidBody(INVALID_BODY.reversedPair);
     if (!isNonBlankString(fields.scene_text)) throw invalidBody(INVALID_BODY.sceneText);
-    if (!isNonBlankString(fields.raw_text)) throw invalidBody(INVALID_BODY.rawText);
 
     return {
         startTime,
@@ -134,7 +132,6 @@ function readSceneBody(body) {
         start,
         end,
         sceneText: fields.scene_text,
-        rawText: fields.raw_text,
         tags: readTags(fields.tags),
     };
 }
@@ -144,16 +141,13 @@ function readAnchor(value) {
         !Number.isInteger(value.page) ||
         value.page < 1 ||
         value.page > MAX_PAGE ||
-        !Number.isInteger(value.line) ||
-        value.line < 0 ||
-        value.line > MAX_LINE ||
-        !Number.isFinite(value.top) ||
-        !Number.isFinite(value.bottom) ||
-        typeof value.text !== "string"
+        !Number.isFinite(value.y) ||
+        value.y < 0 ||
+        value.y > MAX_Y
     ) {
         throw invalidBody(INVALID_BODY.sceneAnchor);
     }
-    return { page: value.page, line: value.line, top: value.top, bottom: value.bottom, text: value.text };
+    return { page: value.page, y: value.y };
 }
 
 function readTags(value) {
@@ -178,8 +172,8 @@ function invalidBody(message) {
     return new HttpError(400, message);
 }
 
-function compareLines(a, b) {
-    return a.page - b.page || a.line - b.line;
+function compareAnchors(a, b) {
+    return a.page - b.page || a.y - b.y;
 }
 
 async function lockScriptScenes(db, scriptId) {
@@ -191,21 +185,21 @@ async function lockScriptScenes(db, scriptId) {
 async function findConflict(db, { scriptId, sceneId, input }) {
     const result = await db.query(
         `SELECT id, start_time_seconds, end_time_seconds,
-                start_page, start_line, end_page, end_line
+                start_page, start_y::float8 AS start_y, end_page, end_y::float8 AS end_y
          FROM captured_scenes
          WHERE script_id = $1 AND id IS DISTINCT FROM $2
          ORDER BY start_time_seconds, end_time_seconds, id`,
         [scriptId, sceneId]
     );
     const timing = result.rows.find(
-        (other) => other.start_time_seconds < input.endTime && input.startTime < other.end_time_seconds
+        (other) => other.start_time_seconds <= input.endTime && input.startTime <= other.end_time_seconds
     );
     if (timing) return conflictError("film_timing", timing);
 
     const location = result.rows.find(
         (other) =>
-            compareLines(input.start, { page: other.end_page, line: other.end_line }) <= 0 &&
-            compareLines({ page: other.start_page, line: other.start_line }, input.end) <= 0
+            compareAnchors(input.start, { page: other.end_page, y: other.end_y }) <= 0 &&
+            compareAnchors({ page: other.start_page, y: other.start_y }, input.end) <= 0
     );
     return location ? conflictError("script_location", location) : null;
 }
@@ -228,9 +222,9 @@ function constraintConflictKind(constraint) {
 const SCENE_COLUMNS_SQL = `
       sc.id, sc.script_id, s.movie_id,
       sc.start_time_seconds, sc.end_time_seconds,
-      sc.start_page, sc.start_line, sc.start_top, sc.start_bottom, sc.start_text,
-      sc.end_page, sc.end_line, sc.end_top, sc.end_bottom, sc.end_text,
-      sc.scene_text, sc.raw_text, sc.tags, sc.created_at, sc.updated_at,
+      sc.start_page, sc.start_y::float8 AS start_y,
+      sc.end_page, sc.end_y::float8 AS end_y,
+      sc.scene_text, sc.tags,
       first_image.id AS first_image_annotation_id,
       first_image.time_seconds AS first_image_annotation_time_seconds,
       first_image.image_key AS first_image_annotation_image_key,
@@ -260,26 +254,11 @@ function sceneFromRow(row) {
         start_time_seconds: row.start_time_seconds,
         end_time_seconds: row.end_time_seconds,
         script_location: {
-            start: {
-                page: row.start_page,
-                line: row.start_line,
-                top: row.start_top,
-                bottom: row.start_bottom,
-                text: row.start_text,
-            },
-            end: {
-                page: row.end_page,
-                line: row.end_line,
-                top: row.end_top,
-                bottom: row.end_bottom,
-                text: row.end_text,
-            },
+            start: { page: row.start_page, y: row.start_y },
+            end: { page: row.end_page, y: row.end_y },
         },
         scene_text: row.scene_text,
-        raw_text: row.raw_text,
         tags: Array.isArray(row.tags) ? row.tags : [],
-        created_at: row.created_at,
-        updated_at: row.updated_at,
         first_image_annotation: row.first_image_annotation_id
             ? {
                   id: row.first_image_annotation_id,
@@ -321,26 +300,18 @@ async function writeScene(db, { scriptId, sceneId, input }) {
         input.startTime,
         input.endTime,
         input.start.page,
-        input.start.line,
-        input.start.top,
-        input.start.bottom,
-        input.start.text,
+        input.start.y,
         input.end.page,
-        input.end.line,
-        input.end.top,
-        input.end.bottom,
-        input.end.text,
+        input.end.y,
         input.sceneText,
-        input.rawText,
         JSON.stringify(input.tags),
     ];
     if (sceneId) {
         await db.query(
             `UPDATE captured_scenes SET
                script_id = $2, start_time_seconds = $3, end_time_seconds = $4,
-               start_page = $5, start_line = $6, start_top = $7, start_bottom = $8, start_text = $9,
-               end_page = $10, end_line = $11, end_top = $12, end_bottom = $13, end_text = $14,
-               scene_text = $15, raw_text = $16, tags = $17::jsonb, updated_at = NOW()
+               start_page = $5, start_y = $6, end_page = $7, end_y = $8,
+               scene_text = $9, tags = $10::jsonb
              WHERE id = $1`,
             [sceneId, ...values]
         );
@@ -351,12 +322,8 @@ async function writeScene(db, { scriptId, sceneId, input }) {
     await db.query(
         `INSERT INTO captured_scenes (
            id, script_id, start_time_seconds, end_time_seconds,
-           start_page, start_line, start_top, start_bottom, start_text,
-           end_page, end_line, end_top, end_bottom, end_text,
-           scene_text, raw_text, tags
-         ) VALUES (
-           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb
-         )`,
+           start_page, start_y, end_page, end_y, scene_text, tags
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
         [id, ...values]
     );
     return id;

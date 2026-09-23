@@ -431,43 +431,40 @@ try {
   assert.equal(createdResponse.status(), 201);
   const saved = await createdResponse.json();
   assert.deepEqual(Object.keys(saved).sort(), [
-    "created_at",
     "end_time_seconds",
     "first_image_annotation",
     "id",
     "movie_id",
-    "raw_text",
     "scene_text",
     "script_id",
     "script_location",
     "start_time_seconds",
     "tags",
-    "updated_at",
   ]);
   assert.deepEqual(Object.keys(saved.script_location).sort(), ["end", "start"]);
-  assert.deepEqual(Object.keys(saved.script_location.start).sort(), ["bottom", "line", "page", "text", "top"]);
-  assert.deepEqual(Object.keys(saved.script_location.end).sort(), ["bottom", "line", "page", "text", "top"]);
+  assert.deepEqual(Object.keys(saved.script_location.start).sort(), ["page", "y"]);
+  assert.deepEqual(Object.keys(saved.script_location.end).sort(), ["page", "y"]);
   assert.equal(saved.start_time_seconds, 600);
   assert.equal(saved.end_time_seconds, 660);
   assert.equal(saved.script_location.start.page, 1);
-  assert.equal(saved.script_location.start.line, 0);
   assert.equal(saved.script_location.end.page, 1);
-  assert.equal(saved.script_location.end.line, 7);
+  // The anchors are baselines on the page, the end below the start.
+  assert(saved.script_location.start.y > 0);
+  assert(saved.script_location.end.y > saved.script_location.start.y);
   assert(saved.scene_text.includes("INT. DINER - NIGHT"));
-  assert(saved.raw_text.includes("Coffee is all I can do."));
+  assert(saved.scene_text.includes("Coffee is all I can do."));
   assert.deepEqual(saved.tags, []);
-  for (const retired of ["anchor_geometry", "formatted_selected_text", "raw_selected_text", "selected_text"]) {
+  for (const retired of ["anchor_geometry", "formatted_selected_text", "raw_selected_text", "raw_text", "selected_text"]) {
     assert.equal(Object.hasOwn(saved, retired), false, `${retired} is absent from the canonical response`);
   }
 
   const stored = await database.query("SELECT * FROM captured_scenes WHERE id = $1", [saved.id]);
   assert.equal(stored.rowCount, 1);
   assert.equal(stored.rows[0].start_page, saved.script_location.start.page);
-  assert.equal(stored.rows[0].start_line, saved.script_location.start.line);
+  assert.equal(Number(stored.rows[0].start_y), saved.script_location.start.y);
   assert.equal(stored.rows[0].end_page, saved.script_location.end.page);
-  assert.equal(stored.rows[0].end_line, saved.script_location.end.line);
+  assert.equal(Number(stored.rows[0].end_y), saved.script_location.end.y);
   assert.equal(stored.rows[0].scene_text, saved.scene_text);
-  assert.equal(stored.rows[0].raw_text, saved.raw_text);
   assert.deepEqual(stored.rows[0].tags, []);
   pass("capture and save persist the exact canonical HTTP fields in captured_scenes");
 
