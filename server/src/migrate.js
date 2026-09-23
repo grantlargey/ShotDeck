@@ -6,7 +6,6 @@ import { pool } from "./db.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDirectory = path.resolve(__dirname, "../sql/migrations");
 const MIGRATION_FILE = /^(\d{4})_([a-z0-9_]+)\.sql$/;
-const LEGACY_TABLES = ["script_annotations", "script_scene_annotations", "script_scene_anchors"];
 
 async function readMigrations() {
     const entries = await fs.readdir(migrationsDirectory, { withFileTypes: true });
@@ -25,17 +24,6 @@ async function readMigrations() {
         versions.add(migration.version);
     }
     return migrations;
-}
-
-async function legacyTables(db) {
-    const result = await db.query(
-        `SELECT table_name
-         FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name = ANY($1::text[])
-         ORDER BY table_name`,
-        [LEGACY_TABLES]
-    );
-    return result.rows.map((row) => row.table_name);
 }
 
 async function applyMigration(db, migration) {
@@ -58,13 +46,6 @@ async function runMigrations() {
     const client = await pool.connect();
     try {
         await client.query("SELECT pg_advisory_lock(hashtextextended('scriptdeck-schema-migrations', 0))");
-
-        const legacy = await legacyTables(client);
-        if (legacy.length > 0) {
-            throw new Error(
-                `This database predates the supported schema and cannot be migrated in place. Restore a compatible backup or rebuild it. Incompatible tables: ${legacy.join(", ")}`
-            );
-        }
 
         await client.query(`
           CREATE TABLE IF NOT EXISTS schema_migrations (
