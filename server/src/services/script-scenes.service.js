@@ -11,6 +11,8 @@ import { HttpError } from "../utils/http-error.js";
 
 const SCENE_NOT_FOUND = "Script scene annotation not found";
 const SEARCH_RESULT_LIMIT = 500;
+// How many scenes the home page's library reel draws at once.
+const SAMPLE_SIZE = 12;
 const MAX_INT = 2_147_483_647;
 // A page within a screenplay, and a baseline y within a page in PDF points.
 const MAX_PAGE = 300;
@@ -92,15 +94,19 @@ export async function searchScriptScenes(db, { tags, match }) {
     const filter = tags.length === 0 ? "" : anyTag ? "WHERE sc.tags ?| $1::text[]" : "WHERE sc.tags @> $1::jsonb";
     const values = tags.length === 0 ? [] : [anyTag ? tags : JSON.stringify(tags)];
     const result = await db.query(
-        `SELECT ${SCENE_COLUMNS_SQL}, m.title AS movie_title
-         ${SCENE_FROM_SQL}
-         JOIN movies m ON m.id = s.movie_id
+        `${TITLED_SCENE_SELECT_SQL}
          ${filter}
          ORDER BY m.title, sc.start_time_seconds, sc.id
          LIMIT ${SEARCH_RESULT_LIMIT}`,
         values
     );
-    return result.rows.map((row) => ({ ...sceneFromRow(row), movie_title: row.movie_title }));
+    return result.rows.map(titledSceneFromRow);
+}
+
+/** A random handful of scenes from every script, in the search result shape, for the home page's library reel. */
+export async function sampleScriptScenes(db) {
+    const result = await db.query(`${TITLED_SCENE_SELECT_SQL} ORDER BY random() LIMIT $1`, [SAMPLE_SIZE]);
+    return result.rows.map(titledSceneFromRow);
 }
 
 function readSceneBody(body) {
@@ -248,6 +254,10 @@ const SCENE_FROM_SQL = `
     ) first_image ON TRUE`;
 
 const SCENE_SELECT_SQL = `SELECT ${SCENE_COLUMNS_SQL} ${SCENE_FROM_SQL}`;
+// Search and the library sample return each scene with its film's title.
+const TITLED_SCENE_SELECT_SQL = `SELECT ${SCENE_COLUMNS_SQL}, m.title AS movie_title
+    ${SCENE_FROM_SQL}
+    JOIN movies m ON m.id = s.movie_id`;
 
 function sceneFromRow(row) {
     return {
@@ -271,6 +281,10 @@ function sceneFromRow(row) {
               }
             : null,
     };
+}
+
+function titledSceneFromRow(row) {
+    return { ...sceneFromRow(row), movie_title: row.movie_title };
 }
 
 async function fetchSceneRow(db, { movieId, scriptId, sceneId }) {

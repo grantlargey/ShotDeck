@@ -13,6 +13,7 @@ import { ChevronRightIcon, SearchIcon } from "@/shared/ui/icons.jsx";
 import { Input } from "@/shared/ui/Input.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import SiteFooter from "@/widgets/site-footer/ui/SiteFooter.jsx";
+import { LibraryReel } from "./LibraryReel.jsx";
 import styles from "./HomePage.module.css";
 
 const RECENT_PROJECT_LIMIT = 5;
@@ -92,6 +93,8 @@ export default function HomePage() {
 
         <p className={styles.heroCredit}>Spider-Man: Into the Spider-Verse (2018)</p>
       </section>
+
+      <LibraryReel />
 
       <section className={styles.recent} aria-labelledby="home-recent-heading">
         <SectionHeading

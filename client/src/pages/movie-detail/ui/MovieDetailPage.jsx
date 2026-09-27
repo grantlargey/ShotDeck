@@ -91,9 +91,6 @@ export default function MovieDetailPage() {
   // The grid still under the pointer or keyboard focus, marked on the timeline.
   const [hoveredStillId, setHoveredStillId] = useState(null);
 
-  // A random still backs the hero, picked when the page loads.
-  const [backdropStillId, setBackdropStillId] = useState(null);
-
   const [scriptFile, setScriptFile] = useState(null);
 
   // Inline edit mode (MOVIE)
@@ -121,8 +118,7 @@ export default function MovieDetailPage() {
    * arrives, so the header and script panel don't wait for the slower stills.
    * Only the latest load's responses apply.
    * The scene viewer stays open across reloads (moving to the nearest still if
-   * its still was deleted) and closes once no stills remain. The hero keeps its
-   * random still across reloads unless that still was deleted.
+   * its still was deleted) and closes once no stills remain.
    */
   async function load() {
     const loadId = ++loadIdRef.current;
@@ -142,9 +138,6 @@ export default function MovieDetailPage() {
       const a = sortAnnotationsByTime(annotationRows);
       setStillRows(a);
       if (a.length === 0) closeViewer();
-      setBackdropStillId((prev) =>
-        a.some((row) => row.id === prev) ? prev : (a[Math.floor(Math.random() * a.length)]?.id ?? null)
-      );
     });
 
     try {
@@ -178,9 +171,6 @@ export default function MovieDetailPage() {
   }, [movie]);
 
   const stillEditor = useStillEditor({ movieId: id, runtimeSeconds, onChange: load });
-
-  const backdropStill = annotations.find((row) => row.id === backdropStillId);
-  const backdropUrl = useSignedMediaUrl(backdropStill?.image_key || null, backdropStill?.image_url || null);
 
   function closeViewer() {
     setViewerStillId(null);
@@ -265,7 +255,8 @@ export default function MovieDetailPage() {
       <MovieHeader
         movie={movie}
         coverUrl={coverUrl}
-        backdropUrl={backdropUrl}
+        stills={annotations}
+        onOpenStill={setViewerStillId}
         actions={
           <>
             {script && (

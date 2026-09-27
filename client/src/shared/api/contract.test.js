@@ -6,11 +6,13 @@ const dependencies = vi.hoisted(() => ({
 
 vi.mock("./request.js", () => ({ req: dependencies.req }));
 
+import { sampleStills } from "./annotations.js";
 import { createMovie, deleteMovie, getMovie, listMovies, updateMovie } from "./movies.js";
 import {
   createScriptScene,
   deleteScriptScene,
   listScriptScenes,
+  sampleScriptScenes,
   searchScriptScenes,
   updateScriptScene,
 } from "./scriptScenes.js";
@@ -94,5 +96,14 @@ describe("captured-scene endpoints", () => {
     expect(dependencies.req).toHaveBeenCalledWith(
       "/script-scenes?tags=tone%3Adread%2Cstakes%3Aphysical&match=any"
     );
+  });
+});
+
+describe("library sample endpoints", () => {
+  it("asks for the server's own sample of stills and captured scenes", () => {
+    sampleStills();
+    sampleScriptScenes();
+
+    expect(dependencies.req.mock.calls).toEqual([["/stills/sample"], ["/script-scenes/sample"]]);
   });
 });

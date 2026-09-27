@@ -45,3 +45,8 @@ export function searchScriptScenes({ tags, match }) {
   const qs = params.toString();
   return req(`/script-scenes${qs ? `?${qs}` : ""}`);
 }
+
+/** A random handful of captured scenes from every script, each with its film's title. */
+export function sampleScriptScenes() {
+  return req("/script-scenes/sample");
+}

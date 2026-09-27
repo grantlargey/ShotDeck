@@ -1,0 +1,183 @@
+.section {
+  padding-top: 32px;
+}
+
+.heading {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: 0 var(--page-gutter);
+}
+
+.reel {
+  display: grid;
+  gap: 12px;
+}
+
+/* A strip fades out at both screen edges instead of being cut off. */
+.track {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+.strip {
+  width: max-content;
+  display: flex;
+  animation: drift var(--reel-duration, 60s) linear infinite;
+}
+
+.trackReverse .strip {
+  animation-direction: reverse;
+}
+
+.track:hover .strip,
+.track:focus-within .strip {
+  animation-play-state: paused;
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px;
+  display: flex;
+  gap: 12px;
+}
+
+/* ---------- Items ---------- */
+
+.frame {
+  position: relative;
+  width: 300px;
+  aspect-ratio: 16 / 9;
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-deep);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.trackReverse .frame {
+  width: 240px;
+}
+
+.frame:focus-visible {
+  outline-offset: -2px;
+}
+
+.frame img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transition: transform 0.24s ease;
+}
+
+.frame:hover img {
+  transform: scale(1.03);
+}
+
+/* A slice of script paper, as on the scene cards. */
+.sceneFrame {
+  width: 300px;
+  aspect-ratio: 3 / 2;
+  background: var(--color-paper);
+}
+
+.paper {
+  height: 100%;
+  padding: 14px 14px 0;
+  overflow: hidden;
+  color: var(--color-ink);
+}
+
+.paper::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 56px;
+  background: linear-gradient(transparent, var(--color-paper));
+}
+
+/* The film and its moment show along the bottom edge on hover. */
+.caption {
+  position: absolute;
+  z-index: 1;
+  inset: auto 0 0;
+  padding: 22px 10px 8px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  background: linear-gradient(transparent, var(--color-scrim));
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.frame:hover .caption,
+.frame:focus-visible .caption {
+  opacity: 1;
+}
+
+.captionTitle {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.captionTime {
+  flex: none;
+  color: var(--color-text-soft);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.skeletonFrame {
+  width: 300px;
+  aspect-ratio: 16 / 9;
+}
+
+@media (max-width: 600px) {
+  .frame,
+  .sceneFrame,
+  .skeletonFrame {
+    width: 220px;
+  }
+
+  .trackReverse .frame {
+    width: 190px;
+  }
+
+  /* Touch screens can't hover, so the caption stays visible. */
+  .caption {
+    opacity: 1;
+  }
+}
+
+/* No drift: the first copy scrolls sideways and the loop copy goes away. */
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .strip {
+    animation: none;
+  }
+
+  .copy {
+    display: none;
+  }
+}

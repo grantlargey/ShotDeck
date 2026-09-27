@@ -52,4 +52,8 @@ router.get("/script-scenes", async (req, res) => {
     );
 });
 
+router.get("/script-scenes/sample", async (req, res) => {
+    res.json(await scriptScenes.sampleScriptScenes(pool));
+});
+
 export default router;

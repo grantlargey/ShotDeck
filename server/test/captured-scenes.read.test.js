@@ -195,3 +195,34 @@ describe("searching captured scenes", () => {
         }
     });
 });
+
+describe("sampling captured scenes", () => {
+    test("is public and returns scenes in the search shape, with movie_title", async () => {
+        // At least one scene exists to sample.
+        await createScene(api, cookie, await createMovieWithScript(api, cookie));
+
+        const response = await api.get("/script-scenes/sample");
+        assert.equal(response.status, 200);
+        assert.ok(response.body.length > 0);
+        for (const { movie_title: movieTitle, ...sampled } of response.body) {
+            const place = { movie: { id: sampled.movie_id }, script: { id: sampled.script_id } };
+            const saved = (await api.get(scenesPath(place))).body.find((candidate) => candidate.id === sampled.id);
+            assert.deepEqual(sampled, saved);
+            const film = await pool.query("SELECT title FROM movies WHERE id = $1", [sampled.movie_id]);
+            assert.equal(movieTitle, film.rows[0].title);
+        }
+    });
+
+    test("draws at most 12 scenes", async () => {
+        const place = await createMovieWithScript(api, cookie);
+        for (let n = 0; n < 13; n += 1) {
+            await createScene(api, cookie, place, {
+                start_time_seconds: n * 10,
+                end_time_seconds: n * 10 + 5,
+                script_location: anchorPair({ startPage: n + 1 }),
+            });
+        }
+
+        assert.equal((await api.get("/script-scenes/sample")).body.length, 12);
+    });
+});

@@ -21,6 +21,8 @@ const INVALID_BODY_MESSAGE =
 const TENTHS_PER_SECOND = 10;
 // The moment column holds a tenth of a second, under a million seconds.
 const MAX_TIME_SECONDS = 999_999.9;
+// How many stills the home page's library reel draws at once.
+const SAMPLE_SIZE = 24;
 
 // The stored columns, with the moment read back as a number: node-postgres
 // hands back NUMERIC as a string, and every reader of a still treats it as a
@@ -185,6 +187,33 @@ export async function listStills(db, movieId) {
 
     queueThumbnailsForRows(db, result.rows);
     return Promise.all(result.rows.map(toStillResponse));
+}
+
+/**
+ * A random handful of stills with images, across every film, each with its
+ * film's title. The home page's library reel shows these without loading any
+ * film's full stills list.
+ */
+export async function sampleStills(db) {
+    const result = await db.query(
+        `
+        SELECT sampled.*, m.title AS movie_title
+        FROM (
+          SELECT ${STILL_COLUMNS_SQL}
+          FROM annotations
+          WHERE image_key IS NOT NULL
+          ORDER BY random()
+          LIMIT $1
+        ) sampled
+        JOIN movies m ON m.id = sampled.movie_id
+      `,
+        [SAMPLE_SIZE]
+    );
+
+    queueThumbnailsForRows(db, result.rows);
+    return Promise.all(
+        result.rows.map(async (row) => ({ ...(await toStillResponse(row)), movie_title: row.movie_title }))
+    );
 }
 
 /** Replaces the time. The image is kept when the body leaves image_key out, and null removes it. */

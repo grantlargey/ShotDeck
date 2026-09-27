@@ -4,6 +4,11 @@ export function listAnnotations(movieId) {
   return req(`/movies/${encodeURIComponent(movieId)}/annotations`);
 }
 
+/** A random handful of stills with images from across the films, each with its film's title. */
+export function sampleStills() {
+  return req("/stills/sample");
+}
+
 /** Attaches an uploaded image. The still-save module owns upload progress. */
 export function createAnnotation({ movieId, id, timeSeconds, imageKey }) {
   return req(`/movies/${encodeURIComponent(movieId)}/annotations`, {

@@ -4,7 +4,7 @@ import { requireAdmin } from "../middleware/require-admin.js";
 import * as stillsService from "../services/stills.service.js";
 
 /**
- * Still routes. Their paths keep the stills' storage name, `annotations`.
+ * Still routes. A film's still paths keep the stills' storage name, `annotations`.
  * Validation, SQL and response shaping live in services/stills.service.js.
  */
 const router = Router();
@@ -15,6 +15,10 @@ router.post("/movies/:movieId/annotations", requireAdmin, async (req, res) => {
 
 router.get("/movies/:movieId/annotations", async (req, res) => {
     res.json(await stillsService.listStills(pool, req.params.movieId));
+});
+
+router.get("/stills/sample", async (req, res) => {
+    res.json(await stillsService.sampleStills(pool));
 });
 
 router.put("/movies/:movieId/annotations/:stillId", requireAdmin, async (req, res) => {

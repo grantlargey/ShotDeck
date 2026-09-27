@@ -216,6 +216,34 @@ describe("listing stills", () => {
     });
 });
 
+describe("sampling stills", () => {
+    test("is public, returns only stills with images, and adds each one's film title", async () => {
+        const movie = await createMovie(api, cookie, { title: "Sampled Film" });
+        await createStill(movie, { time_seconds: 1 });
+        await createStill(movie, { time_seconds: 2.5, image_key: `annotations/${movie.id}/sampled.jpg` });
+
+        const response = await api.get("/stills/sample");
+        assert.equal(response.status, 200);
+        assert.ok(response.body.length > 0);
+        for (const still of response.body) {
+            assert.deepEqual(Object.keys(still).sort(), [...STILL_FIELDS, "movie_title"].sort());
+            assert.equal(typeof still.time_seconds, "number");
+            assert.match(still.image_url, signedUrlPattern(still.image_key));
+            const film = await pool.query("SELECT title FROM movies WHERE id = $1", [still.movie_id]);
+            assert.equal(still.movie_title, film.rows[0].title);
+        }
+    });
+
+    test("draws at most 24 stills", async () => {
+        const movie = await createMovie(api, cookie);
+        for (let second = 0; second < 25; second += 1) {
+            await createStill(movie, { time_seconds: second, image_key: `annotations/${movie.id}/${second}.jpg` });
+        }
+
+        assert.equal((await api.get("/stills/sample")).body.length, 24);
+    });
+});
+
 describe("updating a still", () => {
     test("checks runtime and uniqueness without modifying a rejected shot, and permits its own timestamp", async () => {
         const movie = await createMovie(api, cookie, { runtime_minutes: 90 });

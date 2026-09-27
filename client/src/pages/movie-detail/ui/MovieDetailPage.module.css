@@ -35,6 +35,84 @@
   opacity: 0.4;
 }
 
+/* The stills take turns: each dissolves in and pushes in slowly while it holds, and eases back as it fades out. */
+.backdropStill {
+  transform: scale(1.02);
+  transition:
+    opacity 1.8s ease,
+    transform 9s linear;
+}
+
+.backdropStill.backdropLoaded {
+  transform: scale(1.12);
+}
+
+/* Names the still on screen and opens it; a thin line counts down to the next. */
+.backdropCaption {
+  position: absolute;
+  z-index: 2;
+  right: max(var(--page-gutter), calc((100% - var(--page-max-width)) / 2 + var(--page-gutter)));
+  bottom: 40px;
+  padding: 7px 10px 9px;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 2px 8px;
+  border: 1px solid var(--color-line-control);
+  border-radius: var(--radius-sm);
+  background: var(--color-glass);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: border-color var(--transition-fast);
+}
+
+.backdropCaption:hover {
+  border-color: var(--color-line-strong);
+}
+
+.backdropLabel {
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.backdropTime {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.backdropProgress {
+  grid-column: 1 / -1;
+  height: 2px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-fill);
+}
+
+.backdropProgress > span {
+  height: 100%;
+  display: block;
+  background: var(--color-accent);
+  transform-origin: left;
+  animation: backdrop-countdown var(--backdrop-hold) linear both;
+}
+
+@keyframes backdrop-countdown {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
 /* Darkens the side the text sits on and fades the bottom into the page. */
 .hero::after {
   content: "";
@@ -241,6 +319,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Where the browser supports scroll-driven animation, stills fade in as they scroll into view. */
+@supports (animation-timeline: view()) {
+  .stillGrid > li {
+    animation: still-in linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 70%;
+  }
+}
+
+@keyframes still-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .stillsEmpty {
   margin-top: 20px;
 }
@@ -259,6 +358,11 @@
 /* ---------- Narrow screens: stacked hero, two-column stills ---------- */
 
 @media (max-width: 600px) {
+  .backdropCaption {
+    top: 16px;
+    bottom: auto;
+  }
+
   .heroInner {
     padding: 28px var(--page-gutter);
     flex-direction: column;
@@ -278,5 +382,17 @@
   .stillGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdropStill,
+  .backdropStill.backdropLoaded {
+    transform: none;
+    transition: opacity 0.4s ease;
+  }
+
+  .stillGrid > li {
+    animation: none;
   }
 }
