@@ -63,6 +63,29 @@ describe("Dialog lifecycle", () => {
     document.body.style.overflow = "";
   });
 
+  /*
+   * The overlay covers the viewport through `position: fixed`, which resolves
+   * against the nearest ancestor that paints a backdrop filter rather than
+   * against the viewport. The site header paints one, so a dialog left where
+   * it is written would collapse to the header's height when opened from the
+   * account menu. Drawing it at the end of the document is what keeps it out
+   * of any such subtree.
+   */
+  it("draws itself outside the subtree it was written in", () => {
+    const { container } = render(
+      <header style={{ backdropFilter: "blur(8px)" }}>
+        <Dialog title="Example dialog" onClose={() => {}}>
+          Body
+        </Dialog>
+      </header>
+    );
+    const panel = screen.getByRole("dialog", { name: "Example dialog" });
+
+    expect(panel.closest("header")).toBeNull();
+    expect(container.contains(panel)).toBe(false);
+    expect(panel.parentElement.parentElement).toBe(document.body);
+  });
+
   it("restores focus to the opener when it closes", async () => {
     render(<DialogHarness />);
     const opener = screen.getByRole("button", { name: "Open dialog" });
