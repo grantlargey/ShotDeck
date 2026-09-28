@@ -43,9 +43,19 @@ export function useHeaderScroll(headerRef, { enabled }) {
     update();
     window.addEventListener("scroll", update, { passive: true });
     phone?.addEventListener("change", update);
+    // Scrolling and the window's width are not the only things that decide
+    // whether the header may be away: Tab moves focus on its own, and a header
+    // that has already slid above the window still holds real controls - the
+    // brand link, the nav links, New Project and Account. Without this a
+    // keyboard reader works through those off screen until something happens to
+    // scroll. focusin bubbles to the document for every focus move on the page,
+    // so one listener here notices focus arriving in the header as well as
+    // focus moving on elsewhere.
+    document.addEventListener("focusin", update);
     return () => {
       window.removeEventListener("scroll", update);
       phone?.removeEventListener("change", update);
+      document.removeEventListener("focusin", update);
     };
   }, [enabled, headerRef]);
 
