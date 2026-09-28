@@ -26,7 +26,8 @@ import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerMod
 import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
 import { MovieHeader, MovieHeaderSkeleton } from "./MovieHeader.jsx";
 import { MovieScriptPanel } from "./MovieScriptPanel.jsx";
-import { useStillEditor } from "./useStillEditor.jsx";
+import { AddStillDialog } from "./AddStillDialog.jsx";
+import { useStillEdit } from "./useStillEdit.jsx";
 import styles from "./MovieDetailPage.module.css";
 
 /**
@@ -125,6 +126,8 @@ export default function MovieDetailPage() {
   const [viewerStillId, setViewerStillId] = useState(null);
   // The grid still under the pointer or keyboard focus, marked on the timeline.
   const [hoveredStill] = useState(createHoveredStill);
+  // Mounting the add dialog opens it on an empty form; unmounting discards it.
+  const [addingStill, setAddingStill] = useState(false);
 
   const [scriptFile, setScriptFile] = useState(null);
 
@@ -205,11 +208,11 @@ export default function MovieDetailPage() {
     return Number(movie.runtime_minutes) * 60;
   }, [movie]);
 
-  const stillEditor = useStillEditor({ movieId: id, runtimeSeconds, onChange: load });
+  const stillEdit = useStillEdit({ movieId: id, runtimeSeconds, onChange: load });
 
   function closeViewer() {
     setViewerStillId(null);
-    stillEditor.reset();
+    stillEdit.reset();
   }
 
   async function saveScriptPdf() {
@@ -355,7 +358,7 @@ export default function MovieDetailPage() {
             actions={
               canEdit &&
               annotations.length > 0 && (
-                <Button size="sm" onClick={stillEditor.openAddDialog}>
+                <Button size="sm" onClick={() => setAddingStill(true)}>
                   <PlusIcon size={14} />
                   Add still
                 </Button>
@@ -371,7 +374,7 @@ export default function MovieDetailPage() {
               title="No stills yet"
               action={
                 canEdit && (
-                  <Button size="sm" variant="primary" onClick={stillEditor.openAddDialog}>
+                  <Button size="sm" variant="primary" onClick={() => setAddingStill(true)}>
                     <PlusIcon size={14} />
                     Add the first still
                   </Button>
@@ -415,17 +418,24 @@ export default function MovieDetailPage() {
           onClose={closeViewer}
           onSelectTag={(tag) => nav(`/script-search?tag=${encodeURIComponent(tag)}`)}
           onOpenScene={(scene) => nav(getSceneScriptPath(scene))}
-          renderActions={canEdit ? stillEditor.renderActions : undefined}
+          renderActions={canEdit ? stillEdit.renderActions : undefined}
           renderStillTools={!canEdit ? undefined : (still) => (
             <>
               {err && <Callout tone="error">{err}</Callout>}
-              {stillEditor.renderStillTools(still)}
+              {stillEdit.renderStillTools(still)}
             </>
           )}
         />
       )}
 
-      {stillEditor.addDialog}
+      {addingStill && (
+        <AddStillDialog
+          movieId={id}
+          runtimeSeconds={runtimeSeconds}
+          onAdded={load}
+          onClose={() => setAddingStill(false)}
+        />
+      )}
     </div>
   );
 }
