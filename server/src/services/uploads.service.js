@@ -1,13 +1,23 @@
 import { v4 as uuidv4, validate as isUuid } from "uuid";
-import {
-    buildObjectKey,
-    createPresignedPutUrl,
-    createPresignedGetUrl,
-    getExtensionForContentType,
-} from "../s3.js";
+import { createPresignedPutUrl, createPresignedGetUrl } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
 
-/** Reads a presign request, `{ movieId, type, contentType }`, and signs a PUT for a new key in the type's folder. */
+const UPLOAD_FOLDERS = {
+    cover: "covers",
+    annotation: "annotations",
+    script: "scripts",
+};
+
+const CONTENT_TYPE_EXTENSIONS = {
+    "application/pdf": "pdf",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/avif": "avif",
+};
+
+/** Validates an upload, chooses its stable object key, and signs a PUT for it. */
 export async function createUploadPresign(body) {
     const { movieId, type, contentType, uploadId } = body ?? {};
     const isImageUpload = type === "cover" || type === "annotation";
@@ -32,12 +42,18 @@ export async function createUploadPresign(body) {
     // Renewing a failed/expired upload targets the same object, including when
     // its previous PUT succeeded but the browser lost the response.
     const id = uploadId ?? uuidv4();
-    const ext = getExtensionForContentType(contentType);
-    const key = buildObjectKey({
-        movieId,
-        type,
-        filename: `${id}.${ext}`,
-    });
+    // Other image/* types are accepted and keep the existing jpg fallback.
+    const extension = CONTENT_TYPE_EXTENSIONS[contentType] ?? "jpg";
+
+    if (!movieId) throw new Error("movieId is required");
+    const movieSegment = movieId
+        .trim()
+        .replace(/[^A-Za-z0-9._-]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    if (!movieSegment) throw new Error("movieId is invalid");
+
+    // The filename consists only of a generated or validated UUID and a known extension.
+    const key = `${UPLOAD_FOLDERS[type]}/${movieSegment}/${id}.${extension}`;
 
     const { uploadUrl } = await createPresignedPutUrl({ key, contentType });
     return { uploadUrl, key };
