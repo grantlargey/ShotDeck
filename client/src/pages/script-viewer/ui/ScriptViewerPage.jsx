@@ -56,6 +56,12 @@ const RECAPTURE_LABELS = {
 const STALE_SAVE_PROMPT =
   "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
 
+// Reported when a link to a captured scene can never be followed: indexing has
+// finished and the page its script location sits on holds no readable text, so
+// the viewer has nothing to scroll to. Stated without the page number, which
+// stays on the admin's anchor surfaces.
+const UNREACHABLE_SCENE_NOTICE = "Couldn't show this scene in the script: its page has no readable text.";
+
 function parsePageParam(value) {
   const page = Number(value);
   return value !== null && Number.isInteger(page) && page > 0 ? page : null;
@@ -130,6 +136,11 @@ function ScriptViewerPage() {
   // What the draft's text and script location are, and what saving stores, lives in useSceneDraft.
   const [draft, draftActions] = useSceneDraft(textIndex);
   const draftSceneId = draft.savedScene?.id ?? "";
+  // The one scene the page is about right now: the admin's scene draft, or the
+  // scene a visitor last opened or followed a link to. The page frames and the
+  // scene grid both mark it, and a deep link's pending scroll is only honoured
+  // while it is still this scene.
+  const activeSceneId = canEdit ? draftSceneId : focusSceneId;
 
   useEffect(() => {
     let cancelled = false;
@@ -172,7 +183,35 @@ function ScriptViewerPage() {
 
   // ---------- Navigation and scrolling ----------
 
+  /*
+   * A deep link's scroll is an intent that outlives the render that made it: it
+   * waits for the background indexer to publish the page its script location
+   * sits on, which can be many seconds after the link opened. Three things can
+   * end that wait — the scroll runs, something supersedes it, or its page turns
+   * out never to be coming — and until one of them does, the intent stays armed
+   * and will fire into whatever the viewer has become by then.
+   *
+   * dropPendingScroll ends the wait silently, for every case where the person
+   * did the superseding themselves and needs no telling.
+   */
+  const dropPendingScroll = useStableHandler(() => setPendingScroll(null));
+
+  // Giving up because the page is never coming does have to be said out loud:
+  // the link promised to land on a scene, and without a word the script would
+  // just sit where it is with nothing to explain it.
+  const abandonUnreachableScene = useStableHandler(() => {
+    setPendingScroll(null);
+    setNotice({ tone: "info", text: UNREACHABLE_SCENE_NOTICE });
+  });
+
+  // Scrolling where the admin or the visitor asked supersedes a link that is
+  // still waiting: they have taken the viewer over, and the link's scroll would
+  // only drag them off what they went to look at. Windowing cancels a scroll
+  // already under way on the first wheel, key or pointer; this ends one that has
+  // not begun. runPendingScroll asks windowing directly rather than coming
+  // through here, so the intent's own scroll is not caught by its own rule.
   function scrollToPoint(pageNumber, offsetPt, options = {}) {
+    dropPendingScroll();
     windowing.scrollToPage(pageNumber, { behavior: "smooth", ...options, offsetPt });
   }
 
@@ -186,22 +225,50 @@ function ScriptViewerPage() {
     if (canEdit) draftActions.loadScene(target);
     else setFocusSceneId(target.id);
     const scroll = sceneScrollTarget(target, textIndex.pages);
-    if (scroll) setPendingScroll({ ...scroll, location: target.script_location });
+    // The scene the intent belongs to travels with it; see pendingScrollSuperseded.
+    if (scroll) setPendingScroll({ ...scroll, location: target.script_location, sceneId: target.id });
   }, [sessionReady, canEdit, sceneIdFromQuery, scenes.list, draftActions, textIndex.pages]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const runPendingScroll = useStableHandler((target) => {
     const point = target.location ? sceneScrollTarget({ script_location: target.location }, textIndex.pages) : target;
-    scrollToPoint(point.page, point.offsetPt, { behavior: "auto", onDone: () => setPendingScroll(null) });
+    windowing.scrollToPage(point.page, {
+      behavior: "auto",
+      offsetPt: point.offsetPt,
+      onDone: () => setPendingScroll(null),
+    });
   });
 
   const pendingScrollReady = numPages > 0 && Boolean(pendingScroll) &&
     (!pendingScroll.location || textIndex.pages.has(pendingScroll.page));
+  // The scene the intent was made for is no longer the scene in hand: the admin
+  // started a new scene draft or opened another captured scene, or a visitor
+  // opened or revealed one. Hanging the intent off activeSceneId rather than off
+  // each of those handlers is what stops a handler forgetting to cancel, which
+  // is how "New scene" came to leave a link armed — it changes the draft without
+  // scrolling, so no scroll of its own would have covered it.
+  const pendingScrollSuperseded = Boolean(pendingScroll?.sceneId) && pendingScroll.sceneId !== activeSceneId;
+  // Some pages are never indexed: a scan carries no extractable text, and a
+  // location can name a page past the end of this document. Once indexing is
+  // complete no later publish will add one, so waiting on a page that is still
+  // missing is waiting for good.
+  const pendingScrollUnreachable = Boolean(pendingScroll?.location) && textIndex.complete &&
+    !textIndex.pages.has(pendingScroll.page);
   useEffect(() => {
-    if (pendingScrollReady) {
-      runPendingScroll(pendingScroll);
-    }
-  }, [pendingScroll, pendingScrollReady, runPendingScroll]);
+    // Superseded is read first: someone who has already moved on doesn't need to
+    // be told that the link they left behind couldn't be followed either.
+    if (pendingScrollSuperseded) dropPendingScroll();
+    else if (pendingScrollUnreachable) abandonUnreachableScene();
+    else if (pendingScrollReady) runPendingScroll(pendingScroll);
+  }, [
+    pendingScroll,
+    pendingScrollReady,
+    pendingScrollSuperseded,
+    pendingScrollUnreachable,
+    runPendingScroll,
+    dropPendingScroll,
+    abandonUnreachableScene,
+  ]);
 
   useEffect(() => {
     if (notice?.tone !== "info") return undefined;
@@ -252,6 +319,9 @@ function ScriptViewerPage() {
   }
 
   function jumpToScenes() {
+    // The scene list sits below the script, so this leaves the pages entirely; a
+    // link still waiting for its page would scroll them back out from under it.
+    dropPendingScroll();
     windowing.revealAllPages();
     window.requestAnimationFrame(() =>
       scenesSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -441,7 +511,7 @@ function ScriptViewerPage() {
                       projection={draftProjectionsByPage.get(pageNumber)}
                       showAnchorMarkers={showAnchorMarkers}
                       sceneSegments={sceneSegmentsByPage.get(pageNumber) || NO_SEGMENTS}
-                      activeSceneId={canEdit ? draftSceneId : focusSceneId}
+                      activeSceneId={activeSceneId}
                       onLineContextMenu={openLineMenu}
                       onHoverLine={handleHoverLine}
                       onRemoveAnchor={draftActions.removeAnchor}
@@ -485,7 +555,7 @@ function ScriptViewerPage() {
       <SavedScenesGrid
         ref={scenesSectionRef}
         scenes={scenes.list}
-        selectedSceneId={canEdit ? draftSceneId : focusSceneId}
+        selectedSceneId={activeSceneId}
         title={title}
         readOnly={!canEdit}
         onSelect={(scene) => selectScene(scene)}

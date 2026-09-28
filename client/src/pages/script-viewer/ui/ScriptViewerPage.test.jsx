@@ -616,6 +616,40 @@ describe("overlap, request races and navigation", () => {
     }
   });
 
+  it("drops a deep link still waiting for its page when the admin starts a new scene", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedScene], sceneId: savedScene.id });
+    expect(inPanel().getByRole("button", { name: "Update scene" })).toBeTruthy();
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+
+    click(inPanel().getByRole("button", { name: "New scene", exact: true }));
+    expect(inPanel().getByText("New scene", { selector: "p" })).toBeTruthy();
+
+    // The linked scene's page is only indexed once the admin has left it.
+    publishWholeScript();
+    await flush();
+    expect(inPanel().getByText("New scene", { selector: "p" })).toBeTruthy();
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+  });
+
+  it("gives up a deep link whose page finishes indexing without text, and says so", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedScene], sceneId: savedScene.id });
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+
+    // The scene is anchored on p3, and indexing finishes having read only p1 and
+    // p2, as it does for a scanned page that carries no extractable text.
+    publishPages([page1, page2], { complete: true });
+    await flush();
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+    const notice = screen.getByText("Couldn't show this scene in the script: its page has no readable text.");
+    // Reported, not alarming: the page still works and the scene still opens.
+    expect(notice.closest('[role="status"]')).toBeTruthy();
+
+    // The wait is over rather than still running: publishing p3 later revives nothing.
+    publishWholeScript();
+    await flush();
+    expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+  });
+
   it("draws saved scene bars from the canonical location", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedScene, otherScene] });
     publishWholeScript();
