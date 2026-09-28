@@ -17,21 +17,21 @@ const api = vi.hoisted(() => ({
   updateMovie: vi.fn(),
   getMovieScript: vi.fn(),
   saveScript: vi.fn(),
-  listAnnotations: vi.fn(),
-  createAnnotation: vi.fn(),
-  updateAnnotation: vi.fn(),
-  deleteAnnotation: vi.fn(),
+  listStills: vi.fn(),
+  createStill: vi.fn(),
+  updateStill: vi.fn(),
+  deleteStill: vi.fn(),
   listScriptScenes: vi.fn(),
   getViewUrlForKey: vi.fn(),
   uploadMediaFile: vi.fn(),
 }));
 const session = vi.hoisted(() => ({ isAdmin: true, user: { id: "admin-1" } }));
 
-vi.mock("@/shared/api/annotations.js", () => ({
-  listAnnotations: api.listAnnotations,
-  createAnnotation: api.createAnnotation,
-  updateAnnotation: api.updateAnnotation,
-  deleteAnnotation: api.deleteAnnotation,
+vi.mock("@/shared/api/stills.js", () => ({
+  listStills: api.listStills,
+  createStill: api.createStill,
+  updateStill: api.updateStill,
+  deleteStill: api.deleteStill,
 }));
 vi.mock("@/shared/api/movies.js", () => ({ getMovie: api.getMovie, updateMovie: api.updateMovie }));
 vi.mock("@/shared/api/scripts.js", () => ({ getMovieScript: api.getMovieScript, saveScript: api.saveScript }));
@@ -170,14 +170,14 @@ function startHeldRequest(kind) {
   const request = deferred();
   openStill("00:05:00");
   if (kind === "save") {
-    api.updateAnnotation.mockReturnValueOnce(request.promise);
+    api.updateStill.mockReturnValueOnce(request.promise);
     fireEvent.click(viewerButton("Edit"));
     fireEvent.click(viewerButton("Save"));
   } else {
     window.confirm.mockReturnValue(true);
-    api.deleteAnnotation.mockImplementationOnce(async (movieId, annotationId) => {
+    api.deleteStill.mockImplementationOnce(async (movieId, stillId) => {
       await request.promise;
-      stills = stills.filter((row) => row.id !== annotationId);
+      stills = stills.filter((row) => row.id !== stillId);
     });
     fireEvent.click(viewerButton("Delete"));
   }
@@ -200,11 +200,11 @@ beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
   api.getMovie.mockImplementation(async () => ({ ...MOVIE }));
   api.getMovieScript.mockImplementation(async () => null);
-  api.listAnnotations.mockImplementation(async () => stills.map((row) => ({ ...row })));
+  api.listStills.mockImplementation(async () => stills.map((row) => ({ ...row })));
   api.listScriptScenes.mockImplementation(async () => []);
   api.getViewUrlForKey.mockImplementation(async () => ({ url: "" }));
   api.uploadMediaFile.mockResolvedValue("annotations/m1/upload.png");
-  api.createAnnotation.mockImplementation(async ({ id, timeSeconds, imageKey }) => ({ id, movie_id: "m1", time_seconds: timeSeconds, image_key: imageKey }));
+  api.createStill.mockImplementation(async ({ id, timeSeconds, imageKey }) => ({ id, movie_id: "m1", time_seconds: timeSeconds, image_key: imageKey }));
   vi.spyOn(window, "confirm").mockReturnValue(false);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -340,7 +340,7 @@ describe("adding a still", () => {
     chooseFile(dialog, imageFile());
     typeTime(dialog, time);
     submitAdd();
-    await waitFor(() => expect(api.createAnnotation).toHaveBeenCalledWith(expect.objectContaining({
+    await waitFor(() => expect(api.createStill).toHaveBeenCalledWith(expect.objectContaining({
       timeSeconds: time === "02:00:25" ? 7225 : 7260,
     })));
     await waitFor(() => expect(queryAddDialog()).toBeNull());
@@ -359,7 +359,7 @@ describe("adding a still", () => {
     submitAdd();
     expect(within(addDialog()).getByRole("alert").textContent).toBe(PAST_RUNTIME);
 
-    expect(api.createAnnotation).not.toHaveBeenCalled();
+    expect(api.createStill).not.toHaveBeenCalled();
   });
 
   it("requires an image", async () => {
@@ -370,7 +370,7 @@ describe("adding a still", () => {
     submitAdd();
 
     expect(within(addDialog()).getByRole("alert").textContent).toBe("Choose a still image to add.");
-    expect(api.createAnnotation).not.toHaveBeenCalled();
+    expect(api.createStill).not.toHaveBeenCalled();
   });
 
   it("refuses a dropped file that isn't an image", async () => {
@@ -400,7 +400,7 @@ describe("adding a still", () => {
   it("disables submit while adding, then shows a record failure in the dialog and keeps it open", async () => {
     await renderPage();
     const request = deferred();
-    api.createAnnotation.mockReturnValue(request.promise);
+    api.createStill.mockReturnValue(request.promise);
     const dialog = await openAddDialog();
     const file = imageFile();
     chooseFile(dialog, file);
@@ -410,21 +410,21 @@ describe("adding a still", () => {
 
     const busy = within(addDialog()).getByRole("button", { name: "Adding…" });
     expect(busy.disabled).toBe(true);
-    await waitFor(() => expect(api.createAnnotation).toHaveBeenCalledTimes(1));
-    expect(api.createAnnotation).toHaveBeenCalledWith({ movieId: "m1", id: expect.any(String), timeSeconds: 600, imageKey: "annotations/m1/upload.png" });
+    await waitFor(() => expect(api.createStill).toHaveBeenCalledTimes(1));
+    expect(api.createStill).toHaveBeenCalledWith({ movieId: "m1", id: expect.any(String), timeSeconds: 600, imageKey: "annotations/m1/upload.png" });
 
     await act(async () => request.reject(s3Failure()));
 
     expect(queryAddDialog()).not.toBeNull();
     expect(within(addDialog()).getByRole("alert").textContent).toBe("Failed to add the still.");
     expect(within(addDialog()).getByRole("button", { name: "Add still" }).disabled).toBe(false);
-    expect(api.listAnnotations).toHaveBeenCalledTimes(1);
+    expect(api.listStills).toHaveBeenCalledTimes(1);
   });
 
   it("closes the dialog and refreshes the stills once the still is saved", async () => {
     await renderPage();
     const added = { id: "a3", movie_id: "m1", time_seconds: 600, image_key: "stills/a3.png", image_url: "https://media.test/a3.png" };
-    api.createAnnotation.mockImplementation(async ({ id }) => {
+    api.createStill.mockImplementation(async ({ id }) => {
       added.id = id;
       stills = [...stills, added];
       return added;
@@ -437,32 +437,32 @@ describe("adding a still", () => {
 
     expect(await screen.findByRole("button", { name: "Open still at 00:10:00" })).toBeTruthy();
     expect(queryAddDialog()).toBeNull();
-    expect(api.listAnnotations).toHaveBeenCalledTimes(2);
+    expect(api.listStills).toHaveBeenCalledTimes(2);
   });
 
   it("retries a failed creation with the uploaded image and applies changed timing to the same still", async () => {
     await renderPage();
-    api.createAnnotation.mockRejectedValueOnce(new Error("response lost"));
+    api.createStill.mockRejectedValueOnce(new Error("response lost"));
     const dialog = await openAddDialog();
     chooseFile(dialog, imageFile());
     typeTime(dialog, "10:00");
     submitAdd();
     await waitFor(() => expect(within(addDialog()).getByRole("alert").textContent).toBe("Failed to add the still."));
-    const original = api.createAnnotation.mock.calls[0][0];
+    const original = api.createStill.mock.calls[0][0];
 
     typeTime(dialog, "11:00");
     submitAdd();
     await waitFor(() => expect(queryAddDialog()).toBeNull());
     expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
-    expect(api.createAnnotation.mock.calls[1][0]).toEqual(original);
-    expect(api.updateAnnotation).toHaveBeenCalledWith({ movieId: "m1", annotationId: original.id, timeSeconds: 660, imageKey: original.imageKey });
+    expect(api.createStill.mock.calls[1][0]).toEqual(original);
+    expect(api.updateStill).toHaveBeenCalledWith({ movieId: "m1", stillId: original.id, timeSeconds: 660, imageKey: original.imageKey });
   });
 
   it.each(["success", "failure"])("keeps an earlier add's %s out of a reopened dialog", async (outcome) => {
     await renderPage();
     const earlier = deferred();
     const later = deferred();
-    api.createAnnotation.mockImplementationOnce(async ({ id }) => {
+    api.createStill.mockImplementationOnce(async ({ id }) => {
       await earlier.promise;
       return { id };
     }).mockImplementationOnce(async ({ id }) => {
@@ -473,15 +473,15 @@ describe("adding a still", () => {
     chooseFile(dialog, imageFile());
     typeTime(dialog, "10:00");
     submitAdd();
-    await waitFor(() => expect(api.createAnnotation).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.createStill).toHaveBeenCalledTimes(1));
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     dialog = await openAddDialog();
     chooseFile(dialog, imageFile());
     typeTime(dialog, "11:00");
     submitAdd();
-    await waitFor(() => expect(api.createAnnotation).toHaveBeenCalledTimes(2));
-    expect(api.createAnnotation.mock.calls[0][0].id).not.toBe(api.createAnnotation.mock.calls[1][0].id);
+    await waitFor(() => expect(api.createStill).toHaveBeenCalledTimes(2));
+    expect(api.createStill.mock.calls[0][0].id).not.toBe(api.createStill.mock.calls[1][0].id);
     await settle(() => outcome === "success" ? earlier.resolve() : earlier.reject(new Error("offline")));
     expect(within(addDialog()).getByRole("button", { name: "Adding…" }).disabled).toBe(true);
     expect(within(addDialog()).queryByRole("alert")).toBeNull();
@@ -507,7 +507,7 @@ describe("adding a still", () => {
 describe("editing a still in the viewer", () => {
   it("shows a save failure above the still and keeps the edit open", async () => {
     await renderPage();
-    api.updateAnnotation.mockRejectedValue(s3Failure());
+    api.updateStill.mockRejectedValue(s3Failure());
     openStill("00:05:00");
 
     fireEvent.click(viewerButton("Edit"));
@@ -516,7 +516,7 @@ describe("editing a still in the viewer", () => {
 
     await waitFor(() => expectErrorAboveStill("Failed to save the still."));
     expect(editForm()).not.toBeNull();
-    expect(api.listAnnotations).toHaveBeenCalledTimes(1);
+    expect(api.listStills).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a malformed timestamp and one past the runtime, above the still", async () => {
@@ -532,27 +532,27 @@ describe("editing a still in the viewer", () => {
     fireEvent.click(viewerButton("Save"));
     await waitFor(() => expectErrorAboveStill(PAST_RUNTIME));
 
-    expect(api.updateAnnotation).not.toHaveBeenCalled();
+    expect(api.updateStill).not.toHaveBeenCalled();
   });
 
   it("requires an image when the still has none", async () => {
     await renderPage();
-    api.updateAnnotation.mockResolvedValue({ ...WITHOUT_IMAGE });
+    api.updateStill.mockResolvedValue({ ...WITHOUT_IMAGE });
     openStill("00:15:00.5");
     fireEvent.click(viewerButton("Edit"));
 
     fireEvent.click(viewerButton("Save"));
     await waitFor(() => expectErrorAboveStill("Choose an image for this still."));
-    expect(api.updateAnnotation).not.toHaveBeenCalled();
+    expect(api.updateStill).not.toHaveBeenCalled();
 
     const file = imageFile("replacement.png");
     chooseFile(editForm(), file);
     fireEvent.click(viewerButton("Save"));
 
     await waitFor(() => expect(editForm()).toBeNull());
-    expect(api.updateAnnotation).toHaveBeenCalledWith({
+    expect(api.updateStill).toHaveBeenCalledWith({
       movieId: "m1",
-      annotationId: "a2",
+      stillId: "a2",
       timeSeconds: 900.5,
       imageKey: "annotations/m1/upload.png",
     });
@@ -561,7 +561,7 @@ describe("editing a still in the viewer", () => {
 
   it("saves the timestamp with the current image, refreshes the stills and clears the edit", async () => {
     await renderPage();
-    api.updateAnnotation.mockImplementation(async ({ timeSeconds }) => {
+    api.updateStill.mockImplementation(async ({ timeSeconds }) => {
       stills = stills.map((row) => (row.id === "a1" ? { ...row, time_seconds: timeSeconds } : row));
       return stills[0];
     });
@@ -573,13 +573,13 @@ describe("editing a still in the viewer", () => {
     fireEvent.click(viewerButton("Save"));
 
     await waitFor(() => expect(editForm()).toBeNull());
-    expect(api.updateAnnotation).toHaveBeenCalledWith({
+    expect(api.updateStill).toHaveBeenCalledWith({
       movieId: "m1",
-      annotationId: "a1",
+      stillId: "a1",
       timeSeconds: 360,
       imageKey: "stills/a1.jpg",
     });
-    expect(api.listAnnotations).toHaveBeenCalledTimes(2);
+    expect(api.listStills).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Open still at 00:06:00" })).toBeTruthy();
     expect(viewerButton("Edit")).toBeTruthy();
     expect(within(viewer()).queryByRole("alert")).toBeNull();
@@ -587,8 +587,8 @@ describe("editing a still in the viewer", () => {
 
   it("shows a failed reload after saving above the still", async () => {
     await renderPage();
-    api.updateAnnotation.mockResolvedValue({ ...WITH_IMAGE });
-    api.listAnnotations.mockRejectedValueOnce(new Error("connection reset"));
+    api.updateStill.mockResolvedValue({ ...WITH_IMAGE });
+    api.listStills.mockRejectedValueOnce(new Error("connection reset"));
     openStill("00:05:00");
 
     fireEvent.click(viewerButton("Edit"));
@@ -601,14 +601,14 @@ describe("editing a still in the viewer", () => {
   it("disables Save and Delete while saving, so a double click sends one request", async () => {
     await renderPage();
     const request = deferred();
-    api.updateAnnotation.mockReturnValue(request.promise);
+    api.updateStill.mockReturnValue(request.promise);
     openStill("00:05:00");
     fireEvent.click(viewerButton("Edit"));
 
     fireEvent.click(viewerButton("Save"));
     fireEvent.click(viewerButton("Save"));
 
-    expect(api.updateAnnotation).toHaveBeenCalledTimes(1);
+    expect(api.updateStill).toHaveBeenCalledTimes(1);
     expect(viewerButton("Save").disabled).toBe(true);
     expect(viewerButton("Delete").disabled).toBe(true);
 
@@ -640,27 +640,27 @@ describe("deleting a still", () => {
     fireEvent.click(viewerButton("Delete"));
 
     expect(window.confirm).toHaveBeenCalledWith("Delete this still?");
-    expect(api.deleteAnnotation).not.toHaveBeenCalled();
+    expect(api.deleteStill).not.toHaveBeenCalled();
     expect(viewer()).toBeTruthy();
   });
 
   it("shows a delete failure above the still", async () => {
     await renderPage();
     window.confirm.mockReturnValue(true);
-    api.deleteAnnotation.mockRejectedValue(s3Failure());
+    api.deleteStill.mockRejectedValue(s3Failure());
     openStill("00:05:00");
 
     fireEvent.click(viewerButton("Delete"));
 
     await waitFor(() => expectErrorAboveStill("Failed to delete the still."));
-    expect(api.listAnnotations).toHaveBeenCalledTimes(1);
+    expect(api.listStills).toHaveBeenCalledTimes(1);
   });
 
   it("deletes the still, clears its edit and refreshes the stills", async () => {
     await renderPage();
     window.confirm.mockReturnValue(true);
-    api.deleteAnnotation.mockImplementation(async (movieId, annotationId) => {
-      stills = stills.filter((row) => row.id !== annotationId);
+    api.deleteStill.mockImplementation(async (movieId, stillId) => {
+      stills = stills.filter((row) => row.id !== stillId);
     });
     openStill("00:05:00");
     fireEvent.click(viewerButton("Edit"));
@@ -668,8 +668,8 @@ describe("deleting a still", () => {
     fireEvent.click(viewerButton("Delete"));
 
     await waitFor(() => expect(screen.queryByRole("button", { name: "Open still at 00:05:00" })).toBeNull());
-    expect(api.deleteAnnotation).toHaveBeenCalledWith("m1", "a1");
-    expect(api.listAnnotations).toHaveBeenCalledTimes(2);
+    expect(api.deleteStill).toHaveBeenCalledWith("m1", "a1");
+    expect(api.listStills).toHaveBeenCalledTimes(2);
     expect(editForm()).toBeNull();
   });
 
@@ -677,7 +677,7 @@ describe("deleting a still", () => {
     await renderPage();
     window.confirm.mockReturnValue(true);
     const request = deferred();
-    api.deleteAnnotation.mockReturnValue(request.promise);
+    api.deleteStill.mockReturnValue(request.promise);
     openStill("00:05:00");
     fireEvent.click(viewerButton("Edit"));
 
@@ -685,7 +685,7 @@ describe("deleting a still", () => {
     fireEvent.click(viewerButton("Delete"));
 
     expect(window.confirm).toHaveBeenCalledTimes(1);
-    expect(api.deleteAnnotation).toHaveBeenCalledTimes(1);
+    expect(api.deleteStill).toHaveBeenCalledTimes(1);
     expect(viewerButton("Delete").disabled).toBe(true);
     expect(viewerButton("Save").disabled).toBe(true);
 
@@ -699,8 +699,8 @@ describe("deleting a still", () => {
   it("clears a still error once a delete succeeds", async () => {
     await renderPage();
     window.confirm.mockReturnValue(true);
-    api.deleteAnnotation.mockRejectedValueOnce(s3Failure()).mockImplementationOnce(async (movieId, annotationId) => {
-      stills = stills.filter((row) => row.id !== annotationId);
+    api.deleteStill.mockRejectedValueOnce(s3Failure()).mockImplementationOnce(async (movieId, stillId) => {
+      stills = stills.filter((row) => row.id !== stillId);
     });
     openStill("00:05:00");
     fireEvent.click(viewerButton("Delete"));
@@ -709,7 +709,7 @@ describe("deleting a still", () => {
     fireEvent.click(viewerButton("Delete"));
 
     await waitFor(() => expect(screen.queryByRole("button", { name: "Open still at 00:05:00" })).toBeNull());
-    expect(api.deleteAnnotation).toHaveBeenCalledTimes(2);
+    expect(api.deleteStill).toHaveBeenCalledTimes(2);
     expect(within(viewer()).queryByRole("alert")).toBeNull();
   });
 });
@@ -718,7 +718,7 @@ describe("closing the viewer", () => {
   it("drops the still edit and its error", async () => {
     await renderPage();
     window.confirm.mockReturnValue(true);
-    api.deleteAnnotation.mockRejectedValue(s3Failure());
+    api.deleteStill.mockRejectedValue(s3Failure());
     openStill("00:05:00");
     fireEvent.click(viewerButton("Edit"));
     fireEvent.click(viewerButton("Delete"));
@@ -745,7 +745,7 @@ describe("closing the viewer", () => {
     openStill("00:05:00");
     expect(within(viewer()).queryByRole("alert")).toBeNull();
     expect(editForm()).toBeNull();
-    expect(api.listAnnotations).toHaveBeenCalledTimes(1);
+    expect(api.listStills).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -758,7 +758,7 @@ describe("closing the viewer", () => {
 
     await settle(() => request.resolve());
 
-    expect(api.listAnnotations).toHaveBeenCalledTimes(2);
+    expect(api.listStills).toHaveBeenCalledTimes(2);
     openStill(reopenAt);
     expect(editForm()).toBeNull();
     expect(within(viewer()).queryByRole("alert")).toBeNull();
@@ -773,7 +773,7 @@ describe("closing the viewer", () => {
 
     await settle(() => request.resolve());
 
-    expect(api.listAnnotations).toHaveBeenCalledTimes(2);
+    expect(api.listStills).toHaveBeenCalledTimes(2);
     expect(editForm()).not.toBeNull();
     expect(within(viewer()).queryByRole("alert")).toBeNull();
   });
@@ -784,10 +784,10 @@ describe("closing the viewer", () => {
     fireEvent.click(viewerButton("Close"));
     openStill("00:05:00");
     const later = deferred();
-    api.updateAnnotation.mockReturnValueOnce(later.promise);
+    api.updateStill.mockReturnValueOnce(later.promise);
     fireEvent.click(viewerButton("Edit"));
     fireEvent.click(viewerButton("Save"));
-    expect(api.updateAnnotation).toHaveBeenCalledTimes(2);
+    expect(api.updateStill).toHaveBeenCalledTimes(2);
 
     await settle(() => earlier.resolve());
 
@@ -807,7 +807,7 @@ describe("closing the viewer", () => {
     fireEvent.click(viewerButton("Close"));
     openStill("00:05:00");
     const save = deferred();
-    api.updateAnnotation.mockReturnValueOnce(save.promise);
+    api.updateStill.mockReturnValueOnce(save.promise);
     fireEvent.click(viewerButton("Edit"));
     fireEvent.click(viewerButton("Save"));
 
@@ -815,7 +815,7 @@ describe("closing the viewer", () => {
 
     expect(screen.queryByRole("dialog", { name: "Night Diner" })).toBeNull();
     const added = { id: "a3", movie_id: "m1", time_seconds: 600, image_key: "stills/a3.png", image_url: "https://media.test/a3.png" };
-    api.createAnnotation.mockImplementation(async ({ id }) => {
+    api.createStill.mockImplementation(async ({ id }) => {
       added.id = id;
       stills = [added];
       return added;

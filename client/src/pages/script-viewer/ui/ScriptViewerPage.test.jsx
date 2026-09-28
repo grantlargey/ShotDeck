@@ -47,7 +47,7 @@ import {
 } from "../test/textIndexFixtures.js";
 import ScriptViewerRoute from "./ScriptViewerPage.jsx";
 
-vi.mock("@/shared/api/annotations.js", async () => (await import("../test/pageHarness.js")).apiModules.annotations);
+vi.mock("@/shared/api/stills.js", async () => (await import("../test/pageHarness.js")).apiModules.stills);
 vi.mock("@/shared/api/movies.js", async () => (await import("../test/pageHarness.js")).apiModules.movies);
 vi.mock("@/shared/api/screenplayFormat.js", async () => (await import("../test/pageHarness.js")).apiModules.screenplayFormat);
 vi.mock("@/shared/api/scriptScenes.js", async () => (await import("../test/pageHarness.js")).apiModules.scriptScenes);

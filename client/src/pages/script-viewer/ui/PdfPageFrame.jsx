@@ -40,7 +40,7 @@ function AnchorMarker({ kind, box, scale, onRemove }) {
 }
 
 /**
- * One PDF page plus its annotation overlay: anchor markers, the captured
+ * One PDF page plus its scene overlay: anchor markers, the captured
  * range, a snap line under the pointer, and saved-scene bars in the right
  * margin. Props are primitives or stable references so only pages whose
  * overlay actually changes re-render. With `readOnly` (visitors), the page

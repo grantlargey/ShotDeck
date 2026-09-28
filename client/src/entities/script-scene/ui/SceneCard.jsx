@@ -1,4 +1,4 @@
-import { getStillThumbnail } from "@/entities/annotation/model/still.js";
+import { getStillThumbnail } from "@/entities/still/model/still.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { getScreenplaySceneHeading } from "@/shared/lib/screenplay/grammar.js";

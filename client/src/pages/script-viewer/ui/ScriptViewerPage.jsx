@@ -4,7 +4,7 @@ import { Document, pdfjs } from "react-pdf";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
-import { getStillProjectPath } from "@/entities/annotation/model/still.js";
+import { getStillProjectPath } from "@/entities/still/model/still.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import {
   findOverlappingScriptLocation,

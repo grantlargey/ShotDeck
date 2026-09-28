@@ -56,12 +56,12 @@ export const fakeApi = {
   deleteScriptScene: vi.fn(),
   formatScreenplaySelection: vi.fn(),
   getViewUrlForKey: vi.fn(),
-  listAnnotations: vi.fn(),
+  listStills: vi.fn(),
 };
 
 /** The same doubles, grouped by the API module that owns each operation, for the suite's vi.mock factories. */
 export const apiModules = {
-  annotations: { listAnnotations: fakeApi.listAnnotations },
+  stills: { listStills: fakeApi.listStills },
   movies: { getMovie: fakeApi.getMovie },
   screenplayFormat: { formatScreenplaySelection: fakeApi.formatScreenplaySelection },
   scriptScenes: {
@@ -90,7 +90,7 @@ function installApi() {
   );
   fakeApi.formatScreenplaySelection.mockImplementation((payload) => track(pending.formats, [payload], undefined));
   fakeApi.getViewUrlForKey.mockImplementation(async () => ({ url: "" }));
-  fakeApi.listAnnotations.mockImplementation(async () => scenario.stills);
+  fakeApi.listStills.mockImplementation(async () => scenario.stills);
 }
 
 // ---------- Session ----------

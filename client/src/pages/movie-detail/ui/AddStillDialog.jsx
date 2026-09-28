@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { createStillSave } from "@/entities/annotation/model/stillSave.js";
+import { createStillSave } from "@/entities/still/model/stillSave.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
 import { formatSecondsToHms, normalizeTypedMoment } from "@/shared/lib/time.js";

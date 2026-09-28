@@ -14,7 +14,7 @@ const api = vi.hoisted(() => ({
   getViewUrlForKey: vi.fn(),
 }));
 
-vi.mock("@/shared/api/annotations.js", () => ({ sampleStills: api.sampleStills }));
+vi.mock("@/shared/api/stills.js", () => ({ sampleStills: api.sampleStills }));
 vi.mock("@/shared/api/scriptScenes.js", () => ({ sampleScriptScenes: api.sampleScriptScenes }));
 vi.mock("@/shared/api/uploads.js", () => ({ getViewUrlForKey: api.getViewUrlForKey }));
 

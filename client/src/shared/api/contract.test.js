@@ -6,7 +6,7 @@ const dependencies = vi.hoisted(() => ({
 
 vi.mock("./request.js", () => ({ req: dependencies.req }));
 
-import { sampleStills } from "./annotations.js";
+import { sampleStills } from "./stills.js";
 import { createMovie, deleteMovie, getMovie, listMovies, updateMovie } from "./movies.js";
 import {
   createScriptScene,

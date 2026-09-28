@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SceneViewerModal } from "./SceneViewerModal.jsx";
 
-vi.mock("@/shared/api/annotations.js", () => ({ listAnnotations: vi.fn() }));
+vi.mock("@/shared/api/stills.js", () => ({ listStills: vi.fn() }));
 vi.mock("@/shared/api/scriptScenes.js", () => ({ listScriptScenes: vi.fn() }));
 
 function anchor(page, line) {

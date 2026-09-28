@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
-import styles from "./AnnotationTimeline.module.css";
+import { StillTimeline } from "./StillTimeline.jsx";
+import styles from "./StillTimeline.module.css";
 
 function stillsAt(...times) {
   return times.map((time, index) => ({
@@ -14,8 +14,8 @@ function stillsAt(...times) {
 const STILLS = stillsAt(0, 20, 60, 100);
 
 function renderTimeline(overrides = {}) {
-  const props = { annotations: STILLS, runtimeSeconds: 100, onSelect: vi.fn(), ...overrides };
-  const view = render(<AnnotationTimeline {...props} />);
+  const props = { stills: STILLS, runtimeSeconds: 100, onSelect: vi.fn(), ...overrides };
+  const view = render(<StillTimeline {...props} />);
   const strip = screen.getByRole("slider", { name: "Film stills timeline" });
   // jsdom has no layout. This places the strip between x=100 and x=200.
   vi.spyOn(strip, "getBoundingClientRect").mockReturnValue({ left: 100, width: 100 });
@@ -25,7 +25,7 @@ function renderTimeline(overrides = {}) {
     strip,
     timeline: strip.parentElement,
     onSelect: props.onSelect,
-    rerender: (changes) => view.rerender(<AnnotationTimeline {...props} {...changes} />),
+    rerender: (changes) => view.rerender(<StillTimeline {...props} {...changes} />),
   };
 }
 
@@ -75,7 +75,7 @@ describe("still timeline pointer gestures", () => {
   });
 
   it("chooses the earlier still on a tie and retains tenths in the preview and accessible value", () => {
-    const { strip } = renderTimeline({ annotations: stillsAt(10.5, 30.5) });
+    const { strip } = renderTimeline({ stills: stillsAt(10.5, 30.5) });
 
     fireEvent.pointerMove(strip, { pointerType: "mouse", clientX: 120.5 });
 
@@ -152,8 +152,8 @@ describe("still timeline pointer gestures", () => {
 
 describe("still timeline keyboard navigation", () => {
   it("steps through stills with arrows, page keys, Home and End, clamping at either end", () => {
-    const annotations = stillsAt(...Array.from({ length: 15 }, (_, index) => index * 5));
-    const { strip, onSelect } = renderTimeline({ annotations });
+    const stills = stillsAt(...Array.from({ length: 15 }, (_, index) => index * 5));
+    const { strip, onSelect } = renderTimeline({ stills });
     const steps = [
       ["ArrowRight", 2],
       ["ArrowUp", 3],
@@ -265,7 +265,7 @@ describe("still timeline when its still list changes", () => {
     const { strip, timeline, onSelect, rerender } = renderTimeline();
     fireEvent.keyDown(strip, { key: "End" });
 
-    rerender({ annotations: STILLS.slice(0, 2) });
+    rerender({ stills: STILLS.slice(0, 2) });
 
     expect(timeline.querySelector(`.${styles.preview}`)).toBeNull();
     expect(timeline.style.getPropertyValue("--spot")).toBe("100%");
@@ -284,7 +284,7 @@ describe("still timeline when its still list changes", () => {
     fireEvent.keyDown(strip, { key: "End" });
     fireEvent.blur(strip);
 
-    rerender({ annotations: STILLS.slice(0, 2) });
+    rerender({ stills: STILLS.slice(0, 2) });
     fireEvent.keyDown(strip, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(1);
     fireEvent.keyDown(strip, { key: "ArrowLeft" });
@@ -296,7 +296,7 @@ describe("still timeline when its still list changes", () => {
     fireEvent.pointerMove(strip, { pointerType: "mouse", clientX: 162 });
     const replacement = stillsAt(0, 20, 75.5, 100);
 
-    rerender({ annotations: replacement });
+    rerender({ stills: replacement });
 
     expect(timeline.style.getPropertyValue("--spot")).toBe("62%");
     expect(timeline.querySelector(`.${styles.playhead}`).style.left).toBe("75.5%");
@@ -306,7 +306,7 @@ describe("still timeline when its still list changes", () => {
   });
 
   it("does not preview or select from an initially empty list and becomes usable when stills arrive", () => {
-    const { strip, timeline, onSelect, rerender } = renderTimeline({ annotations: [] });
+    const { strip, timeline, onSelect, rerender } = renderTimeline({ stills: [] });
     fireEvent.pointerDown(strip, { pointerType: "touch", pointerId: 7, clientX: 160 });
     fireEvent.pointerUp(strip, { pointerType: "touch", pointerId: 7, clientX: 160 });
     for (const key of ["Enter", " ", "ArrowRight", "Home", "End"]) {
@@ -316,7 +316,7 @@ describe("still timeline when its still list changes", () => {
     expect(timeline.querySelector(`.${styles.preview}`)).toBeNull();
     expect(strip.getAttribute("aria-valuenow")).toBe("0");
 
-    rerender({ annotations: STILLS });
+    rerender({ stills: STILLS });
     fireEvent.keyDown(strip, { key: "ArrowRight" });
     expect(screen.getByText("2 of 4")).toBeTruthy();
   });

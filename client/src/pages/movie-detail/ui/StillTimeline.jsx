@@ -1,15 +1,15 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
-  findNearestAnnotationIndex,
+  findNearestStillIndex,
   getTimelineBins,
   getTimelinePositionPercent,
   getTimelineScale,
-} from "@/entities/annotation/model/annotationTimeline.js";
-import { getStillThumbnail } from "@/entities/annotation/model/still.js";
+} from "@/entities/still/model/stillTimeline.js";
+import { getStillThumbnail } from "@/entities/still/model/still.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatMomentToHms, formatSecondsToHms } from "@/shared/lib/time.js";
-import styles from "./AnnotationTimeline.module.css";
+import styles from "./StillTimeline.module.css";
 
 // One density bar per this many pixels of strip width.
 const PX_PER_BAR = 6;
@@ -50,15 +50,15 @@ const DensityBars = memo(function DensityBars({ bins, className }) {
   );
 });
 
-function StillPreview({ annotation, index, percent, total }) {
-  const thumbnail = getStillThumbnail(annotation);
+function StillPreview({ still, index, percent, total }) {
+  const thumbnail = getStillThumbnail(still);
   const url = useSignedMediaUrl(thumbnail.key, thumbnail.url);
 
   return (
     <div className={styles.preview} style={{ "--pos": `${percent}%` }} aria-hidden="true">
       <div className={styles.previewFrame}>{url && <img src={url} alt="" />}</div>
       <div className={styles.previewMeta}>
-        <span className={styles.previewTime}>{formatMomentToHms(annotation.time_seconds)}</span>
+        <span className={styles.previewTime}>{formatMomentToHms(still.time_seconds)}</span>
         <span className={styles.previewIndex}>
           {index + 1} of {total}
         </span>
@@ -73,8 +73,8 @@ function StillPreview({ annotation, index, percent, total }) {
  * `highlightedIndex` (the grid still under the pointer) lights up the bars
  * around that still.
  */
-export function AnnotationTimeline({
-  annotations,
+export function StillTimeline({
+  stills,
   highlightedIndex = -1,
   onSelect,
   runtimeSeconds,
@@ -98,13 +98,13 @@ export function AnnotationTimeline({
   }, []);
 
   const bins = useMemo(
-    () => (binCount ? getTimelineBins(annotations, runtimeSeconds, binCount) : []),
-    [annotations, runtimeSeconds, binCount]
+    () => (binCount ? getTimelineBins(stills, runtimeSeconds, binCount) : []),
+    [stills, runtimeSeconds, binCount]
   );
   const scale = useMemo(() => getTimelineScale(runtimeSeconds), [runtimeSeconds]);
 
-  const count = annotations.length;
-  const percentOf = (index) => getTimelinePositionPercent(annotations[index], runtimeSeconds);
+  const count = stills.length;
+  const percentOf = (index) => getTimelinePositionPercent(stills[index], runtimeSeconds);
   const previewActive = cursor.previewPercent !== null;
   const valueIndex = clampIndex(cursor.index, count);
 
@@ -129,7 +129,7 @@ export function AnnotationTimeline({
 
   function previewAtPointer(event) {
     const percent = pointerPercent(event);
-    showStill(findNearestAnnotationIndex(annotations, runtimeSeconds, percent), percent);
+    showStill(findNearestStillIndex(stills, runtimeSeconds, percent), percent);
   }
 
   function handlePointerDown(event) {
@@ -146,7 +146,7 @@ export function AnnotationTimeline({
   function handlePointerUp(event) {
     if (!draggingRef.current) return;
     draggingRef.current = false;
-    const index = findNearestAnnotationIndex(annotations, runtimeSeconds, pointerPercent(event));
+    const index = findNearestStillIndex(stills, runtimeSeconds, pointerPercent(event));
     if (event.pointerType !== "mouse") hidePreview();
     if (index >= 0) onSelect(index);
   }
@@ -180,7 +180,7 @@ export function AnnotationTimeline({
     if (event.currentTarget.matches(":focus-visible")) showStill(cursor.index);
   }
 
-  const previewAnnotation = previewActive ? annotations[cursor.index] : null;
+  const previewStill = previewActive ? stills[cursor.index] : null;
   let liveSpot = null;
   if (previewActive) liveSpot = cursor.previewPercent;
   else if (highlightedIndex >= 0) liveSpot = percentOf(highlightedIndex);
@@ -193,8 +193,8 @@ export function AnnotationTimeline({
     <div
       className={cx(
         styles.timeline,
-        previewAnnotation && styles.previewing,
-        !previewAnnotation && highlightedIndex >= 0 && styles.linked
+        previewStill && styles.previewing,
+        !previewStill && highlightedIndex >= 0 && styles.linked
       )}
       style={spot === null ? undefined : { "--spot": `${spot}%` }}
     >
@@ -207,7 +207,7 @@ export function AnnotationTimeline({
         aria-valuemin={1}
         aria-valuemax={count}
         aria-valuenow={valueIndex + 1}
-        aria-valuetext={`Still ${valueIndex + 1} of ${count}, ${formatMomentToHms(annotations[valueIndex]?.time_seconds)}`}
+        aria-valuetext={`Still ${valueIndex + 1} of ${count}, ${formatMomentToHms(stills[valueIndex]?.time_seconds)}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -222,14 +222,14 @@ export function AnnotationTimeline({
         {selectedIndex >= 0 && (
           <span className={cx(styles.mark, styles.selectedMark)} style={{ left: `${percentOf(selectedIndex)}%` }} />
         )}
-        {previewAnnotation && (
+        {previewStill && (
           <span className={cx(styles.mark, styles.playhead)} style={{ left: `${percentOf(cursor.index)}%` }} />
         )}
       </div>
 
-      {previewAnnotation && (
+      {previewStill && (
         <StillPreview
-          annotation={previewAnnotation}
+          still={previewStill}
           index={cursor.index}
           percent={percentOf(cursor.index)}
           total={count}

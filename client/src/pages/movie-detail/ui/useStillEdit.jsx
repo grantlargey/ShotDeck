@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import { createStillSave } from "@/entities/annotation/model/stillSave.js";
-import { deleteAnnotation } from "@/shared/api/annotations.js";
+import { createStillSave } from "@/entities/still/model/stillSave.js";
+import { deleteStill } from "@/shared/api/stills.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { formatMomentToHms, normalizeTypedMoment } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
@@ -93,7 +93,7 @@ export function useStillEdit({ movieId, runtimeSeconds, onChange }) {
     const isSameSession = trackSession();
     try {
       setBusy(true);
-      await deleteAnnotation(movieId, still.id);
+      await deleteStill(movieId, still.id);
       if (isSameSession()) {
         setEdit(null);
         saveRef.current = null;

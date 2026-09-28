@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getStillProjectPath, getStillThumbnail } from "@/entities/annotation/model/still.js";
+import { getStillProjectPath, getStillThumbnail } from "@/entities/still/model/still.js";
 import { displayScriptSceneText, getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
-import { sampleStills } from "@/shared/api/annotations.js";
+import { sampleStills } from "@/shared/api/stills.js";
 import { sampleScriptScenes } from "@/shared/api/scriptScenes.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";

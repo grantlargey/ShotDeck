@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
+import { sortStillsByTime } from "@/entities/still/model/stillTimeline.js";
 import { sortScriptScenes } from "@/entities/script-scene/model/capturedScene.js";
-import { listAnnotations } from "@/shared/api/annotations.js";
+import { listStills } from "@/shared/api/stills.js";
 import { listScriptScenes } from "@/shared/api/scriptScenes.js";
 
 const EMPTY = [];
@@ -22,8 +22,8 @@ export function useSceneViewerData({ movieId, scriptId, stills, scriptScenes }) 
   useEffect(() => {
     if (!needsStills) return undefined;
     let cancelled = false;
-    listAnnotations(movieId)
-      .then((rows) => ({ rows: sortAnnotationsByTime(rows), failed: false }))
+    listStills(movieId)
+      .then((rows) => ({ rows: sortStillsByTime(rows), failed: false }))
       .catch(() => ({ rows: EMPTY, failed: true }))
       .then((entry) => {
         if (!cancelled) setFetched((prev) => ({ ...prev, stills: { ...prev.stills, [movieId]: entry } }));

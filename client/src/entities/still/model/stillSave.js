@@ -1,4 +1,4 @@
-import { createAnnotation, updateAnnotation } from "@/shared/api/annotations.js";
+import { createStill, updateStill } from "@/shared/api/stills.js";
 import { uploadMediaFile } from "@/shared/api/uploads.js";
 import { openSaveJournal } from "@/shared/lib/saveJournal.js";
 
@@ -15,7 +15,7 @@ export function createStillSave({ movieId, stillId = null }) {
   const journal = openSaveJournal({ name: "still save", created: Boolean(stillId) });
 
   async function create(input) {
-    const still = await createAnnotation({ movieId, id, ...input });
+    const still = await createStill({ movieId, id, ...input });
     if (still?.id !== id) throw new Error("Still creation returned an unexpected identity");
     return still;
   }
@@ -34,7 +34,7 @@ export function createStillSave({ movieId, stillId = null }) {
       }
       return journal.settle(MOMENT, { timeSeconds, imageKey }, {
         create,
-        update: (moment) => updateAnnotation({ movieId, annotationId: id, ...moment }),
+        update: (moment) => updateStill({ movieId, stillId: id, ...moment }),
       });
     });
   };

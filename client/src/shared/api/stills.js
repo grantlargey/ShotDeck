@@ -1,6 +1,6 @@
 import { req } from "./request.js";
 
-export function listAnnotations(movieId) {
+export function listStills(movieId) {
   return req(`/movies/${encodeURIComponent(movieId)}/annotations`);
 }
 
@@ -10,7 +10,7 @@ export function sampleStills() {
 }
 
 /** Attaches an uploaded image. The still-save module owns upload progress. */
-export function createAnnotation({ movieId, id, timeSeconds, imageKey }) {
+export function createStill({ movieId, id, timeSeconds, imageKey }) {
   return req(`/movies/${encodeURIComponent(movieId)}/annotations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -22,9 +22,9 @@ export function createAnnotation({ movieId, id, timeSeconds, imageKey }) {
   });
 }
 
-export function updateAnnotation({ movieId, annotationId, timeSeconds, imageKey }) {
+export function updateStill({ movieId, stillId, timeSeconds, imageKey }) {
   return req(
-    `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(annotationId)}`,
+    `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(stillId)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -36,9 +36,9 @@ export function updateAnnotation({ movieId, annotationId, timeSeconds, imageKey 
   );
 }
 
-export function deleteAnnotation(movieId, annotationId) {
+export function deleteStill(movieId, stillId) {
   return req(
-    `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(annotationId)}`,
+    `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(stillId)}`,
     { method: "DELETE" }
   );
 }

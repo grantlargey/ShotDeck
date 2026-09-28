@@ -1,15 +1,15 @@
 // client/src/pages/movie-detail/ui/MovieDetailPage.jsx
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
-import { getStillThumbnail } from "@/entities/annotation/model/still.js";
+import { sortStillsByTime } from "@/entities/still/model/stillTimeline.js";
+import { getStillThumbnail } from "@/entities/still/model/still.js";
 import { createMovieEditForm } from "@/entities/movie/model/movieForms.js";
 import { getHandedOverPosterUrl } from "@/entities/movie/model/posterTransition.js";
 import { useFilmSave } from "@/entities/movie/model/filmSave.js";
 import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { useSession } from "@/entities/session/model/useSession.js";
-import { listAnnotations } from "@/shared/api/annotations.js";
+import { listStills } from "@/shared/api/stills.js";
 import { getMovie } from "@/shared/api/movies.js";
 import { getMovieScript } from "@/shared/api/scripts.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
@@ -23,7 +23,7 @@ import { PlusIcon } from "@/shared/ui/icons.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import { Skeleton } from "@/shared/ui/Skeleton.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
-import { AnnotationTimeline } from "./AnnotationTimeline.jsx";
+import { StillTimeline } from "./StillTimeline.jsx";
 import { MovieHeader, MovieHeaderSkeleton } from "./MovieHeader.jsx";
 import { MovieScriptPanel } from "./MovieScriptPanel.jsx";
 import { AddStillDialog } from "./AddStillDialog.jsx";
@@ -34,18 +34,18 @@ import styles from "./MovieDetailPage.module.css";
  * A still in the grid. The callbacks take the still's id, so the page can pass
  * stable setters and hovering one still doesn't re-render the rest.
  */
-const StillFrameButton = memo(function StillFrameButton({ annotation, onHover, onOpen }) {
-  const thumbnail = getStillThumbnail(annotation);
+const StillFrameButton = memo(function StillFrameButton({ still, onHover, onOpen }) {
+  const thumbnail = getStillThumbnail(still);
   const url = useSignedMediaUrl(thumbnail.key, thumbnail.url);
-  const time = formatMomentToHms(annotation.time_seconds);
+  const time = formatMomentToHms(still.time_seconds);
 
   return (
     <button
       type="button"
       className={styles.frame}
-      onClick={() => onOpen(annotation.id)}
-      onMouseEnter={() => onHover(annotation.id)}
-      onFocus={() => onHover(annotation.id)}
+      onClick={() => onOpen(still.id)}
+      onMouseEnter={() => onHover(still.id)}
+      onFocus={() => onHover(still.id)}
       onBlur={() => onHover(null)}
       aria-label={`Open still at ${time}`}
     >
@@ -78,12 +78,12 @@ function createHoveredStill() {
 }
 
 /** The stills timeline, lit around whichever grid still is hovered. */
-function HoverLinkedTimeline({ hoveredStill, annotations, ...props }) {
+function HoverLinkedTimeline({ hoveredStill, stills, ...props }) {
   const hoveredId = useSyncExternalStore(hoveredStill.subscribe, hoveredStill.get);
   return (
-    <AnnotationTimeline
-      annotations={annotations}
-      highlightedIndex={hoveredId ? annotations.findIndex((row) => row.id === hoveredId) : -1}
+    <StillTimeline
+      stills={stills}
+      highlightedIndex={hoveredId ? stills.findIndex((row) => row.id === hoveredId) : -1}
       {...props}
     />
   );
@@ -142,11 +142,11 @@ export default function MovieDetailPage() {
     runtime_hms: "",
   });
 
-  const lastDeepLinkedAnnotationRef = useRef("");
+  const lastDeepLinkedStillRef = useRef("");
   const loadIdRef = useRef(0);
-  const annotationIdFromQuery = searchParams.get("annotationId") || "";
+  const stillIdFromQuery = searchParams.get("annotationId") || "";
 
-  const annotations = stillRows ?? NO_STILLS;
+  const stills = stillRows ?? NO_STILLS;
   const stillsLoading = stillRows === null;
 
   useDocumentTitle(movie?.title || "Project");
@@ -171,9 +171,9 @@ export default function MovieDetailPage() {
       setEditForm(createMovieEditForm(m));
     });
 
-    const stills = listAnnotations(id).then((annotationRows) => {
+    const stills = listStills(id).then((loadedStills) => {
       if (!isLatest()) return;
-      const a = sortAnnotationsByTime(annotationRows);
+      const a = sortStillsByTime(loadedStills);
       setStillRows(a);
       if (a.length === 0) closeViewer();
     });
@@ -192,16 +192,16 @@ export default function MovieDetailPage() {
 
   // ?annotationId=… (from a scene's "Open first still") opens that still.
   useEffect(() => {
-    if (!annotationIdFromQuery) {
-      lastDeepLinkedAnnotationRef.current = "";
+    if (!stillIdFromQuery) {
+      lastDeepLinkedStillRef.current = "";
       return;
     }
-    if (lastDeepLinkedAnnotationRef.current === annotationIdFromQuery) return;
-    if (!annotations.some((row) => row.id === annotationIdFromQuery)) return;
+    if (lastDeepLinkedStillRef.current === stillIdFromQuery) return;
+    if (!stills.some((row) => row.id === stillIdFromQuery)) return;
 
-    lastDeepLinkedAnnotationRef.current = annotationIdFromQuery;
-    setViewerStillId(annotationIdFromQuery);
-  }, [annotationIdFromQuery, annotations]);
+    lastDeepLinkedStillRef.current = stillIdFromQuery;
+    setViewerStillId(stillIdFromQuery);
+  }, [stillIdFromQuery, stills]);
 
   const runtimeSeconds = useMemo(() => {
     if (!movie?.runtime_minutes) return 0;
@@ -293,7 +293,7 @@ export default function MovieDetailPage() {
       <MovieHeader
         movie={movie}
         coverUrl={coverUrl}
-        stills={annotations}
+        stills={stills}
         onOpenStill={setViewerStillId}
         actions={
           <>
@@ -354,10 +354,10 @@ export default function MovieDetailPage() {
           <SectionHeading
             id="project-stills-heading"
             title="Film stills"
-            count={stillsLoading ? undefined : annotations.length}
+            count={stillsLoading ? undefined : stills.length}
             actions={
               canEdit &&
-              annotations.length > 0 && (
+              stills.length > 0 && (
                 <Button size="sm" onClick={() => setAddingStill(true)}>
                   <PlusIcon size={14} />
                   Add still
@@ -368,7 +368,7 @@ export default function MovieDetailPage() {
 
           {stillsLoading ? (
             !err && <StillsSkeleton />
-          ) : annotations.length === 0 ? (
+          ) : stills.length === 0 ? (
             <EmptyState
               className={styles.stillsEmpty}
               title="No stills yet"
@@ -391,17 +391,17 @@ export default function MovieDetailPage() {
               <div className={styles.timelineDock}>
                 <HoverLinkedTimeline
                   hoveredStill={hoveredStill}
-                  annotations={annotations}
-                  onSelect={(index) => setViewerStillId(annotations[index]?.id ?? null)}
+                  stills={stills}
+                  onSelect={(index) => setViewerStillId(stills[index]?.id ?? null)}
                   runtimeSeconds={runtimeSeconds}
-                  selectedIndex={annotations.findIndex((row) => row.id === viewerStillId)}
+                  selectedIndex={stills.findIndex((row) => row.id === viewerStillId)}
                 />
               </div>
               {/* Leaving the grid, not each still, clears the highlight, so it holds across the gaps. */}
               <ul className={styles.stillGrid} onMouseLeave={() => hoveredStill.set(null)}>
-                {annotations.map((annotation) => (
-                  <li key={annotation.id}>
-                    <StillFrameButton annotation={annotation} onHover={hoveredStill.set} onOpen={setViewerStillId} />
+                {stills.map((still) => (
+                  <li key={still.id}>
+                    <StillFrameButton still={still} onHover={hoveredStill.set} onOpen={setViewerStillId} />
                   </li>
                 ))}
               </ul>
@@ -414,7 +414,7 @@ export default function MovieDetailPage() {
         <SceneViewerModal
           key={viewerStillId}
           initial={{ view: "still", stillId: viewerStillId }}
-          source={{ film: { ...movie, scriptId: script?.id ?? null, stills: annotations } }}
+          source={{ film: { ...movie, scriptId: script?.id ?? null, stills: stills } }}
           onClose={closeViewer}
           onSelectTag={(tag) => nav(`/script-search?tag=${encodeURIComponent(tag)}`)}
           onOpenScene={(scene) => nav(getSceneScriptPath(scene))}

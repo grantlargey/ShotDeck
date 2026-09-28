@@ -1,24 +1,24 @@
-export function sortAnnotationsByTime(rows) {
+export function sortStillsByTime(rows) {
   return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => a.time_seconds - b.time_seconds);
 }
 
-export function getTimelinePositionPercent(annotation, runtimeSeconds) {
+export function getTimelinePositionPercent(still, runtimeSeconds) {
   const runtime = Number(runtimeSeconds);
-  if (!annotation || !Number.isFinite(runtime) || runtime <= 0) return 0;
-  return Math.min(100, (Number(annotation.time_seconds || 0) / runtime) * 100);
+  if (!still || !Number.isFinite(runtime) || runtime <= 0) return 0;
+  return Math.min(100, (Number(still.time_seconds || 0) / runtime) * 100);
 }
 
 /**
  * Counts stills into `binCount` equal slices of the runtime for the timeline's
  * density bars. Stills past the runtime land in the last slice.
  */
-export function getTimelineBins(annotations, runtimeSeconds, binCount) {
+export function getTimelineBins(stills, runtimeSeconds, binCount) {
   const count = Math.max(0, Math.floor(binCount) || 0);
   const bins = new Array(count).fill(0);
   if (count === 0) return bins;
 
-  for (const annotation of Array.isArray(annotations) ? annotations : []) {
-    const percent = getTimelinePositionPercent(annotation, runtimeSeconds);
+  for (const still of Array.isArray(stills) ? stills : []) {
+    const percent = getTimelinePositionPercent(still, runtimeSeconds);
     bins[Math.min(count - 1, Math.floor((percent / 100) * count))] += 1;
   }
   return bins;
@@ -28,8 +28,8 @@ export function getTimelineBins(annotations, runtimeSeconds, binCount) {
  * Index of the time-sorted still closest to `percent` along the timeline, or
  * -1 when there are none. Ties go to the earlier still.
  */
-export function findNearestAnnotationIndex(annotations, runtimeSeconds, percent) {
-  const rows = Array.isArray(annotations) ? annotations : [];
+export function findNearestStillIndex(stills, runtimeSeconds, percent) {
+  const rows = Array.isArray(stills) ? stills : [];
   if (rows.length === 0) return -1;
 
   let lo = 0;
