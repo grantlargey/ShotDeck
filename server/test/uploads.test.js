@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, test } from "node:test";
 import { signInOwner, startApi } from "./helpers/api.js";
-import { signedUrlPattern } from "./helpers/fixtures.js";
+import { signedUrlExpiry, signedUrlPattern } from "./helpers/fixtures.js";
 
 /*
  * Characterization of POST /uploads/presign and GET /uploads/view-url.
@@ -113,8 +113,10 @@ describe("signing a view URL", () => {
         for (const key of ["covers/m/a.jpg", "annotations/m/b.png", "scripts/m/c.pdf"]) {
             const response = await api.get(`/uploads/view-url?key=${encodeURIComponent(key)}`);
             assert.equal(response.status, 200, response.text);
-            assert.deepEqual(Object.keys(response.body), ["url"]);
+            assert.deepEqual(Object.keys(response.body), ["url", "expiresAt"]);
             assert.match(response.body.url, signedUrlPattern(key));
+            // A caller that keeps the URL has to know when to come back for another.
+            assert.equal(Date.parse(response.body.expiresAt), signedUrlExpiry(response.body.url));
         }
     });
 

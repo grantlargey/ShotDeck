@@ -1,22 +1,46 @@
 .navbar {
   position: sticky;
   top: 0;
-  z-index: var(--z-header);
+  z-index: calc(var(--z-header) + 1);
   width: 100%;
   height: var(--sd-nav-height);
   border-bottom: 1px solid var(--color-line);
   background: var(--color-header);
   color: var(--color-text);
   backdrop-filter: blur(8px);
+  transition:
+    transform 0.22s ease,
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
-/* On the home page the header floats over the hero, whose own top gradient keeps it legible. */
-.navbarOverlay {
-  position: absolute;
+/* On the home page the hero runs up behind the header. */
+.navbarFloating {
+  position: fixed;
   left: 0;
+}
+
+/* At the top of the home page the hero's own top gradient keeps the header legible. */
+.navbarClear {
   border-bottom-color: transparent;
   background: transparent;
   backdrop-filter: none;
+}
+
+/* Script viewer: scrolls away above the viewer's pinned tool bar. */
+.navbarStatic {
+  position: relative;
+}
+
+/* Phones, while scrolling down. */
+.navbarHidden {
+  transform: translateY(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar {
+    transition: none;
+  }
 }
 
 .navbarInner {

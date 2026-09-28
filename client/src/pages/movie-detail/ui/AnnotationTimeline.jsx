@@ -70,6 +70,8 @@ function StillPreview({ annotation, index, percent, total }) {
 /**
  * The film's runtime as a strip of density bars. Hovering, dragging or the
  * arrow keys preview the nearest still; clicking or Enter opens it.
+ * `highlightedIndex` (the grid still under the pointer) lights up the bars
+ * around that still.
  */
 export function AnnotationTimeline({
   annotations,
@@ -177,7 +179,11 @@ export function AnnotationTimeline({
 
   const previewAnnotation = preview ? annotations[preview.index] : null;
   const valueIndex = clampIndex(preview?.index ?? cursorIndex, count);
-  const spot = preview?.spot ?? (highlightedIndex >= 0 ? percentOf(highlightedIndex) : null);
+  const liveSpot = preview?.spot ?? (highlightedIndex >= 0 ? percentOf(highlightedIndex) : null);
+  // The lit band fades out where it last was, rather than sliding to the start as it goes.
+  const [restingSpot, setRestingSpot] = useState(null);
+  if (liveSpot !== null && liveSpot !== restingSpot) setRestingSpot(liveSpot);
+  const spot = liveSpot ?? restingSpot;
 
   return (
     <div
@@ -209,9 +215,6 @@ export function AnnotationTimeline({
       >
         <DensityBars bins={bins} className={styles.bars} />
         <DensityBars bins={bins} className={cx(styles.bars, styles.barsLit)} />
-        {highlightedIndex >= 0 && (
-          <span className={cx(styles.mark, styles.linkedMark)} style={{ left: `${percentOf(highlightedIndex)}%` }} />
-        )}
         {selectedIndex >= 0 && (
           <span className={cx(styles.mark, styles.selectedMark)} style={{ left: `${percentOf(selectedIndex)}%` }} />
         )}

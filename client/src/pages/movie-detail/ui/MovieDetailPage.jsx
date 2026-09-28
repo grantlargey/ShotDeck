@@ -1,9 +1,10 @@
 // client/src/pages/movie-detail/ui/MovieDetailPage.jsx
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { sortAnnotationsByTime } from "@/entities/annotation/model/annotationTimeline.js";
 import { getStillThumbnail } from "@/entities/annotation/model/still.js";
 import { createMovieEditForm } from "@/entities/movie/model/movieForms.js";
+import { getHandedOverPosterUrl } from "@/entities/movie/model/posterTransition.js";
 import { useFilmSave } from "@/entities/movie/model/filmSave.js";
 import { MovieDetailsFields } from "@/entities/movie/ui/MovieDetailsFields.jsx";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
@@ -43,7 +44,6 @@ const StillFrameButton = memo(function StillFrameButton({ annotation, onHover, o
       className={styles.frame}
       onClick={() => onOpen(annotation.id)}
       onMouseEnter={() => onHover(annotation.id)}
-      onMouseLeave={() => onHover(null)}
       onFocus={() => onHover(annotation.id)}
       onBlur={() => onHover(null)}
       aria-label={`Open still at ${time}`}
@@ -53,6 +53,40 @@ const StillFrameButton = memo(function StillFrameButton({ annotation, onHover, o
     </button>
   );
 });
+
+/**
+ * The grid still under the pointer or keyboard focus, kept outside React
+ * state: hovering re-renders only the timeline that marks it, not the page
+ * and its hundreds of stills.
+ */
+function createHoveredStill() {
+  let stillId = null;
+  const listeners = new Set();
+  return {
+    get: () => stillId,
+    set: (nextId) => {
+      if (nextId === stillId) return;
+      stillId = nextId;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+/** The stills timeline, lit around whichever grid still is hovered. */
+function HoverLinkedTimeline({ hoveredStill, annotations, ...props }) {
+  const hoveredId = useSyncExternalStore(hoveredStill.subscribe, hoveredStill.get);
+  return (
+    <AnnotationTimeline
+      annotations={annotations}
+      highlightedIndex={hoveredId ? annotations.findIndex((row) => row.id === hoveredId) : -1}
+      {...props}
+    />
+  );
+}
 
 const NO_STILLS = [];
 const SKELETON_FRAME_COUNT = 8;
@@ -75,6 +109,7 @@ function StillsSkeleton() {
 
 export default function MovieDetailPage() {
   const nav = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   // Visitors get the same page without any of the editing controls.
@@ -89,7 +124,7 @@ export default function MovieDetailPage() {
   // The still the scene viewer opened on; null while it's closed.
   const [viewerStillId, setViewerStillId] = useState(null);
   // The grid still under the pointer or keyboard focus, marked on the timeline.
-  const [hoveredStillId, setHoveredStillId] = useState(null);
+  const [hoveredStill] = useState(createHoveredStill);
 
   const [scriptFile, setScriptFile] = useState(null);
 
@@ -231,7 +266,7 @@ export default function MovieDetailPage() {
     setEditMode(false);
   }
 
-  const coverUrl = movie?.cover_image_url || null;
+  const coverUrl = useSignedMediaUrl(movie?.cover_image_key, movie?.cover_image_url);
   function openScript() {
     if (script) nav(`/movies/${id}/scripts/${script.id}`);
   }
@@ -244,7 +279,7 @@ export default function MovieDetailPage() {
             <Callout tone="error">{err}</Callout>
           </div>
         ) : (
-          <MovieHeaderSkeleton />
+          <MovieHeaderSkeleton posterUrl={getHandedOverPosterUrl(location.state)} posterKey={location.state?.posterKey} />
         )}
       </div>
     );
@@ -349,17 +384,21 @@ export default function MovieDetailPage() {
             </EmptyState>
           ) : (
             <>
-              <AnnotationTimeline
-                annotations={annotations}
-                highlightedIndex={annotations.findIndex((row) => row.id === hoveredStillId)}
-                onSelect={(index) => setViewerStillId(annotations[index]?.id ?? null)}
-                runtimeSeconds={runtimeSeconds}
-                selectedIndex={annotations.findIndex((row) => row.id === viewerStillId)}
-              />
-              <ul className={styles.stillGrid}>
+              {/* Pins under the header while the grid scrolls past. */}
+              <div className={styles.timelineDock}>
+                <HoverLinkedTimeline
+                  hoveredStill={hoveredStill}
+                  annotations={annotations}
+                  onSelect={(index) => setViewerStillId(annotations[index]?.id ?? null)}
+                  runtimeSeconds={runtimeSeconds}
+                  selectedIndex={annotations.findIndex((row) => row.id === viewerStillId)}
+                />
+              </div>
+              {/* Leaving the grid, not each still, clears the highlight, so it holds across the gaps. */}
+              <ul className={styles.stillGrid} onMouseLeave={() => hoveredStill.set(null)}>
                 {annotations.map((annotation) => (
                   <li key={annotation.id}>
-                    <StillFrameButton annotation={annotation} onHover={setHoveredStillId} onOpen={setViewerStillId} />
+                    <StillFrameButton annotation={annotation} onHover={hoveredStill.set} onOpen={setViewerStillId} />
                   </li>
                 ))}
               </ul>
@@ -371,11 +410,8 @@ export default function MovieDetailPage() {
       {viewerStillId && (
         <SceneViewerModal
           key={viewerStillId}
-          initialView="still"
-          initialStillId={viewerStillId}
-          movie={movie}
-          scriptId={script?.id ?? null}
-          stills={annotations}
+          initial={{ view: "still", stillId: viewerStillId }}
+          source={{ film: { ...movie, scriptId: script?.id ?? null, stills: annotations } }}
           onClose={closeViewer}
           onSelectTag={(tag) => nav(`/script-search?tag=${encodeURIComponent(tag)}`)}
           onOpenScene={(scene) => nav(getSceneScriptPath(scene))}

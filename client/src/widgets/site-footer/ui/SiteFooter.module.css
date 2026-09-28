@@ -3,9 +3,8 @@
   background: var(--color-bg-deep);
 }
 
+/* Full width with the header's gutter, so the two logos line up on every page. */
 .inner {
-  max-width: var(--page-max-width);
-  margin: 0 auto;
   padding: 22px var(--page-gutter);
   display: flex;
   align-items: center;

@@ -10,6 +10,7 @@ import {
   findOverlappingScriptLocation,
   formatScenePages,
   sceneScrollTarget,
+  projectScriptLocation,
 } from "@/entities/script-scene/model/scriptLocation.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { getMovie } from "@/shared/api/movies.js";
@@ -19,7 +20,6 @@ import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { isTypingTarget } from "@/shared/lib/keyboard.js";
-import { lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { CloseIcon } from "@/shared/ui/icons.jsx";
@@ -112,10 +112,10 @@ function ScriptViewerPage() {
   const deepLinkedSceneRef = useRef("");
 
   const numPages = pdfDocument?.numPages ?? 0;
-  const windowing = usePdfPageWindowing(numPages);
+  const textIndex = useScriptTextIndex(pdfDocument);
+  const windowing = usePdfPageWindowing(pdfDocument, textIndex.pages);
   // Callback refs, taken once: JSX may not read a ref off an object during render.
   const { wrapRef, sentinelRef } = windowing;
-  const textIndex = useScriptTextIndex(pdfDocument);
   // The captured scenes load in their own request, but they are still part of
   // loading the page: a failure reports the same notice and leaves the page
   // without a project or a script, so the viewer never shows a script whose
@@ -158,7 +158,10 @@ function ScriptViewerPage() {
 
   // ---------- Page views of the draft ----------
 
-  const sceneSegmentsByPage = useMemo(() => buildSceneSegmentsByPage(scenes.list), [scenes.list]);
+  const sceneSegmentsByPage = useMemo(() => buildSceneSegmentsByPage(scenes.list, textIndex.pages), [scenes.list, textIndex.pages]);
+  const draftProjectionsByPage = useMemo(() => new Map(
+    [...textIndex.pages].map(([number, page]) => [number, projectScriptLocation(draft.anchors, page)])
+  ), [draft.anchors, textIndex.pages]);
   const overlapScene = useMemo(
     () => findOverlappingScriptLocation(scenes.list, draft.anchors, draftSceneId),
     [scenes.list, draft.anchors, draftSceneId]
@@ -169,16 +172,8 @@ function ScriptViewerPage() {
 
   // ---------- Navigation and scrolling ----------
 
-  function pageScale(pageNumber) {
-    return windowing.pageWidth / (textIndex.pages.get(pageNumber)?.width || 612);
-  }
-
   function scrollToPoint(pageNumber, offsetPt, options = {}) {
-    windowing.scrollToPage(pageNumber, {
-      behavior: "smooth",
-      ...options,
-      offsetPx: offsetPt === null ? null : offsetPt * pageScale(pageNumber),
-    });
+    windowing.scrollToPage(pageNumber, { behavior: "smooth", ...options, offsetPt });
   }
 
   // A linked scene is loaded for editing (admins) or scrolled to and marked (visitors).
@@ -190,18 +185,23 @@ function ScriptViewerPage() {
     deepLinkedSceneRef.current = sceneIdFromQuery;
     if (canEdit) draftActions.loadScene(target);
     else setFocusSceneId(target.id);
-    const scroll = sceneScrollTarget(target);
-    if (scroll) setPendingScroll(scroll);
-  }, [sessionReady, canEdit, sceneIdFromQuery, scenes.list, draftActions]);
+    const scroll = sceneScrollTarget(target, textIndex.pages);
+    if (scroll) setPendingScroll({ ...scroll, location: target.script_location });
+  }, [sessionReady, canEdit, sceneIdFromQuery, scenes.list, draftActions, textIndex.pages]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const runPendingScroll = useStableHandler((target) => {
-    scrollToPoint(target.page, target.offsetPt, { behavior: "auto", onDone: () => setPendingScroll(null) });
+    const point = target.location ? sceneScrollTarget({ script_location: target.location }, textIndex.pages) : target;
+    scrollToPoint(point.page, point.offsetPt, { behavior: "auto", onDone: () => setPendingScroll(null) });
   });
 
+  const pendingScrollReady = numPages > 0 && Boolean(pendingScroll) &&
+    (!pendingScroll.location || textIndex.pages.has(pendingScroll.page));
   useEffect(() => {
-    if (pendingScroll && numPages > 0) runPendingScroll(pendingScroll);
-  }, [pendingScroll, numPages, runPendingScroll]);
+    if (pendingScrollReady) {
+      runPendingScroll(pendingScroll);
+    }
+  }, [pendingScroll, pendingScrollReady, runPendingScroll]);
 
   useEffect(() => {
     if (notice?.tone !== "info") return undefined;
@@ -219,7 +219,7 @@ function ScriptViewerPage() {
       draftActions.loadScene(scene);
       setActiveTab("capture");
     }
-    const target = scroll && sceneScrollTarget(scene);
+    const target = scroll && sceneScrollTarget(scene, textIndex.pages);
     if (target) scrollToPoint(target.page, target.offsetPt);
   }
 
@@ -237,7 +237,7 @@ function ScriptViewerPage() {
 
   function revealScene(scene) {
     setFocusSceneId(scene.id);
-    const target = sceneScrollTarget(scene);
+    const target = sceneScrollTarget(scene, textIndex.pages);
     if (target) scrollToPoint(target.page, target.offsetPt);
   }
 
@@ -252,7 +252,7 @@ function ScriptViewerPage() {
   }
 
   function jumpToScenes() {
-    if (windowing.compact) windowing.revealAllPages();
+    windowing.revealAllPages();
     window.requestAnimationFrame(() =>
       scenesSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
     );
@@ -262,7 +262,10 @@ function ScriptViewerPage() {
 
   function jumpToAnchor(kind) {
     const anchor = draft.anchors[kind];
-    if (anchor) scrollToPoint(anchor.page, lineBoxAt(anchor.y).top);
+    if (anchor) {
+      const marker = projectScriptLocation({ start: anchor }, textIndex.pages.get(anchor.page)).start;
+      if (marker) scrollToPoint(anchor.page, marker.top);
+    }
   }
 
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -270,7 +273,6 @@ function ScriptViewerPage() {
   const handleHoverLine = useCallback((hover) => {
     hoverRef.current = hover;
   }, []);
-  const handlePageRendered = useStableHandler((pageNumber) => windowing.onPageRendered(pageNumber));
   const handleSelectSceneFromPage = useStableHandler((scene) =>
     canEdit ? selectScene(scene, { scroll: false }) : showScene(scene)
   );
@@ -337,7 +339,7 @@ function ScriptViewerPage() {
     try {
       const snapshots =
         request.snapshotAnchors && pdfDocument
-          ? await renderSelectionSnapshots(pdfDocument, request.snapshotAnchors)
+          ? await renderSelectionSnapshots(pdfDocument, request.snapshotAnchors, textIndex.pages)
           : { pageImages: [], omittedPageCount: 0 };
       const { capturedText, draftMarkdown, pageStart, pageEnd } = request;
       const result = await formatScreenplaySelection({
@@ -369,7 +371,7 @@ function ScriptViewerPage() {
     if (confirmStaleText && !window.confirm(STALE_SAVE_PROMPT)) return;
 
     const wasEditing = Boolean(draftSceneId);
-    const saved = await scenes.save({ sceneId: draftSceneId, payload, applySaved });
+    const saved = await scenes.save({ sceneId: draftSceneId, payload: { ...payload, script_key: script.s3_key }, applySaved });
     setNotice(
       saved.ok
         ? { tone: "info", text: wasEditing ? "Scene updated." : "Scene saved." }
@@ -400,8 +402,6 @@ function ScriptViewerPage() {
     );
   }
 
-  const pageNumbers = Array.from({ length: windowing.renderedPageCount }, (_, index) => index + 1);
-  const { anchors } = draft;
 
   return (
     <div className={styles.page}>
@@ -431,48 +431,26 @@ function ScriptViewerPage() {
                 onLoadSuccess={setPdfDocument}
                 onLoadError={(error) => setPdfLoadError(getErrorMessage(error, "Unable to load this PDF."))}
               >
-                {pageNumbers.map((pageNumber) => {
-                  const inWindow =
-                    !windowing.compact ||
-                    (pageNumber >= windowing.renderStart && pageNumber <= windowing.renderEnd);
-                  const inRange =
-                    Boolean(anchors.start && anchors.end) &&
-                    pageNumber >= anchors.start.page &&
-                    pageNumber <= anchors.end.page;
-
+                {windowing.pages.map((page) => {
+                  const { pageNumber } = page;
                   return (
                     <PdfPageFrame
                       key={pageNumber}
-                      pageNumber={pageNumber}
-                      pageIndex={textIndex.pages.get(pageNumber) || null}
-                      pageWidth={windowing.pageWidth}
-                      inWindow={inWindow}
-                      placeholderHeight={
-                        inWindow ? 0 : windowing.pageHeights[pageNumber] || windowing.defaultPageHeight
-                      }
-                      compact={windowing.compact}
+                      {...page}
                       readOnly={!canEdit}
-                      devicePixelRatio={windowing.pixelRatio}
-                      startAnchor={showAnchorMarkers && anchors.start?.page === pageNumber ? anchors.start : null}
-                      endAnchor={showAnchorMarkers && anchors.end?.page === pageNumber ? anchors.end : null}
-                      rangeTop={
-                        inRange ? (pageNumber === anchors.start.page ? lineBoxAt(anchors.start.y).top : 0) : null
-                      }
-                      rangeBottom={
-                        inRange ? (pageNumber === anchors.end.page ? lineBoxAt(anchors.end.y).bottom : Infinity) : null
-                      }
+                      projection={draftProjectionsByPage.get(pageNumber)}
+                      showAnchorMarkers={showAnchorMarkers}
                       sceneSegments={sceneSegmentsByPage.get(pageNumber) || NO_SEGMENTS}
                       activeSceneId={canEdit ? draftSceneId : focusSceneId}
                       onLineContextMenu={openLineMenu}
                       onHoverLine={handleHoverLine}
                       onRemoveAnchor={draftActions.removeAnchor}
                       onSelectScene={handleSelectSceneFromPage}
-                      onRendered={handlePageRendered}
                     />
                   );
                 })}
               </Document>
-              {windowing.compact && windowing.renderedPageCount < numPages && (
+              {windowing.hasMore && (
                 <div ref={sentinelRef} className={styles.sentinel} aria-hidden="true" />
               )}
             </div>
@@ -517,7 +495,7 @@ function ScriptViewerPage() {
       {menu && canEdit && (
         <AnchorContextMenu
           menu={menu}
-          anchors={anchors}
+          anchors={draft.anchors}
           canUndo={draft.canUndoAnchors}
           onSetAnchor={draftActions.setAnchorAtLine}
           onRemoveAnchor={draftActions.removeAnchor}
@@ -551,11 +529,8 @@ function ScriptViewerPage() {
       {modal?.kind === "scene" && (
         <SceneViewerModal
           key={modal.sceneId}
-          initialView="script"
-          initialSceneId={modal.sceneId}
-          scenes={scenes.list}
-          movie={{ id: movieId, title }}
-          scriptId={scriptId}
+          initial={{ sceneId: modal.sceneId }}
+          source={{ film: { id: movieId, title, scriptId, scriptScenes: scenes.list } }}
           onClose={closeModal}
           onSelectTag={showScenesWithTag}
           onOpenStill={openStillInProject}

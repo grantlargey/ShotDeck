@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { withTransaction } from "../db.js";
+import { withFilmWrite } from "./filmWrite.js";
 import { SCRIPT_TAG_CATEGORIES } from "../domain/script-tags.js";
 import { HttpError } from "../utils/http-error.js";
 
@@ -34,17 +34,17 @@ const CONFLICT_MESSAGES = {
     script_location: "This scene's script location overlaps another scene in this script.",
 };
 
-/** Creates a scene when `sceneId` is null, and otherwise replaces that saved scene. */
+/**
+ * Creates when `sceneId` is null, otherwise replaces that saved scene.
+ * body.script_key must identify the PDF the caller captured, not a key fetched
+ * just before saving. A replaced PDF is a 409; an omitted key is a 400.
+ */
 export async function saveScriptScene(pool, { movieId, scriptId, sceneId = null, body }) {
     const input = readSceneBody(body);
     try {
-        return await withTransaction(pool, async (client) => {
-            await lockScriptScenes(client, scriptId);
+        return await withFilmWrite(pool, { movieId, scriptId, scriptKey: body?.script_key ?? null }, async (client) => {
             const saved = sceneId ? await findSavedScene(client, { movieId, scriptId, sceneId }) : null;
             if (sceneId && !saved) throw new HttpError(404, SCENE_NOT_FOUND);
-            if (!sceneId && !(await scriptExists(client, { movieId, scriptId }))) {
-                throw new HttpError(404, "Script not found");
-            }
 
             const conflict = await findConflict(client, { scriptId, sceneId, input });
             if (conflict) throw conflict;
@@ -56,12 +56,7 @@ export async function saveScriptScene(pool, { movieId, scriptId, sceneId = null,
         if (error?.code !== "23P01") throw error;
         const kind = constraintConflictKind(error.constraint);
         if (!kind) throw error;
-        throw new HttpError(409, CONFLICT_MESSAGES[kind], {
-            conflict_kind: kind,
-            conflict_scene_id: null,
-            conflict_start_time_seconds: null,
-            conflict_end_time_seconds: null,
-        });
+        throw conflictError(kind);
     }
 }
 
@@ -76,8 +71,7 @@ export async function listScriptScenes(db, { movieId, scriptId }) {
 }
 
 export async function deleteScriptScene(pool, { movieId, scriptId, sceneId }) {
-    await withTransaction(pool, async (client) => {
-        await lockScriptScenes(client, scriptId);
+    await withFilmWrite(pool, { movieId }, async (client) => {
         const result = await client.query(
             `DELETE FROM captured_scenes sc
              USING scripts s
@@ -183,12 +177,6 @@ function compareAnchors(a, b) {
     return a.page - b.page || a.y - b.y;
 }
 
-async function lockScriptScenes(db, scriptId) {
-    await db.query("SELECT pg_advisory_xact_lock(hashtextextended('captured-scenes:' || $1::uuid::text, 0))", [
-        scriptId,
-    ]);
-}
-
 async function findConflict(db, { scriptId, sceneId, input }) {
     const result = await db.query(
         `SELECT id, start_time_seconds, end_time_seconds,
@@ -214,9 +202,9 @@ async function findConflict(db, { scriptId, sceneId, input }) {
 function conflictError(kind, scene) {
     return new HttpError(409, CONFLICT_MESSAGES[kind], {
         conflict_kind: kind,
-        conflict_scene_id: scene.id,
-        conflict_start_time_seconds: scene.start_time_seconds,
-        conflict_end_time_seconds: scene.end_time_seconds,
+        conflict_scene_id: scene?.id ?? null,
+        conflict_start_time_seconds: scene?.start_time_seconds ?? null,
+        conflict_end_time_seconds: scene?.end_time_seconds ?? null,
     });
 }
 
@@ -304,11 +292,6 @@ async function findSavedScene(db, { movieId, scriptId, sceneId }) {
         [sceneId, movieId, scriptId]
     );
     return result.rows[0] ?? null;
-}
-
-async function scriptExists(db, { movieId, scriptId }) {
-    const result = await db.query("SELECT 1 FROM scripts WHERE id = $1 AND movie_id = $2", [scriptId, movieId]);
-    return result.rowCount > 0;
 }
 
 async function writeScene(db, { scriptId, sceneId, input }) {

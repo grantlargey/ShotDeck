@@ -1,5 +1,6 @@
 import { v4 as uuidv4, validate as isUuid } from "uuid";
-import { createPresignedGetUrl } from "../s3.js";
+import { signViewUrl } from "../s3.js";
+import { withFilmWrite } from "./filmWrite.js";
 import { HttpError } from "../utils/http-error.js";
 
 /*
@@ -50,17 +51,14 @@ function readMovieBody(body) {
     };
 }
 
-/** The movie row, with a signed view URL for its cover or null when it has none or signing fails. */
+/**
+ * The movie row, with a signed view URL for its cover and the moment that URL
+ * stops working. Both are null when the film has no cover or its key can't be
+ * signed.
+ */
 async function toMovieResponse(row) {
-    if (!row.cover_image_key) return { ...row, cover_image_url: null };
-
-    try {
-        const { url } = await createPresignedGetUrl({ key: row.cover_image_key });
-        return { ...row, cover_image_url: url };
-    } catch (err) {
-        console.error("Failed to sign movie cover URL:", row.cover_image_key, err?.message);
-        return { ...row, cover_image_url: null };
-    }
+    const cover = await signViewUrl(row.cover_image_key);
+    return { ...row, cover_image_url: cover.url, cover_image_url_expires_at: cover.expiresAt };
 }
 
 async function findMovie(db, id) {
@@ -73,24 +71,6 @@ async function findMovie(db, id) {
 export async function ensureMovieExists(db, movieId) {
     const result = await db.query(`SELECT 1 FROM movies WHERE id = $1`, [movieId]);
     if (result.rowCount === 0) throw new HttpError(404, "Movie not found");
-}
-
-/** Serialize shot writes and runtime edits so their timing checks stay valid until commit. */
-export async function withMovieWrite(pool, movieId, work) {
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
-        const result = await client.query("SELECT * FROM movies WHERE id = $1 FOR UPDATE", [movieId]);
-        if (!result.rows[0]) throw new HttpError(404, "Movie not found");
-        const value = await work(client, result.rows[0]);
-        await client.query("COMMIT");
-        return value;
-    } catch (error) {
-        await client.query("ROLLBACK").catch(() => {});
-        throw error;
-    } finally {
-        client.release();
-    }
 }
 
 export async function createMovie(db, body) {
@@ -147,9 +127,9 @@ export async function updateMovieCover(db, id, body) {
 }
 
 /** Replaces the required fields, and each optional field the body includes. */
-export async function updateMovie(db, id, body) {
+export async function updateMovie(pool, id, body) {
     const movie = readMovieBody(body);
-    const row = await withMovieWrite(db, id, async (client, saved) => {
+    const row = await withFilmWrite(pool, { movieId: id }, async (client, saved) => {
         if (movie.runtimeMinutes < saved.runtime_minutes) {
             const outside = await client.query(
                 "SELECT 1 FROM annotations WHERE movie_id = $1 AND time_seconds > $2 LIMIT 1",

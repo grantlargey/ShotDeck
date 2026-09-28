@@ -1,4 +1,4 @@
-import { lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
+import { findLineAtY, lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
 
 /*
  * Script location: the required start and end scene anchors of a captured
@@ -72,10 +72,10 @@ export function formatScenePages(scene) {
  * Where to scroll to show a stored scene: the top of its start line, not the
  * baseline, so the line is fully in view. Null for an incomplete unsaved draft.
  */
-export function sceneScrollTarget(scene) {
+export function sceneScrollTarget(scene, pages = new Map()) {
   const location = scene?.script_location;
   if (!isValidScriptLocation(location)) return null;
-  return { page: location.start.page, offsetPt: lineBoxAt(location.start.y).top };
+  return { page: location.start.page, offsetPt: projectScriptLocation(location, pages.get(location.start.page) ?? { pageNumber: location.start.page, height: Infinity }).start.top };
 }
 
 /**
@@ -97,4 +97,26 @@ export function findOverlappingScriptLocation(scenes, location, excludeSceneId) 
     }
   }
   return null;
+}
+
+
+/**
+ * Projects any Script location, including a draft with just one anchor, onto
+ * an indexed page. All drawing and cropping share clipped point coordinates
+ * and the indexed font size (12pt only while that line is unavailable).
+ */
+export function projectScriptLocation(location, page) {
+  if (!page) return { start: null, end: null, range: null };
+  const clip = (y) => Math.max(0, Math.min(page.height, y));
+  const marker = (anchor) => {
+    if (anchor?.page !== page.pageNumber) return null;
+    const fontSize = findLineAtY(page, anchor.y, Infinity)?.fontSize ?? 12;
+    const box = lineBoxAt(anchor.y, fontSize);
+    return { top: clip(box.top), bottom: clip(box.bottom), fontSize };
+  };
+  const start = marker(location?.start);
+  const end = marker(location?.end);
+  const covers = isValidScriptLocation(location) &&
+    page.pageNumber >= location.start.page && page.pageNumber <= location.end.page;
+  return { start, end, range: covers ? { top: start?.top ?? 0, bottom: end?.bottom ?? page.height } : null };
 }

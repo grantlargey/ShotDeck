@@ -14,7 +14,7 @@ import { sceneRow, textIndexFrom } from "./textIndexFixtures.js";
  */
 
 export const MOVIE = { id: "m1", title: "Night Diner", runtime_minutes: 120 };
-export const SCRIPT = { id: "s1", movie_id: "m1", script_url: "fixture.pdf" };
+export const SCRIPT = { id: "s1", movie_id: "m1", script_url: "fixture.pdf", s3_key: "scripts/m1/fixture.pdf" };
 
 const scenario = { scenes: [], stills: [], nextSceneNumber: 1 };
 
@@ -172,18 +172,16 @@ export const windowingDouble = {
 };
 
 export const windowingModule = {
-  usePdfPageWindowing: (numPages) => ({
+  usePdfPageWindowing: (document, pages) => ({
     wrapRef: noopRef,
     sentinelRef: noopRef,
-    compact: false,
-    pageWidth: 612,
-    pixelRatio: 1,
-    renderedPageCount: numPages,
-    renderStart: 1,
-    renderEnd: numPages,
-    pageHeights: {},
-    defaultPageHeight: 792,
-    onPageRendered: windowingDouble.onPageRendered,
+    pages: Array.from({ length: document?.numPages ?? 0 }, (_, index) => ({
+      pageNumber: index + 1, pageIndex: pages.get(index + 1) ?? null,
+      pageWidth: 480, scale: pages.has(index + 1) ? 480 / pages.get(index + 1).width : 0,
+      inWindow: true, compact: false, placeholderHeight: 640, devicePixelRatio: 1,
+      onRendered: windowingDouble.onPageRendered,
+    })),
+    hasMore: false,
     scrollToPage: windowingDouble.scrollToPage,
     revealAllPages: windowingDouble.revealAllPages,
   }),

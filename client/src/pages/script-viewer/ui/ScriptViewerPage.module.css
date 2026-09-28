@@ -1,10 +1,8 @@
 .page {
   --viewer-bar-height: 56px;
-
-  min-height: 100vh;
 }
 
-/* ---------- Top bar (replaces the site header on this page) ---------- */
+/* ---------- Tool bar (pinned under the site header, which scrolls away) ---------- */
 
 .topBar {
   position: sticky;
@@ -44,11 +42,12 @@
 .title {
   margin: 0;
   overflow: hidden;
-  font-size: var(--text-base);
-  font-weight: 800;
-  letter-spacing: 0.04em;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -67,8 +66,9 @@
 
 /* ---------- Workspace: PDF + annotator ---------- */
 
+/* Fills the window under the site header and tool bar, so the whole annotator shows on arrival. */
 .workspace {
-  height: calc(100vh - var(--viewer-bar-height));
+  height: calc(100vh - var(--sd-nav-height) - var(--viewer-bar-height));
   min-height: 520px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 400px;
@@ -117,24 +117,6 @@
 .scenes {
   padding: 28px 28px 64px;
   scroll-margin-top: calc(var(--viewer-bar-height) + 8px);
-}
-
-.scenesHeader {
-  margin-bottom: 18px;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-}
-
-.scenesTitle {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--text-base);
-  font-weight: 700;
 }
 
 .scenesHint {

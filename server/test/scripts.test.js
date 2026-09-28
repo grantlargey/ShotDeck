@@ -21,7 +21,7 @@ const api = await startApi();
 const { cookie } = await signInOwner(api);
 
 const INVALID_SCRIPT = "Invalid body. Expected { s3_key:string }";
-const SCRIPT_FIELDS = ["id", "movie_id", "s3_key", "script_url"];
+const SCRIPT_FIELDS = ["id", "movie_id", "s3_key", "script_url", "script_url_expires_at"];
 
 async function expectError(responsePromise, status, error) {
     const response = await responsePromise;

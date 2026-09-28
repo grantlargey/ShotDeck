@@ -6,6 +6,8 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: "jsdom",
+      // Bound jsdom startup contention without weakening individual test deadlines.
+      maxWorkers: 1,
       setupFiles: ["./src/test/setup.js"],
       include: ["src/**/*.test.{js,jsx}"],
     },

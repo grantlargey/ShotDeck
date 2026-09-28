@@ -17,7 +17,7 @@ import {
   scriptLocation,
   textIndexFrom,
 } from "../test/textIndexFixtures.js";
-import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.js";
+import { captureAnchoredRange } from "./captureRange.js";
 import { useSceneDraft } from "./sceneDraft.js";
 
 vi.mock("./captureRange.js", async (importOriginal) => {
@@ -284,8 +284,26 @@ describe("capture and canonical save contract", () => {
       start: { ...valid.start, ...changes.start },
       end: { ...valid.end, ...changes.end },
     };
-    expect(captureAnchoredRange(FULL_INDEX, invalid)).toBeNull();
-    expect(captureUnavailableReason(FULL_INDEX, invalid)).toBe("unreadable");
+    expect(captureAnchoredRange(FULL_INDEX, invalid)).toEqual({ capture: null, unavailable: "unreadable" });
+  });
+
+  it("carries the reason the anchors capture nothing on the draft the panel reads", () => {
+    const { result, rerender } = renderDraft(textIndexFrom([page1, page3]));
+    expect(view(result).draft.captureUnavailable).toBe("start");
+
+    place(result, "start", page1, 0);
+    expect(view(result).draft.captureUnavailable).toBe("end");
+
+    place(result, "end", page3, 0);
+    expect(view(result).draft.captureUnavailable).toBe("indexing");
+
+    // The missing page is a scan: indexing finishes without ever publishing it.
+    rerender({ currentIndex: textIndexFrom([page1, page3], { complete: true }) });
+    expect(view(result).draft).toMatchObject({ captureUnavailable: "unreadable", text: "" });
+
+    rerender({ currentIndex: FULL_INDEX });
+    expect(view(result).draft.captureUnavailable).toBeNull();
+    expect(view(result).draft.text).toContain(DINER);
   });
 
   it("rejects a complete range when layout filtering leaves no usable raw text", () => {

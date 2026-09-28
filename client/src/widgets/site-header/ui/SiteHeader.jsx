@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { ChangePasswordDialog } from "@/features/auth/ui/ChangePasswordDialog.jsx";
@@ -7,10 +7,18 @@ import { BrandLogo } from "@/shared/ui/BrandLogo.jsx";
 import { Button } from "@/shared/ui/Button.jsx";
 import { DropdownMenu } from "@/shared/ui/DropdownMenu.jsx";
 import { ChevronDownIcon, PlusIcon } from "@/shared/ui/icons.jsx";
+import { useHeaderScroll } from "../model/useHeaderScroll.js";
 import styles from "./SiteHeader.module.css";
 
-export default function SiteHeader() {
+/**
+ * The site's header. `pinned` keeps it at the top of the window as the page
+ * scrolls (on phones it slides away while scrolling down); the script viewer
+ * passes false, so the header scrolls off above the viewer's own pinned bar.
+ */
+export default function SiteHeader({ pinned = true }) {
   const { pathname } = useLocation();
+  const headerRef = useRef(null);
+  const { scrolled, hidden } = useHeaderScroll(headerRef, { enabled: pinned });
   const nav = useNavigate();
   const { isAdmin, isOwner, user, signOut } = useSession();
   const [changingPassword, setChangingPassword] = useState(false);
@@ -48,7 +56,17 @@ export default function SiteHeader() {
   const roleLabel = isOwner ? "Owner" : "Admin";
 
   return (
-    <header className={cx(styles.navbar, isExplore && styles.navbarOverlay)}>
+    <header
+      ref={headerRef}
+      className={cx(
+        styles.navbar,
+        !pinned && styles.navbarStatic,
+        // Home: the header floats over the hero, clear until the page scrolls.
+        pinned && isExplore && styles.navbarFloating,
+        pinned && isExplore && !scrolled && styles.navbarClear,
+        hidden && styles.navbarHidden
+      )}
+    >
       <div className={styles.navbarInner}>
         <Link className={styles.brand} to="/">
           <BrandLogo />

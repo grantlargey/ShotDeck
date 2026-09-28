@@ -37,9 +37,11 @@ const NO_CREDIT_FILTERS = Object.fromEntries(MOVIE_CREDITS.map(({ field }) => [f
 const SKELETON_CARDS = 6;
 
 export default function MoviesListPage() {
-  useDocumentTitle("My Projects");
   const nav = useNavigate();
   const { isAdmin } = useSession();
+  // Visitors browse the projects; the library is "mine" only once signed in, as in the header.
+  const pageTitle = isAdmin ? "My Projects" : "Projects";
+  useDocumentTitle(pageTitle);
   const [searchParams] = useSearchParams();
   const queryFromUrl = searchParams.get("query") || "";
 
@@ -116,7 +118,7 @@ export default function MoviesListPage() {
     <div>
       <PageHeader
         eyebrow="Library"
-        title="My Projects"
+        title={pageTitle}
         description={loading ? undefined : `${movies.length} project${movies.length === 1 ? "" : "s"}`}
       />
 

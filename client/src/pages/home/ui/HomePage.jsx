@@ -12,7 +12,6 @@ import { EmptyState } from "@/shared/ui/EmptyState.jsx";
 import { ChevronRightIcon, SearchIcon } from "@/shared/ui/icons.jsx";
 import { Input } from "@/shared/ui/Input.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
-import SiteFooter from "@/widgets/site-footer/ui/SiteFooter.jsx";
 import { LibraryReel } from "./LibraryReel.jsx";
 import styles from "./HomePage.module.css";
 
@@ -151,8 +150,6 @@ export default function HomePage() {
           </MovieCardGrid>
         )}
       </section>
-
-      <SiteFooter />
     </div>
   );
 }

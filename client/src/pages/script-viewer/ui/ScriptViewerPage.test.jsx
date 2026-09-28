@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/shared/lib/errors.js";
 import { lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
@@ -145,6 +145,7 @@ describe("canonical capture and persistence", () => {
     click(inPanel().getByRole("button", { name: "Save scene" }));
     await waitFor(() => expect(pending.saves).toHaveLength(1));
     expect(lastSavePayload()).toEqual({
+      script_key: "scripts/m1/fixture.pdf",
       start_time_seconds: 60,
       end_time_seconds: 120,
       script_location: scriptLocation(page1, 0, page2, 3),
@@ -265,7 +266,7 @@ describe("editor, indexing and AI", () => {
       pageStart: 3,
       pageEnd: 3,
     });
-    expect(renderSelectionSnapshots).toHaveBeenCalledWith(expect.any(Object), savedScene.script_location);
+    expect(renderSelectionSnapshots).toHaveBeenCalledWith(expect.any(Object), savedScene.script_location, expect.any(Map));
 
     await settle(pending.formats[0], { markdown: AI_MARKDOWN });
     expect(inPanel().getByText("An AI formatting proposal is ready. Nothing changes until you accept it.")).toBeTruthy();
@@ -601,12 +602,15 @@ describe("overlap, request races and navigation", () => {
 
   it("scrolls canonical deep links to the start anchor for admins and visitors", async () => {
     for (const admin of [false, true]) {
+      cleanup();
       resetHarness();
       await renderViewer(ScriptViewerRoute, { admin, scenes: [savedScene], sceneId: savedScene.id });
+      expect(windowingDouble.scrollToPage).not.toHaveBeenCalled();
+      publishWholeScript();
       await waitFor(() => expect(windowingDouble.scrollToPage).toHaveBeenCalled());
       expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(
         3,
-        expect.objectContaining({ offsetPx: 86.16 })
+        expect.objectContaining({ offsetPt: 86.16 })
       );
       expect(Boolean(queryAnnotator())).toBe(admin);
     }
@@ -614,6 +618,7 @@ describe("overlap, request races and navigation", () => {
 
   it("draws saved scene bars from the canonical location", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedScene, otherScene] });
+    publishWholeScript();
     expect(frameProps(2).sceneSegments[0]).toMatchObject({ scene: otherScene, top: 86.16, bottom: 134.88 });
     expect(frameProps(3).sceneSegments[0]).toMatchObject({ scene: savedScene, top: 86.16, bottom: 158.88 });
   });
@@ -699,7 +704,7 @@ describe("delete races, visitor navigation and load failures", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(windowingDouble.scrollToPage).toHaveBeenLastCalledWith(
       2,
-      expect.objectContaining({ offsetPx: lineBoxAt(otherScene.script_location.start.y).top })
+      expect.objectContaining({ offsetPt: lineBoxAt(otherScene.script_location.start.y).top })
     );
     expect(queryAnnotator()).toBeNull();
   });

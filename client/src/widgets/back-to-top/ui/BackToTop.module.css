@@ -1,0 +1,26 @@
+.dock {
+  position: fixed;
+  right: max(20px, env(safe-area-inset-right, 0px));
+  bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  z-index: var(--z-toast);
+  animation: back-to-top-in var(--transition-fast) both;
+}
+
+/* Compound selector: IconButton sets its own radius and shadow. */
+.dock .button {
+  border-radius: 50%;
+  box-shadow: var(--shadow-popover);
+}
+
+@keyframes back-to-top-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock {
+    animation: none;
+  }
+}

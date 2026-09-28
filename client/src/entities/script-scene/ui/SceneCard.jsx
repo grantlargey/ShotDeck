@@ -1,3 +1,4 @@
+import { getStillThumbnail } from "@/entities/annotation/model/still.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { getScreenplaySceneHeading } from "@/shared/lib/screenplay/grammar.js";
@@ -41,9 +42,8 @@ export function SceneCard({
   const heading = getScreenplaySceneHeading(text);
   const tags = safeScriptSceneTags(scene?.tags);
   // The card shows the still's thumbnail once the API has made one.
-  const still = split ? scene?.first_image_annotation : null;
-  const imageKey = still?.thumb_key || still?.image_key || null;
-  const imageUrl = useSignedMediaUrl(imageKey);
+  const thumbnail = getStillThumbnail(split ? scene?.first_image_annotation : null);
+  const imageUrl = useSignedMediaUrl(thumbnail.key, thumbnail.url);
   const cardTitle = title ?? (scene?.movie_title || "Unknown title");
 
   function handleKeyDown(event) {
@@ -68,7 +68,7 @@ export function SceneCard({
     >
       {split && (
         <div className={styles.still}>
-          {imageKey ? (
+          {thumbnail.key ? (
             imageUrl && <img className={styles.stillImage} src={imageUrl} alt="" loading="lazy" />
           ) : (
             <span className={styles.stillEmpty}>

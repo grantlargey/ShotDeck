@@ -97,6 +97,36 @@ describe("film-save recovery through the caller's interface", () => {
     expect(remote.updateMovie).not.toHaveBeenCalled();
   });
 
+  // A blank year reaches buildMovieSavePayload as null, which the API refuses,
+  // and the project page's inline editor has no form element to require it.
+  it.each([
+    { status: 400, verdict: "drops", replayed: 2024 },
+    { status: 409, verdict: "drops", replayed: 2024 },
+    { status: 503, verdict: "replays", replayed: null },
+    { status: undefined, verdict: "replays", replayed: null },
+  ])("$verdict a film creation the API answered with $status", async ({ status, replayed }) => {
+    remote.createMovie.mockRejectedValueOnce(Object.assign(new Error("refused"), { status }));
+    const hook = open();
+    await submit(hook, { form: { ...form, year: "" } });
+    expect((await submit(hook, { form })).error).toBeUndefined();
+    expect(remote.createMovie.mock.calls.map(([body]) => body.year)).toEqual([null, replayed]);
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("drops a refused creation across a reload, so corrected details can finish the film save", async () => {
+    remote.createMovie.mockRejectedValueOnce(Object.assign(new Error("Invalid body."), { status: 400 }));
+    const first = open();
+    await submit(first, { form: { ...form, year: "" } });
+    expect(first.result.current.recovery.message).toBe("Film creation did not finish. Retry to finish this film save.");
+    first.unmount();
+
+    const recovered = open();
+    expect((await submit(recovered, { form })).error).toBeUndefined();
+    expect(remote.createMovie).toHaveBeenCalledTimes(2);
+    expect(remote.createMovie.mock.calls[1][0]).toMatchObject({ year: 2024, id: remote.createMovie.mock.calls[0][0].id });
+    expect(localStorage.length).toBe(0);
+  });
+
   it.each(["cover", "script"])("retains a completed %s upload across reload when attachment fails", async (kind) => {
     const attachment = kind === "cover" ? remote.updateMovieCover : remote.saveScript;
     attachment.mockRejectedValueOnce(new Error("attachment response lost"));

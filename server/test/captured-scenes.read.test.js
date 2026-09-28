@@ -115,7 +115,7 @@ describe("searching captured scenes", () => {
         const other = await createScene(api, cookie, zulu);
         const touched = await api.put(`${scenesPath(alpha)}/${late.id}`, {
             cookie,
-            body: sceneBody({ tags: [TAGS.revelation], start_time_seconds: 900, end_time_seconds: 960 }),
+            body: sceneBody({ script_key: alpha.script.s3_key, tags: [TAGS.revelation], start_time_seconds: 900, end_time_seconds: 960 }),
         });
         assert.equal(touched.status, 200, touched.text);
 

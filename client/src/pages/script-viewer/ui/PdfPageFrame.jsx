@@ -1,15 +1,14 @@
 import { memo, useState } from "react";
 import { Page } from "react-pdf";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
-import { findLineAtY, lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
+import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./PdfPageFrame.module.css";
 
 const OVERLAY_CONTROL = "[data-overlay-control]";
 const LETTER_ASPECT_RATIO = 11 / 8.5;
 
-function AnchorMarker({ kind, anchor, pageIndex, scale, onRemove }) {
-  const box = lineBoxAt(anchor.y, findLineAtY(pageIndex, anchor.y, Infinity)?.fontSize);
+function AnchorMarker({ kind, box, scale, onRemove }) {
   const y = (kind === "start" ? box.top : box.bottom) * scale;
   const label = kind === "start" ? "Start" : "End";
 
@@ -51,15 +50,14 @@ export const PdfPageFrame = memo(function PdfPageFrame({
   pageNumber,
   pageIndex,
   pageWidth,
+  scale,
   inWindow,
   placeholderHeight,
   compact,
   readOnly = false,
   devicePixelRatio,
-  startAnchor,
-  endAnchor,
-  rangeTop,
-  rangeBottom,
+  projection = {},
+  showAnchorMarkers,
   sceneSegments,
   activeSceneId,
   onLineContextMenu,
@@ -69,7 +67,6 @@ export const PdfPageFrame = memo(function PdfPageFrame({
   onRendered,
 }) {
   const [hoverLineIndex, setHoverLineIndex] = useState(null);
-  const scale = pageIndex ? pageWidth / pageIndex.width : 0;
   const hoverLine = hoverLineIndex === null ? null : pageIndex?.lines[hoverLineIndex] ?? null;
   const isActive = Boolean(activeSceneId) && sceneSegments.some((segment) => segment.scene.id === activeSceneId);
   const loadingHeight = Math.round(
@@ -135,10 +132,10 @@ export const PdfPageFrame = memo(function PdfPageFrame({
 
       {scale > 0 && (
         <div className={styles.overlay}>
-          {rangeTop !== null && rangeBottom !== null && (
+          {projection.range && (
             <div
               className={styles.range}
-              style={{ top: px(rangeTop), height: px(Math.min(rangeBottom, pageIndex.height) - rangeTop) }}
+              style={{ top: px(projection.range.top), height: px(projection.range.bottom - projection.range.top) }}
             />
           )}
 
@@ -152,8 +149,8 @@ export const PdfPageFrame = memo(function PdfPageFrame({
           )}
 
           {sceneSegments.map((segment) => {
-            const top = segment.top === null ? 0 : px(segment.top);
-            const bottom = segment.bottom === null ? px(pageIndex.height) : px(segment.bottom);
+            const top = px(segment.top);
+            const bottom = px(segment.bottom);
             const { scene } = segment;
             const timing = formatFilmTiming(scene);
             return (
@@ -180,11 +177,11 @@ export const PdfPageFrame = memo(function PdfPageFrame({
             );
           })}
 
-          {startAnchor && (
-            <AnchorMarker kind="start" anchor={startAnchor} pageIndex={pageIndex} scale={scale} onRemove={onRemoveAnchor} />
+          {showAnchorMarkers && projection.start && (
+            <AnchorMarker kind="start" box={projection.start} scale={scale} onRemove={onRemoveAnchor} />
           )}
-          {endAnchor && (
-            <AnchorMarker kind="end" anchor={endAnchor} pageIndex={pageIndex} scale={scale} onRemove={onRemoveAnchor} />
+          {showAnchorMarkers && projection.end && (
+            <AnchorMarker kind="end" box={projection.end} scale={scale} onRemove={onRemoveAnchor} />
           )}
         </div>
       )}

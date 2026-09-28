@@ -12,6 +12,7 @@ import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
 import { ScriptIcon, SplitViewIcon } from "@/shared/ui/icons.jsx";
+import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { buildFilterGroups, countSceneTags } from "../model/sceneBrowse.js";
@@ -147,22 +148,34 @@ export default function ScriptSearchPage() {
       />
 
       <section className={styles.results} aria-busy={loading}>
-        <div className={styles.toolbar}>
-          <Button size="sm" className={styles.filtersButton} onClick={() => setFiltersOpen(true)}>
-            Filters{selectedTags.length ? ` (${selectedTags.length})` : ""}
-          </Button>
-          <p className={styles.resultCount} aria-live="polite">
-            {summary}
-          </p>
-          <div className={styles.toolbarControls}>
-            <SegmentedControl
-              label="Card preview"
-              options={CARD_LAYOUT_OPTIONS}
-              value={cardLayout}
-              onChange={setCardLayout}
-            />
-          </div>
-        </div>
+        <SectionHeading
+          className={styles.toolbar}
+          title="Scenes"
+          count={response.key ? results.length : undefined}
+          badge={
+            response.key && (
+              <span className={styles.headingNote}>
+                from {titleCount} title{titleCount === 1 ? "" : "s"}
+              </span>
+            )
+          }
+          actions={
+            <>
+              <Button size="sm" className={styles.filtersButton} onClick={() => setFiltersOpen(true)}>
+                Filters{selectedTags.length ? ` (${selectedTags.length})` : ""}
+              </Button>
+              <SegmentedControl
+                label="Card preview"
+                options={CARD_LAYOUT_OPTIONS}
+                value={cardLayout}
+                onChange={setCardLayout}
+              />
+            </>
+          }
+        />
+        <p className={styles.visuallyHidden} aria-live="polite">
+          {summary}
+        </p>
 
         {selectedTags.length > 0 && (
           <ul className={styles.activeFilters} aria-label="Active filters">
@@ -216,9 +229,8 @@ export default function ScriptSearchPage() {
       {openSceneId && (
         <SceneViewerModal
           key={openSceneId}
-          initialView="script"
-          initialSceneId={openSceneId}
-          scenes={results}
+          initial={{ sceneId: openSceneId }}
+          source={{ scenes: results }}
           onClose={() => setOpenSceneId(null)}
           onSelectTag={showScenesWithTag}
           onOpenStill={(still, movieId) => nav(getStillProjectPath(movieId, still.id))}

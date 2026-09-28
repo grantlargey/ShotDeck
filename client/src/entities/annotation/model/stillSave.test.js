@@ -52,6 +52,21 @@ describe("still saves through the editor's interface", () => {
     expect(remote.req.mock.calls.map(([, init]) => JSON.parse(init.body).time_seconds)).toEqual([10, 10.1]);
   });
 
+  it.each([
+    { status: 400, verdict: "drops", replayed: 10.1 },
+    { status: 409, verdict: "drops", replayed: 10.1 },
+    { status: 503, verdict: "replays", replayed: 10 },
+    { status: undefined, verdict: "replays", replayed: 10 },
+  ])("$verdict a still creation the API answered with $status", async ({ status, replayed }) => {
+    remote.req.mockRejectedValueOnce(Object.assign(new Error("refused"), { status }));
+    const save = createStillSave({ movieId });
+    const image = file();
+    await expect(save({ timeSeconds: 10, file: image })).rejects.toThrow("refused");
+
+    await save({ timeSeconds: 10.1, file: image });
+    expect(JSON.parse(remote.req.mock.calls[1][1].body).time_seconds).toBe(replayed);
+  });
+
   it("resolves a lost creation response before applying a changed image and timestamp to the same still", async () => {
     remote.req.mockImplementationOnce(async (...args) => {
       await write(...args);

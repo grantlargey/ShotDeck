@@ -88,6 +88,7 @@
   pointer-events: none;
 }
 
+
 /* Snaps to the still a click would open. */
 .playhead {
   top: -6px;
@@ -109,29 +110,10 @@
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 
-/* The grid still under the pointer or keyboard focus. */
-.linkedMark {
-  top: -6px;
-  bottom: 0;
-  z-index: 1;
-  width: 1px;
-  background: var(--color-accent-line);
-}
-
-.linkedMark::before {
-  content: "";
-  position: absolute;
-  top: -3px;
-  left: -2px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-accent);
-}
-
+/* Opens below the timeline, since the timeline pins under the site header. */
 .preview {
   position: absolute;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
   left: clamp(0px, calc(var(--pos) - var(--preview-width) / 2), calc(100% - var(--preview-width)));
   z-index: 5;
   width: var(--preview-width);
@@ -147,7 +129,7 @@
 @keyframes preview-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(-4px);
   }
 }
 

@@ -1,6 +1,10 @@
 import { createAnnotation, updateAnnotation } from "@/shared/api/annotations.js";
 import { uploadMediaFile } from "@/shared/api/uploads.js";
-import { ValidationError } from "@/shared/lib/errors.js";
+import { openSaveJournal } from "@/shared/lib/saveJournal.js";
+
+// The journal's two steps: the still's image, and the record of its film moment.
+const MOMENT = "moment";
+const IMAGE = "image";
 
 /** One open editor's still save. Retain acknowledged work and replay uncertain
  * creation with the original input before applying any changed input.
@@ -8,55 +12,30 @@ import { ValidationError } from "@/shared/lib/errors.js";
  */
 export function createStillSave({ movieId, stillId = null }) {
   const id = stillId || crypto.randomUUID();
-  let created = Boolean(stillId);
-  let creation;
-  let uploaded;
-  let saved;
-  let result;
-  let saving = false;
+  const journal = openSaveJournal({ name: "still save", created: Boolean(stillId) });
 
-  async function finishCreation() {
-    try {
-      result = await createAnnotation({ movieId, id, ...creation });
-    } catch (error) {
-      // A refusal is the API's verdict on the input, so replaying it would be
-      // refused again: drop it and let the next save carry the corrected
-      // input. An uncertain failure keeps it, to be replayed as it is.
-      if (error?.status >= 400 && error?.status < 500) creation = undefined;
-      throw error;
-    }
-    if (result?.id !== id) throw new Error("Still creation returned an unexpected identity");
-    created = true;
-    // Replaying creation returns the current still. Use the submitted baseline
-    // so an unchanged retry does not undo somebody else's subsequent edits.
-    saved = creation;
+  async function create(input) {
+    const still = await createAnnotation({ movieId, id, ...input });
+    if (still?.id !== id) throw new Error("Still creation returned an unexpected identity");
+    return still;
   }
 
   return async function save({ timeSeconds, imageKey = null, file = null }) {
-    if (saving) throw new ValidationError("A still save is already in progress.");
-    saving = true;
-    try {
-      if (creation && !created) await finishCreation();
+    return journal.attempt(async () => {
       if (file) {
-        if (uploaded?.file !== file) uploaded = { file, uploadId: crypto.randomUUID(), key: null };
-        if (!uploaded.key) {
-          uploaded.key = await uploadMediaFile({ movieId, type: "annotation", file, uploadId: uploaded.uploadId });
-          if (!uploaded.key) throw new Error("Upload returned no object key");
-        }
-        imageKey = uploaded.key;
+        // A creation whose outcome is unknown is answered before a replacement
+        // image goes up, so this editor learns the still exists even when the
+        // upload that follows fails again.
+        await journal.settle(MOMENT, null, { create });
+        journal.select(IMAGE, { identity: file, body: file });
+        imageKey = await journal.upload(IMAGE, ({ uploadId, body }) =>
+          uploadMediaFile({ movieId, type: "annotation", file: body, uploadId })
+        );
       }
-      const input = { timeSeconds, imageKey };
-      if (!created) {
-        creation = input;
-        await finishCreation();
-      }
-      if (!saved || saved.timeSeconds !== timeSeconds || saved.imageKey !== imageKey) {
-        result = await updateAnnotation({ movieId, annotationId: id, ...input });
-        saved = input;
-      }
-      return result;
-    } finally {
-      saving = false;
-    }
+      return journal.settle(MOMENT, { timeSeconds, imageKey }, {
+        create,
+        update: (moment) => updateAnnotation({ movieId, annotationId: id, ...moment }),
+      });
+    });
   };
 }

@@ -14,7 +14,7 @@ import {
   NO_ANCHORS,
   placeAnchor,
 } from "./anchors.js";
-import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.js";
+import { captureAnchoredRange } from "./captureRange.js";
 
 /*
  * The scene draft: the captured scene an admin is creating or editing in the
@@ -29,6 +29,11 @@ import { captureAnchoredRange, captureUnavailableReason } from "./captureRange.j
  * Text of any other origin is stored with the anchor pair key it belongs to
  * (`textAnchorKey`). When a capture exists under a different key the text is
  * stale.
+ *
+ * When the anchors capture nothing, `captureUnavailable` carries the one reason
+ * why, straight from the capture itself. The annotator and a save attempt both
+ * read that reason, so they can't tell the admin different stories about the
+ * same anchors.
  *
  * An AI proposal keeps the selection its request was made from: the capture's
  * anchor key, else the draft text's own key. Accepting it keys the AI text to
@@ -270,8 +275,11 @@ const CAPTURE_UNAVAILABLE_ERRORS = {
  * Scene text is saved as shown. Raw text always comes from the current capture.
  * Stale scene text sets `confirmStaleText` because it will be stored with the
  * current location.
+ *
+ * `captured` is what captureAnchoredRange returned for the draft's anchors;
+ * saving asks it nothing the annotator hasn't already been shown.
  */
-function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, scenes }) {
+function buildSavePayload(draft, captured, text, { runtimeSeconds, scenes }) {
   const savedScene = draft.savedScene;
   const timing = parseFilmTiming(draft.startTime, draft.endTime, runtimeSeconds);
   if (timing.error) {
@@ -283,11 +291,9 @@ function buildSavePayload(draft, textIndex, capture, text, { runtimeSeconds, sce
       error: `This scene's film timing shares a second with the scene at ${formatFilmTiming(timingOverlap)}. Scenes must be at least a second apart.`,
     };
   }
+  const capture = captured.capture;
   if (!capture) {
-    return { error: CAPTURE_UNAVAILABLE_ERRORS[captureUnavailableReason(textIndex, draft.anchors)] };
-  }
-  if (!capture.plainText.trim()) {
-    return { error: CAPTURE_UNAVAILABLE_ERRORS.unreadable };
+    return { error: CAPTURE_UNAVAILABLE_ERRORS[captured.unavailable] };
   }
   if (!text.trim()) {
     return { error: "Place start and end anchors in the script to capture the scene text." };
@@ -350,7 +356,8 @@ export function useSceneDraft(textIndex) {
   const [state, dispatch] = useReducer(reduceDraft, undefined, createEmptyDraft);
 
   const anchors = state.anchors;
-  const capture = useMemo(() => captureAnchoredRange(textIndex, anchors), [textIndex, anchors]);
+  const captured = useMemo(() => captureAnchoredRange(textIndex, anchors), [textIndex, anchors]);
+  const capture = captured.capture;
 
   const text = state.textOrigin === "capture" ? capture?.markdown ?? "" : state.text;
   const textStale = isTextStale(state, capture);
@@ -386,7 +393,7 @@ export function useSceneDraft(textIndex) {
   const latestRef = useRef(null);
   const tokenRef = useRef(0);
   useLayoutEffect(() => {
-    latestRef.current = { state, textIndex, anchors, capture, captureSeed, text };
+    latestRef.current = { state, textIndex, anchors, captured, captureSeed, text };
   });
 
   const [draftActions] = useState(() => ({
@@ -445,7 +452,8 @@ export function useSceneDraft(textIndex) {
      * text's anchor key and editor source, so the editor isn't replaced.
      */
     editText(markdown) {
-      const { state: current, capture: currentCapture, captureSeed } = latestRef.current;
+      const { state: current, captured: currentCaptured, captureSeed } = latestRef.current;
+      const currentCapture = currentCaptured.capture;
       const fromCapture = current.textOrigin === "capture";
       dispatch({
         type: "editText",
@@ -457,9 +465,9 @@ export function useSceneDraft(textIndex) {
 
     /** Replaces the text with fresh captured text and makes the anchors in effect explicit. */
     recapture() {
-      const { anchors: current, capture: currentCapture } = latestRef.current;
-      if (!currentCapture) return;
-      dispatch({ type: "recapture", anchors: current, capture: currentCapture });
+      const { anchors: current, captured: currentCaptured } = latestRef.current;
+      if (!currentCaptured.capture) return;
+      dispatch({ type: "recapture", anchors: current, capture: currentCaptured.capture });
     },
 
     /**
@@ -469,7 +477,8 @@ export function useSceneDraft(textIndex) {
      * or, without a capture, the draft text's own anchor key and no word check.
      */
     startProposal() {
-      const { state: current, anchors: currentAnchors, capture: currentCapture, text: currentText } = latestRef.current;
+      const { state: current, anchors: currentAnchors, captured: currentCaptured, text: currentText } = latestRef.current;
+      const currentCapture = currentCaptured.capture;
       const capturedText = currentCapture?.plainText || screenplayToPlainText(currentText);
       if (!capturedText.trim()) return null;
 
@@ -521,8 +530,8 @@ export function useSceneDraft(textIndex) {
      * made during the request.
      */
     buildSave({ runtimeSeconds, scenes }) {
-      const { state: current, textIndex: index, capture: currentCapture, text: currentText } = latestRef.current;
-      const result = buildSavePayload(current, index, currentCapture, currentText, { runtimeSeconds, scenes });
+      const { state: current, captured: currentCaptured, text: currentText } = latestRef.current;
+      const result = buildSavePayload(current, currentCaptured, currentText, { runtimeSeconds, scenes });
       if (result.error) return result;
       return {
         ...result,
@@ -547,6 +556,7 @@ export function useSceneDraft(textIndex) {
     text,
     textOrigin: state.textOrigin,
     textStale,
+    captureUnavailable: captured.unavailable,
     capturedPlainText: capture && !textStale ? capture.plainText : "",
     recaptureOption: recaptureOptionFor(capture, textStale, state.textOrigin),
     recaptureReplacesEdits: Boolean(capture) && (state.textOrigin === "edited" || state.textOrigin === "ai"),

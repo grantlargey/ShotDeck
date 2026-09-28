@@ -1,7 +1,10 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { cx } from "@/shared/lib/cx.js";
+import { canAnimatePageChange } from "@/shared/lib/viewTransition.js";
 import { Skeleton } from "@/shared/ui/Skeleton.jsx";
+import { openProjectWithPosterTransition, posterTransitionState } from "../model/posterTransition.js";
 import styles from "./MovieCard.module.css";
 
 /**
@@ -10,17 +13,31 @@ import styles from "./MovieCard.module.css";
  * buttons never trigger navigation.
  */
 export function MovieCard({ movie, menu, headingLevel = 3 }) {
-  const coverUrl = movie.cover_image_url || "";
+  const coverUrl = useSignedMediaUrl(movie.cover_image_key, movie.cover_image_url) || "";
   const [failedUrl, setFailedUrl] = useState("");
   const showCover = Boolean(coverUrl) && failedUrl !== coverUrl;
   const Heading = `h${headingLevel}`;
+  const navigate = useNavigate();
+  const imageRef = useRef(null);
+  const to = `/movies/${movie.id}`;
+
+  // A plain click on a loaded poster opens the project with the poster gliding
+  // into place; new-tab clicks and browsers without view transitions navigate as usual.
+  function openWithPosterTransition(event) {
+    const image = imageRef.current;
+    const plainClick = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+    if (!plainClick || !image?.complete || !canAnimatePageChange()) return;
+    event.preventDefault();
+    openProjectWithPosterTransition(navigate, to, image, posterTransitionState(coverUrl, movie.cover_image_key));
+  }
 
   return (
     <article className={styles.card}>
-      <Link className={styles.link} to={`/movies/${movie.id}`}>
+      <Link className={styles.link} to={to} onClick={openWithPosterTransition}>
         <div className={styles.poster}>
           {showCover ? (
             <img
+              ref={imageRef}
               className={styles.image}
               src={coverUrl}
               alt=""

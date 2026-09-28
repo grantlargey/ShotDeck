@@ -28,6 +28,26 @@ const ORIGIN_BADGES = {
   saved: { label: "Saved", tone: "neutral" },
 };
 
+/*
+ * What the Script text section says when the draft has no text to show, keyed by
+ * the draft's reason its Captured text is unavailable. Saving answers the same
+ * question from the same reason, in the voice of a refusal
+ * (CAPTURE_UNAVAILABLE_ERRORS), so the panel can no longer promise a capture
+ * that will never arrive: a scan in the range reads as unreadable here too,
+ * rather than waiting on indexing that has already finished. Either missing
+ * anchor asks for the same thing, because capturing needs both. "ready" is the
+ * remaining case: the anchors do capture text, and the admin emptied the
+ * draft's own text by hand.
+ */
+const PLACE_ANCHORS_HINT = "Place a start and an end anchor to capture this scene's text.";
+const NO_TEXT_HINTS = {
+  start: PLACE_ANCHORS_HINT,
+  end: PLACE_ANCHORS_HINT,
+  indexing: "Capturing text between the anchors…",
+  unreadable: "The script text between the anchors can't be read. Move the anchors to lines with text.",
+  ready: "This scene draft has no text.",
+};
+
 function CrosshairIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
@@ -110,7 +130,7 @@ function CaptureTab({
   onRequestAi,
   onReviewProposal,
 }) {
-  const { anchors, canUndoAnchors, startTime, endTime, text, textOrigin, textStale } = draft;
+  const { anchors, canUndoAnchors, captureUnavailable, startTime, endTime, text, textOrigin, textStale } = draft;
   const hasAnchors = Boolean(anchors.start || anchors.end);
   const hasText = Boolean(text.trim());
   const originBadge = ORIGIN_BADGES[textOrigin];
@@ -211,10 +231,17 @@ function CaptureTab({
             onKeyActivate={onExpandDraft}
           />
         ) : (
-          <EmptyState compact>
-            {anchors.start && anchors.end
-              ? "Capturing text between the anchors…"
-              : "Place a start and an end anchor to capture this scene's text."}
+          <EmptyState
+            compact
+            action={
+              captureUnavailable ? null : (
+                <Button size="sm" onClick={onRecapture}>
+                  Re-capture from anchors
+                </Button>
+              )
+            }
+          >
+            {NO_TEXT_HINTS[captureUnavailable ?? "ready"]}
           </EmptyState>
         )}
 

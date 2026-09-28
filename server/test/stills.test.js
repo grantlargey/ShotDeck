@@ -17,7 +17,17 @@ const { cookie } = await signInOwner(api);
 
 const INVALID_STILL =
     "Invalid body. Expected { time_seconds:number to a tenth of a second, (optional) image_key:string }";
-const STILL_FIELDS = ["id", "image_key", "image_url", "movie_id", "thumb_key", "thumb_url", "time_seconds"];
+const STILL_FIELDS = [
+    "id",
+    "image_key",
+    "image_url",
+    "image_url_expires_at",
+    "movie_id",
+    "thumb_key",
+    "thumb_url",
+    "thumb_url_expires_at",
+    "time_seconds",
+];
 
 /** The 409 for a moment another shot holds, naming the next free tenth of that second. */
 function takenMoment(time, free) {

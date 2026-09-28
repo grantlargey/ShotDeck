@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isPageRendered, scrollPageInWrap } from "../lib/pdfViewport.js";
 
 const COMPACT_BREAKPOINT = 900;
@@ -31,7 +31,8 @@ function chunkStartFor(pageNumber) {
  * every page; compact (mobile) layouts render a window of pages around the
  * reading position and grow the list as the user scrolls.
  */
-export function usePdfPageWindowing(numPages) {
+export function usePdfPageWindowing(pdfDocument, indexedPages = new Map()) {
+  const numPages = pdfDocument?.numPages ?? 0;
   const [wrap, setWrap] = useState(null);
   const [sentinel, setSentinel] = useState(null);
   const [compact, setCompact] = useState(isCompactViewport);
@@ -41,6 +42,10 @@ export function usePdfPageWindowing(numPages) {
   const [pageHeights, setPageHeights] = useState({});
   const [pageWidth, setPageWidth] = useState(700);
   const scrollRunRef = useRef(0);
+  const scrollCompleteRef = useRef(null);
+  const widthRef = useRef(pageWidth);
+  useLayoutEffect(() => { widthRef.current = pageWidth; }, [pageWidth]);
+  useEffect(() => () => { scrollRunRef.current += 1; }, [pdfDocument]);
 
   const renderedPageCount = compact ? Math.min(numPages, loadedCount) : numPages;
   const renderStart = compact ? Math.max(1, chunkStart - RENDER_BEHIND) : 1;
@@ -94,10 +99,16 @@ export function usePdfPageWindowing(numPages) {
     if (!wrap) return undefined;
     const cancelAutoScroll = () => {
       scrollRunRef.current += 1;
+      scrollCompleteRef.current?.(false);
+      scrollCompleteRef.current = null;
     };
+    window.addEventListener("pointerdown", cancelAutoScroll, { passive: true });
+    window.addEventListener("keydown", cancelAutoScroll);
     wrap.addEventListener("wheel", cancelAutoScroll, { passive: true });
     wrap.addEventListener("touchstart", cancelAutoScroll, { passive: true });
     return () => {
+      window.removeEventListener("pointerdown", cancelAutoScroll);
+      window.removeEventListener("keydown", cancelAutoScroll);
       wrap.removeEventListener("wheel", cancelAutoScroll);
       wrap.removeEventListener("touchstart", cancelAutoScroll);
     };
@@ -150,7 +161,7 @@ export function usePdfPageWindowing(numPages) {
     return () => observer.disconnect();
   }, [compact, sentinel, renderedPageCount, numPages]);
 
-  function onPageRendered(pageNumber) {
+  const onPageRendered = useCallback((pageNumber) => {
     // Heights only size the placeholders used by compact windowing.
     if (!compact) return;
     window.requestAnimationFrame(() => {
@@ -159,11 +170,11 @@ export function usePdfPageWindowing(numPages) {
       if (height < 10) return;
       setPageHeights((prev) => (prev[pageNumber] === height ? prev : { ...prev, [pageNumber]: height }));
     });
-  }
+  }, [compact]);
 
-  function scrollToPage(pageNumber, { behavior = "auto", offsetPx = null, onDone } = {}) {
+  async function scrollToPage(pageNumber, { behavior = "auto", offsetPt = null, onDone } = {}) {
     const target = Number(pageNumber);
-    if (!Number.isInteger(target) || target < 1) {
+    if (!Number.isInteger(target) || target < 1 || target > numPages) {
       onDone?.(false);
       return;
     }
@@ -175,28 +186,50 @@ export function usePdfPageWindowing(numPages) {
 
     scrollRunRef.current += 1;
     const runId = scrollRunRef.current;
+    scrollCompleteRef.current?.(false);
+    scrollCompleteRef.current = onDone;
+    const finish = (ok) => {
+      if (runId !== scrollRunRef.current) return;
+      scrollCompleteRef.current = null;
+      onDone?.(ok);
+    };
+    // Read this page's real dimensions before converting points to pixels.
+    // This works before the background text index reaches a deep-linked page.
+    let pointWidth;
+    try {
+      const page = await pdfDocument.getPage(target);
+      pointWidth = page.getViewport({ scale: 1 }).width;
+    } catch {
+      finish(false);
+      return;
+    }
     const startedAt = Date.now();
+    const scroll = (element, mode) => {
+      const canvasWidth = element.querySelector(".react-pdf__Page")?.getBoundingClientRect().width;
+      const scale = (canvasWidth || widthRef.current) / pointWidth;
+      scrollPageInWrap(wrap, element, mode, offsetPt === null ? null : offsetPt * scale);
+    };
 
     const attempt = () => {
       if (runId !== scrollRunRef.current) return;
       const element = document.getElementById(`script-page-${target}`);
       if (!wrap || !element || !isPageRendered(element)) {
         if (Date.now() - startedAt < SCROLL_WAIT_MS) window.requestAnimationFrame(attempt);
-        else onDone?.(false);
+        else finish(false);
         return;
       }
 
-      scrollPageInWrap(wrap, element, behavior, offsetPx);
+      scroll(element, behavior);
       if (behavior === "smooth") {
-        onDone?.(true);
+        finish(true);
         return;
       }
 
       // One correction after layout settles, for late PDF page sizing.
       window.setTimeout(() => {
         if (runId !== scrollRunRef.current) return;
-        scrollPageInWrap(wrap, element, "auto", offsetPx);
-        onDone?.(true);
+        scroll(element, "auto");
+        finish(true);
       }, 260);
     };
 
@@ -206,15 +239,19 @@ export function usePdfPageWindowing(numPages) {
   return {
     wrapRef: setWrap,
     sentinelRef: setSentinel,
-    compact,
-    pageWidth,
-    pixelRatio,
-    renderedPageCount,
-    renderStart,
-    renderEnd,
-    pageHeights,
-    defaultPageHeight,
-    onPageRendered,
+    pages: Array.from({ length: renderedPageCount }, (_, index) => {
+      const pageNumber = index + 1;
+      const pageIndex = indexedPages.get(pageNumber) ?? null;
+      const inWindow = pageNumber >= renderStart && pageNumber <= renderEnd;
+      const scale = pageIndex ? pageWidth / pageIndex.width : 0;
+      return {
+        pageNumber, pageIndex, pageWidth, inWindow, compact, scale,
+        devicePixelRatio: pixelRatio,
+        placeholderHeight: pageIndex ? pageIndex.height * scale : pageHeights[pageNumber] || defaultPageHeight,
+        onRendered: onPageRendered,
+      };
+    }),
+    hasMore: renderedPageCount < numPages,
     scrollToPage,
     revealAllPages: () => setLoadedCount(numPages),
   };

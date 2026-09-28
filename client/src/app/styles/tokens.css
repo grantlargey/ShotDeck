@@ -76,7 +76,10 @@
   --anchor-end: #fbbf24;
 
   /* Type */
-  --font-sans: "Inter", Arial, sans-serif;
+  --font-sans: "Host Grotesk", Arial, sans-serif;
+  /* Titles only: the wordmark, the home headline, page titles and film titles.
+     Gloock has a single weight, so text set in it keeps font-weight 400. */
+  --font-display: "Gloock", Georgia, serif;
   --font-script: "Courier Prime", "Courier New", Courier, monospace;
   --text-2xs: 0.72rem;
   --text-xs: 0.78rem;
@@ -101,6 +104,9 @@
 
   /* Layout */
   --sd-nav-height: 72px;
+  /* How far below the viewport top sticky page parts sit: the header's height
+     while it shows, 0 while it's slid away on phones (see SiteHeader). */
+  --sd-header-offset: var(--sd-nav-height);
   --page-max-width: 1200px;
   --page-gutter: 28px;
 

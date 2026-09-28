@@ -7,10 +7,10 @@ import { ChevronLeftIcon, EyeIcon, EyeOffIcon, SearchIcon } from "@/shared/ui/ic
 import styles from "./ScriptViewerPage.module.css";
 
 /**
- * The viewer's only header. It stands in for the site header on this page so
- * the script gets the height: home link, back to the project, the title, and
- * viewer actions, in one sticky row at every width. The anchor-marker toggle
- * only matters while capturing, so visitors don't get it.
+ * The viewer's tool bar, under the site header. It stays pinned when the site
+ * header scrolls away, so the script keeps the height: home link, back to the
+ * project, the title, and viewer actions, in one row at every width. The
+ * anchor-marker toggle only matters while capturing, so visitors don't get it.
  */
 export function ViewerTopBar({
   title,

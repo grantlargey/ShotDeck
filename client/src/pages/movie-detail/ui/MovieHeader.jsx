@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { MOVIE_CREDITS } from "@/entities/movie/model/movieCredits.js";
+import { projectPosterProps } from "@/entities/movie/model/posterTransition.js";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { cx } from "@/shared/lib/cx.js";
 import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
 import { formatMinutesToHms, formatMomentToHms } from "@/shared/lib/time.js";
@@ -159,7 +161,7 @@ export function MovieHeader({ movie, coverUrl, stills = NO_STILLS, onOpenStill, 
 
       <div className={styles.heroInner}>
         {coverUrl ? (
-          <img className={styles.poster} src={coverUrl} alt={`${movie.title} cover`} />
+          <img className={styles.poster} src={coverUrl} alt={`${movie.title} cover`} {...projectPosterProps} />
         ) : (
           <div className={styles.poster} aria-hidden="true" />
         )}
@@ -184,12 +186,21 @@ export function MovieHeader({ movie, coverUrl, stills = NO_STILLS, onOpenStill, 
   );
 }
 
-/** Placeholder with the hero's shape, shown while the project loads. */
-export function MovieHeaderSkeleton() {
+/**
+ * Placeholder with the hero's shape, shown while the project loads. A project
+ * opened from its card already has the card's cover (`posterUrl`), so it shows
+ * that rather than a blank poster.
+ */
+export function MovieHeaderSkeleton({ posterUrl: handedUrl = "", posterKey }) {
+  const posterUrl = useSignedMediaUrl(posterKey, handedUrl);
   return (
     <section className={styles.hero} aria-hidden="true">
       <div className={styles.heroInner}>
-        <Skeleton className={styles.poster} />
+        {posterUrl ? (
+          <img className={styles.poster} src={posterUrl} alt="" {...projectPosterProps} />
+        ) : (
+          <Skeleton className={styles.poster} />
+        )}
         <div className={styles.heroBody}>
           <Skeleton className={styles.skeletonEyebrow} />
           <Skeleton className={styles.skeletonTitle} />

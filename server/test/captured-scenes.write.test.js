@@ -46,11 +46,11 @@ async function newPlace() {
 }
 
 function postScene(place, body) {
-    return api.post(scenesPath(place), { cookie, body });
+    return api.post(scenesPath(place), { cookie, body: { script_key: place.script.s3_key, ...body } });
 }
 
 function putScene(place, sceneId, body) {
-    return api.put(`${scenesPath(place)}/${sceneId}`, { cookie, body });
+    return api.put(`${scenesPath(place)}/${sceneId}`, { cookie, body: { script_key: place.script.s3_key, ...body } });
 }
 
 async function expectError(responsePromise, status, error, details = {}) {
@@ -384,7 +384,7 @@ describe("database overlap constraints", () => {
 });
 
 describe("concurrent zero-length saves", () => {
-    test("the advisory lock lets one save win and makes the other a named 409", async () => {
+    test("the film write lock lets one save win and makes the other a named 409", async () => {
         const place = await newPlace();
         const blocker = await pool.connect();
         let pending = [];
@@ -424,6 +424,51 @@ describe("concurrent zero-length saves", () => {
             await blocker.query("ROLLBACK").catch(() => {});
             blocker.release();
             await Promise.allSettled(pending);
+        }
+    });
+});
+
+
+describe("the captured PDF precondition", () => {
+    test("a replaced PDF refuses a stale tab, while a same-key retry keeps the draft valid", async () => {
+        const place = await newPlace();
+        const savePdf = (key) => api.post(`/movies/${place.movie.id}/scripts`, { cookie, body: { s3_key: key } });
+        await savePdf(place.script.s3_key);
+        const saved = await postScene(place, sceneBody());
+        assert.equal(saved.status, 201, saved.text);
+        const replacement = await savePdf(`scripts/${place.movie.id}/replacement.pdf`);
+        assert.equal(replacement.status, 201, replacement.text);
+        await expectError(postScene(place, sceneBody()), 409,
+            "The script PDF has changed. Reload it before saving a scene.");
+        assert.deepEqual((await api.get(scenesPath(place))).body, []);
+        place.script = replacement.body;
+        assert.equal((await postScene(place, sceneBody())).status, 201);
+    });
+
+    test("requires the captured PDF key rather than silently trusting script identity", async () => {
+        const place = await newPlace();
+        await expectError(api.post(scenesPath(place), { cookie, body: sceneBody() }), 400,
+            "Reload the script before saving a scene.");
+    });
+
+    test("a save waiting behind replacement rechecks the PDF after acquiring the lock", async () => {
+        const place = await newPlace();
+        const holder = await pool.connect();
+        let request;
+        try {
+            await holder.query("BEGIN");
+            await holder.query("SELECT id FROM movies WHERE id = $1 FOR NO KEY UPDATE", [place.movie.id]);
+            request = postScene(place, sceneBody());
+            await waitForLockWaiters(1);
+            await holder.query("UPDATE scripts SET s3_key = $2 WHERE id = $1",
+                [place.script.id, `scripts/${place.movie.id}/replacement.pdf`]);
+            await holder.query("COMMIT");
+            await expectError(request, 409, "The script PDF has changed. Reload it before saving a scene.");
+            assert.deepEqual((await api.get(scenesPath(place))).body, []);
+        } finally {
+            await holder.query("ROLLBACK").catch(() => {});
+            holder.release();
+            await request;
         }
     });
 });

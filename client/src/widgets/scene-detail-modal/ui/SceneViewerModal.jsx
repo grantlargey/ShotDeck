@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   displayScriptSceneText,
 } from "@/entities/script-scene/model/capturedScene.js";
@@ -10,14 +9,7 @@ import { Button } from "@/shared/ui/Button.jsx";
 import { ImageIcon, ScriptIcon } from "@/shared/ui/icons.jsx";
 import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
-import {
-  createSceneViewerCursor,
-  resolveSceneViewerCursor,
-  setSceneViewerView,
-  stepSceneViewerToScene,
-  stepSceneViewerToStill,
-} from "../model/sceneViewerCursor.js";
-import { useSceneViewerData } from "../model/useSceneViewerData.js";
+import { useSceneViewer } from "../model/useSceneViewer.js";
 import { SceneDetailModal, SceneModalPaper } from "./SceneDetailModal.jsx";
 import styles from "./SceneDetailModal.module.css";
 
@@ -49,23 +41,13 @@ const STILL_SCENE_NOTES = {
  * scene's script or as a film still, with arrows on both tabs; the tab not
  * being stepped follows along (see sceneViewerCursor.js).
  *
- * - `scenes`: what the script tab's arrows walk and, when `scriptId` identifies
- *   them as the whole script, the list used to match stills. Otherwise the
- *   script's scenes are fetched.
- * - `stills`: the film's stills, when the page already has them; otherwise
- *   they're fetched.
- * - `movie` / `scriptId`: the title and script to use when opening on a still.
+ * `initial` selects the opening scene or still; `source` supplies owned lists.
  * - `renderActions({ view, scene, still })` adds page-specific footer buttons;
  *   `renderStillTools(still)` renders above the still, e.g. an edit form.
  */
 export function SceneViewerModal({
-  initialView = "script",
-  initialSceneId = null,
-  initialStillId = null,
-  scenes,
-  stills,
-  movie,
-  scriptId = null,
+  initial,
+  source,
   onClose,
   onSelectTag,
   onOpenStill,
@@ -74,45 +56,9 @@ export function SceneViewerModal({
   renderActions,
   renderStillTools,
 }) {
-  const [cursor, setCursor] = useState(() =>
-    createSceneViewerCursor({
-      view: initialView,
-      sceneId: initialSceneId,
-      stillId: initialStillId,
-      scenes,
-      stills,
-      context: { movieId: movie?.id, scriptId, movieTitle: movie?.title },
-    })
-  );
-  const { context } = cursor;
-  const data = useSceneViewerData({
-    movieId: context.movieId,
-    scriptId: context.scriptId,
-    stills: movie?.id && movie.id === context.movieId ? stills : undefined,
-    scriptScenes: scriptId && scriptId === context.scriptId ? scenes : undefined,
-  });
-  const stepScenes = scenes || data.scriptScenes || [];
-  const current = resolveSceneViewerCursor(cursor, {
-    scenes: stepScenes,
-    scriptScenes: data.scriptScenes,
-    stills: data.stills,
-    scenesFailed: data.scenesFailed,
-    stillsFailed: data.stillsFailed,
-  });
+  const current = useSceneViewer({ initial, source });
   const { scene, still } = current;
-  const showStill = cursor.view === "still";
-
-  function step(delta) {
-    if (showStill) {
-      const target = delta < 0 ? current.prevStill : current.nextStill;
-      if (target) {
-        setCursor(stepSceneViewerToStill(cursor, target, { scenes: stepScenes, scriptScenes: data.scriptScenes }));
-      }
-      return;
-    }
-    const target = delta < 0 ? current.prevScene : current.nextScene;
-    if (target) setCursor(stepSceneViewerToScene(cursor, target));
-  }
+  const showStill = current.view === "still";
 
   let meta = "Script";
   if (showStill) {
@@ -121,20 +67,16 @@ export function SceneViewerModal({
     meta = formatFilmTiming(scene);
   }
 
-  let counter = null;
-  if (showStill && current.stillIndex >= 0) counter = `${current.stillIndex + 1} / ${data.stills.length}`;
-  if (!showStill && current.sceneIndex >= 0) counter = `${current.sceneIndex + 1} / ${stepScenes.length}`;
-
   return (
     <SceneDetailModal
-      title={context.movieTitle || "Untitled project"}
+      title={current.title}
       meta={meta}
-      counter={counter}
+      counter={current.counter}
       toolbar={
         <SegmentedControl
           label="Scene view"
-          value={cursor.view}
-          onChange={(view) => setCursor(setSceneViewerView(cursor, view))}
+          value={current.view}
+          onChange={current.setView}
           options={[
             {
               value: "script",
@@ -153,9 +95,9 @@ export function SceneViewerModal({
           ]}
         />
       }
-      hasPrev={Boolean(showStill ? current.prevStill : current.prevScene)}
-      hasNext={Boolean(showStill ? current.nextStill : current.nextScene)}
-      onStep={step}
+      hasPrev={current.hasPrev}
+      hasNext={current.hasNext}
+      onStep={current.step}
       onClose={onClose}
       stageKey={showStill ? `still:${still?.id}` : `scene:${scene?.id}`}
       footer={
@@ -167,10 +109,10 @@ export function SceneViewerModal({
       }
       actions={
         <>
-          {renderActions?.({ view: cursor.view, scene, still })}
+          {renderActions?.({ view: current.view, scene, still })}
           {onOpenStill && still && (
-            <Button onClick={() => onOpenStill(still, context.movieId)}>
-              {cursor.lead === "scene" ? "Open first still" : "Open still in project"}
+            <Button onClick={() => onOpenStill(still, current.movieId)}>
+              {!current.stillLeads ? "Open first still" : "Open still in project"}
             </Button>
           )}
           {onOpenScene && scene && (

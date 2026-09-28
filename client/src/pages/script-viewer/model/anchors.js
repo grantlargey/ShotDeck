@@ -1,5 +1,5 @@
-import { compareAnchors } from "@/entities/script-scene/model/scriptLocation.js";
-import { findLineAtY, lineBoxAt } from "@/shared/lib/pdf-text/pageTextLines.js";
+import { compareAnchors, projectScriptLocation } from "@/entities/script-scene/model/scriptLocation.js";
+import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
 
 /*
  * Scene anchors while an admin captures a scene: placement and swapping,
@@ -52,14 +52,11 @@ function documentPosition(page, y) {
 }
 
 /** Per-page bar segments for saved scenes, with lanes for vertically overlapping scenes. */
-export function buildSceneSegmentsByPage(scenes) {
+export function buildSceneSegmentsByPage(scenes, pages) {
   const located = (Array.isArray(scenes) ? scenes : [])
     .map((scene) => ({
       scene,
-      location: {
-        start: { page: scene.script_location.start.page, y: lineBoxAt(scene.script_location.start.y).top },
-        end: { page: scene.script_location.end.page, y: lineBoxAt(scene.script_location.end.y).bottom },
-      },
+      location: scene.script_location,
     }))
     .sort(
       (a, b) =>
@@ -71,8 +68,10 @@ export function buildSceneSegmentsByPage(scenes) {
   const laneEnds = [];
 
   for (const { scene, location } of located) {
-    const startPosition = documentPosition(location.start.page, location.start.y);
-    const endPosition = documentPosition(location.end.page, location.end.y);
+    const startPosition = documentPosition(location.start.page,
+      projectScriptLocation(location, pages.get(location.start.page)).start?.top ?? location.start.y);
+    const endPosition = documentPosition(location.end.page,
+      projectScriptLocation(location, pages.get(location.end.page)).end?.bottom ?? location.end.y);
     let lane = laneEnds.findIndex((end) => end < startPosition);
     if (lane === -1) {
       lane = laneEnds.length;
@@ -82,14 +81,10 @@ export function buildSceneSegmentsByPage(scenes) {
     }
 
     for (let page = location.start.page; page <= location.end.page; page += 1) {
+      const projection = projectScriptLocation(location, pages.get(page));
+      if (!projection.range) continue;
       if (!byPage.has(page)) byPage.set(page, []);
-      byPage.get(page).push({
-        scene,
-        lane,
-        isStart: page === location.start.page,
-        top: page === location.start.page ? location.start.y : null,
-        bottom: page === location.end.page ? location.end.y : null,
-      });
+      byPage.get(page).push({ scene, lane, isStart: page === location.start.page, ...projection.range });
     }
   }
 

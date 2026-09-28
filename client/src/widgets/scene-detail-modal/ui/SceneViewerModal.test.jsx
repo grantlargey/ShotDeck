@@ -28,11 +28,8 @@ describe("SceneViewerModal", () => {
     const scenes = [scene("scene-1", 1, "FIRST SCENE"), scene("scene-2", 2, "SECOND SCENE")];
     render(
       <SceneViewerModal
-        initialSceneId="scene-1"
-        scenes={scenes}
-        stills={[]}
-        movie={{ id: "movie-1", title: "Example film" }}
-        scriptId="script-1"
+        initial={{ sceneId: "scene-1" }}
+        source={{ film: { id: "movie-1", title: "Example film", scriptId: "script-1", scriptScenes: scenes, stills: [] } }}
         onClose={() => {}}
       />
     );

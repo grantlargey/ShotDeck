@@ -1,6 +1,6 @@
 import { SceneCard } from "@/entities/script-scene/ui/SceneCard.jsx";
-import { Badge } from "@/shared/ui/Badge.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
+import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import styles from "./ScriptViewerPage.module.css";
 
 /**
@@ -10,15 +10,16 @@ import styles from "./ScriptViewerPage.module.css";
 export function SavedScenesGrid({ ref, scenes, selectedSceneId, title, readOnly = false, onSelect, onExpand }) {
   return (
     <section ref={ref} className={styles.scenes} aria-labelledby="saved-scenes-title">
-      <div className={styles.scenesHeader}>
-        <h2 id="saved-scenes-title" className={styles.scenesTitle}>
-          Scenes in this script
-          <Badge tone="accent">{scenes.length}</Badge>
-        </h2>
-        <p className={styles.scenesHint}>
-          {readOnly ? "Click a card to open the scene" : "Click a card to edit it · Double-click to expand"}
-        </p>
-      </div>
+      <SectionHeading
+        id="saved-scenes-title"
+        title="Scenes in this script"
+        count={scenes.length}
+        actions={
+          <p className={styles.scenesHint}>
+            {readOnly ? "Click a card to open the scene" : "Click a card to edit it · Double-click to expand"}
+          </p>
+        }
+      />
 
       {scenes.length === 0 ? (
         <EmptyState compact title="No scenes yet">

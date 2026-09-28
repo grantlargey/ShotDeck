@@ -88,6 +88,14 @@ export function ChevronDownIcon(props) {
   );
 }
 
+export function ChevronUpIcon(props) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M4 10l4-4 4 4" />
+    </StrokeIcon>
+  );
+}
+
 export function ChevronLeftIcon(props) {
   return (
     <StrokeIcon {...props}>

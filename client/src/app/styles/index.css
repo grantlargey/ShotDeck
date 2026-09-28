@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Gloock&family=Host+Grotesk:wght@400..800&display=swap");
 @import "./tokens.css";
 
 html, body {
@@ -44,4 +44,21 @@ a {
   padding: 0 !important;
   margin: 0 !important;
   text-align: left !important;
+}
+
+/* A project card opening its project: the poster glides into place while the
+   rest of the page cross-fades (see entities/movie/model/posterTransition.js). */
+::view-transition-group(project-poster) {
+  animation-duration: 0.34s;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.2s;
+}
+
+/* While a phone's header is slid away, sticky page parts move up into its space. */
+:root[data-site-header="hidden"] {
+  --sd-header-offset: 0px;
 }

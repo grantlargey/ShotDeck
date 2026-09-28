@@ -6,6 +6,7 @@ import styles from "./SiteFooter.module.css";
 export default function SiteFooter() {
   const { isAdmin } = useSession();
   const links = [
+    { to: "/", label: "Explore" },
     { to: "/movies", label: isAdmin ? "My Projects" : "Projects" },
     { to: "/script-search", label: "Script Search" },
     // Visitors get a discreet way in; admins already have the header controls.

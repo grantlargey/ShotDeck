@@ -79,7 +79,7 @@ export async function uploadMediaFile({ movieId, type, file, uploadId }) {
   return key;
 }
 
-/** A short-lived signed URL for viewing a stored media key. */
+/** A signed URL for viewing a stored media key, with the moment it stops working. */
 export function getViewUrlForKey(key) {
   return req(`/uploads/view-url?key=${encodeURIComponent(key)}`);
 }

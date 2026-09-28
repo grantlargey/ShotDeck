@@ -25,6 +25,7 @@ const MOVIE_FIELDS = [
     "cinematographer",
     "cover_image_key",
     "cover_image_url",
+    "cover_image_url_expires_at",
     "created_at",
     "director",
     "id",
@@ -105,7 +106,14 @@ describe("creating a movie", () => {
         assert.match(movie.id, /^[0-9a-f-]{36}$/);
         assert.deepEqual(
             { ...movie, id: undefined, created_at: undefined },
-            { ...body, id: undefined, created_at: undefined, cover_image_key: null, cover_image_url: null }
+            {
+                ...body,
+                id: undefined,
+                created_at: undefined,
+                cover_image_key: null,
+                cover_image_url: null,
+                cover_image_url_expires_at: null,
+            }
         );
         assert.ok(!Number.isNaN(Date.parse(movie.created_at)));
     });
@@ -217,8 +225,14 @@ describe("updating a movie", () => {
         const response = await api.put(`/movies/${movie.id}`, { cookie, body });
         assert.equal(response.status, 200, response.text);
         assert.deepEqual(
-            { ...response.body, cover_image_url: undefined },
-            { ...body, id: movie.id, created_at: movie.created_at, cover_image_url: undefined }
+            { ...response.body, cover_image_url: undefined, cover_image_url_expires_at: undefined },
+            {
+                ...body,
+                id: movie.id,
+                created_at: movie.created_at,
+                cover_image_url: undefined,
+                cover_image_url_expires_at: undefined,
+            }
         );
         assert.match(response.body.cover_image_url, signedUrlPattern(body.cover_image_key));
     });

@@ -20,6 +20,18 @@ export function signedUrlPattern(key) {
     return new RegExp(`^${escape(base)}/${escape(key)}\\?.*X-Amz-Signature=[0-9a-f]+`);
 }
 
+/**
+ * When a presigned URL stops working, read from the signature it carries the way a
+ * browser can: the moment it was signed, in ISO basic format, and the seconds it
+ * lasts from there.
+ */
+export function signedUrlExpiry(url) {
+    const query = new URL(url).searchParams;
+    const [, ...stamp] = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(query.get("X-Amz-Date"));
+    const [year, month, day, hour, minute, second] = stamp.map(Number);
+    return Date.UTC(year, month - 1, day, hour, minute, second) + Number(query.get("X-Amz-Expires")) * 1000;
+}
+
 const SIGNED_URL_KEYS = {
     cover_image_url: "cover_image_key",
     image_url: "image_key",
@@ -29,17 +41,25 @@ const SIGNED_URL_KEYS = {
 
 /**
  * Asserts that two API records, or two lists of them, are equal apart from their
- * signed view URLs, which change every UTC hour. Each URL must still be signed
- * for its record's key, or be null when the record has no key.
+ * signed view URLs and the moments those expire, both of which change every UTC
+ * hour. Each URL must still be signed for its record's key and expire at some
+ * point, or both must be null when the record has no key.
  */
 export function assertSameRecords(actual, expected) {
     const comparable = (record) => {
         const copy = { ...record };
         for (const [urlField, keyField] of Object.entries(SIGNED_URL_KEYS)) {
             if (!(urlField in copy)) continue;
-            if (copy[keyField]) assert.match(copy[urlField], signedUrlPattern(copy[keyField]), urlField);
-            else assert.equal(copy[urlField], null, urlField);
+            const expiryField = `${urlField}_expires_at`;
+            if (copy[keyField]) {
+                assert.match(copy[urlField], signedUrlPattern(copy[keyField]), urlField);
+                assert.ok(!Number.isNaN(Date.parse(copy[expiryField])), expiryField);
+            } else {
+                assert.equal(copy[urlField], null, urlField);
+                assert.equal(copy[expiryField], null, expiryField);
+            }
             copy[urlField] = "(signed view URL)";
+            copy[expiryField] = "(when it expires)";
         }
         return copy;
     };
@@ -124,7 +144,7 @@ export function scenesPath({ movie, script }) {
 }
 
 export async function createScene(api, cookie, place, overrides = {}) {
-    const response = await api.post(scenesPath(place), { cookie, body: sceneBody(overrides) });
+    const response = await api.post(scenesPath(place), { cookie, body: sceneBody({ script_key: place.script.s3_key, ...overrides }) });
     assert.equal(response.status, 201, response.text);
     return response.body;
 }

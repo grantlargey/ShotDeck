@@ -46,9 +46,11 @@ function pickOrigin(value) {
 
 // View URLs are signed from the start of a fixed window, so a key keeps the same
 // URL for the whole window: browsers reuse cached images and the API skips
-// re-signing. Every URL stays valid for at least one window after it's handed out.
+// re-signing. A URL lasts two windows, so one handed out at the very end of its
+// window still has a whole window of life left, and whoever holds it can tell
+// from the expiry it comes with when it has to be replaced.
 const VIEW_URL_WINDOW_MS = 60 * 60 * 1000;
-const VIEW_URL_EXPIRES_SECONDS = (2 * VIEW_URL_WINDOW_MS) / 1000;
+const VIEW_URL_LIFETIME_MS = 2 * VIEW_URL_WINDOW_MS;
 
 // One presigner for every view URL. getSignedUrl builds a full command pipeline
 // on each call, which made signing a project's stills take seconds.
@@ -174,6 +176,11 @@ export async function getObjectBytes(key) {
   return Body.transformToByteArray();
 }
 
+/**
+ * A URL for reading a key, and the moment it stops working. Both follow from the
+ * window the call falls in, so every caller asking for a key during one window is
+ * handed the same pair, and none of them has to guess how long it lasts.
+ */
 export async function createPresignedGetUrl({ key }) {
   if (!bucket) throw new Error("S3_BUCKET is not set");
   if (!region) throw new Error("AWS_REGION is not set");
@@ -184,16 +191,40 @@ export async function createPresignedGetUrl({ key }) {
     viewUrlCache.windowStart = windowStart;
     viewUrlCache.urls.clear();
   }
+  const expiresAt = new Date(windowStart + VIEW_URL_LIFETIME_MS);
 
   const cached = viewUrlCache.urls.get(key);
-  if (cached) return { url: cached };
+  if (cached) return { url: cached, expiresAt };
 
   const { protocol, hostname, prefix } = viewUrlTarget;
   const signed = await viewUrlPresigner.presign(
     { method: "GET", protocol, hostname, path: `${prefix}/${encodeKeyPath(key)}`, query: {}, headers: {} },
-    { expiresIn: VIEW_URL_EXPIRES_SECONDS, signingDate: new Date(windowStart) }
+    { expiresIn: VIEW_URL_LIFETIME_MS / 1000, signingDate: new Date(windowStart) }
   );
   const url = formatUrl(signed);
   if (viewUrlCache.windowStart === windowStart) viewUrlCache.urls.set(key, url);
-  return { url };
+  return { url, expiresAt };
+}
+
+/**
+ * The view URL a record's response carries for one of its keys: the pair from
+ * createPresignedGetUrl, or a pair of nulls when the record holds no key or the
+ * signing fails.
+ *
+ * A record is still worth answering with when one of its images can't be signed,
+ * so the failure is logged here and the response goes out with a null URL. The
+ * on-demand endpoint takes the other line: there the URL is the whole answer, so
+ * it signs through createPresignedGetUrl and lets the failure become a 500. The
+ * key names what failed, and its folder says whether it was a cover, a still or a
+ * script.
+ */
+export async function signViewUrl(key) {
+  if (!key) return { url: null, expiresAt: null };
+
+  try {
+    return await createPresignedGetUrl({ key });
+  } catch (err) {
+    console.error("Failed to sign a view URL:", key, err?.message);
+    return { url: null, expiresAt: null };
+  }
 }

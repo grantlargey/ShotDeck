@@ -7,6 +7,7 @@ export function listScriptScenes(movieId, scriptId) {
   );
 }
 
+/** Scene writes include script_key from the PDF loaded for capture. */
 export function createScriptScene(movieId, scriptId, payload) {
   return req(
     `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations`,

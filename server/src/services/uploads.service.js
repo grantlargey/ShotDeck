@@ -43,6 +43,14 @@ export async function createUploadPresign(body) {
     return { uploadUrl, key };
 }
 
+/**
+ * The public on-demand view URL for one stored key: a URL and the moment it stops
+ * working, for a caller holding a key the API gave it no URL for. Only the three
+ * folders the API writes are viewable this way.
+ *
+ * Here the URL is the whole answer, so a key that can't be signed fails the
+ * request rather than answering with a null URL the way a record's field does.
+ */
 export async function createViewUrl(key) {
     if (typeof key !== "string" || key.length < 3) {
         throw new HttpError(400, "Missing or invalid key");
@@ -52,6 +60,5 @@ export async function createViewUrl(key) {
         throw new HttpError(400, "Invalid key prefix");
     }
 
-    const { url } = await createPresignedGetUrl({ key });
-    return { url };
+    return createPresignedGetUrl({ key });
 }

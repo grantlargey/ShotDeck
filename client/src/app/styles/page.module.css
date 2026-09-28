@@ -1,10 +1,75 @@
+/* Header, the page, then the footer; the page grows so short pages keep the footer at the window's bottom. */
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
 .main {
-  min-height: calc(100vh - var(--sd-nav-height));
+  flex: 1 0 auto;
+  width: 100%;
   max-width: var(--page-max-width);
   margin: 0 auto;
   padding: 32px var(--page-gutter) 64px;
 }
 
 .mainFullBleed {
-  min-height: calc(100vh - var(--sd-nav-height));
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Focused only by the skip link, which lands the reader here without a ring around the page. */
+.main:focus,
+.mainFullBleed:focus {
+  outline: none;
+}
+
+.routeView {
+  flex: 1;
+  display: flex;
+  flex-direction: column;  animation: route-in 0.16s ease-out;
+}
+
+@keyframes route-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* A card's poster already carries the eye to the new page. */
+:global(html:active-view-transition) .routeView {
+  flex: 1;
+  display: flex;
+  flex-direction: column;  animation: none;
+}
+
+/* Off-screen until a keyboard user tabs to it. */
+.skipLink {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: calc(var(--z-header) + 1);
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(calc(-100% - 24px));
+}
+
+.skipLink:focus-visible {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .routeView {
+  flex: 1;
+  display: flex;
+  flex-direction: column;    animation: none;
+  }
 }

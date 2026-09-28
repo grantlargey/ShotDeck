@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
-import { withTransaction } from "../db.js";
-import { createPresignedGetUrl } from "../s3.js";
+import { withFilmWrite } from "./filmWrite.js";
+import { signViewUrl } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
 import { ensureMovieExists } from "./movies.service.js";
 
@@ -9,17 +9,14 @@ import { ensureMovieExists } from "./movies.service.js";
  * owns script validation, the script SQL and the script response shape.
  */
 
-/** The script row, with a signed view URL for its PDF or null when signing fails. */
+/**
+ * The script row, with a signed view URL for its PDF and the moment that URL
+ * stops working. The viewer holds a script open far longer than one URL lasts,
+ * so it needs to know when to ask for another.
+ */
 async function withScriptViewUrl(row) {
-    if (!row.s3_key) return { ...row, script_url: null };
-
-    try {
-        const { url } = await createPresignedGetUrl({ key: row.s3_key });
-        return { ...row, script_url: url };
-    } catch (err) {
-        console.error("Failed to sign script URL:", row.s3_key, err?.message);
-        return { ...row, script_url: null };
-    }
+    const script = await signViewUrl(row.s3_key);
+    return { ...row, script_url: script.url, script_url_expires_at: script.expiresAt };
 }
 
 /**
@@ -40,9 +37,7 @@ export async function saveScript(pool, movieId, body) {
         throw new HttpError(400, "Invalid body. Expected { s3_key:string }");
     }
 
-    await ensureMovieExists(pool, movieId);
-
-    const row = await withTransaction(pool, async (client) => {
+    const row = await withFilmWrite(pool, { movieId }, async (client) => {
         const existing = await client.query("SELECT id, s3_key FROM scripts WHERE movie_id = $1 FOR UPDATE", [
             movieId,
         ]);

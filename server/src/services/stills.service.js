@@ -1,7 +1,7 @@
 import { v4 as uuidv4, validate as isUuid } from "uuid";
-import { createPresignedGetUrl } from "../s3.js";
+import { signViewUrl } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
-import { withMovieWrite } from "./movies.service.js";
+import { withFilmWrite } from "./filmWrite.js";
 import { queueThumbnailsForRows } from "./thumbnails.service.js";
 
 /*
@@ -108,38 +108,33 @@ async function stillWriteError(db, moment, error) {
     throw error;
 }
 
-async function signedViewUrl(key) {
-    if (!key) return null;
-
-    try {
-        const { url } = await createPresignedGetUrl({ key });
-        return url;
-    } catch (err) {
-        console.error("Failed to sign still image URL:", key, err?.message);
-        return null;
-    }
-}
-
-/** The fields the client's still views use, with signed URLs for the image and, once it exists, its thumbnail. */
+/**
+ * The fields the client's still views use, with signed view URLs for the image
+ * and, once it exists, its thumbnail, each beside the moment it stops working.
+ * A project page stays open far longer than one URL lasts, so a viewer that
+ * keeps a still on screen has to know when to ask for a fresh URL.
+ */
 async function toStillResponse(row) {
-    const [imageUrl, thumbUrl] = await Promise.all([signedViewUrl(row.image_key), signedViewUrl(row.thumb_key)]);
+    const [image, thumb] = await Promise.all([signViewUrl(row.image_key), signViewUrl(row.thumb_key)]);
     return {
         id: row.id,
         movie_id: row.movie_id,
         time_seconds: row.time_seconds,
         image_key: row.image_key,
-        image_url: imageUrl,
+        image_url: image.url,
+        image_url_expires_at: image.expiresAt,
         thumb_key: row.thumb_key ?? null,
-        thumb_url: thumbUrl,
+        thumb_url: thumb.url,
+        thumb_url_expires_at: thumb.expiresAt,
     };
 }
 
-export async function createStill(db, movieId, body) {
+export async function createStill(pool, movieId, body) {
     const fields = body ?? {};
     if (!isValidStillBody(fields)) throw new HttpError(400, INVALID_BODY_MESSAGE);
     if (fields.id !== undefined && !isUuid(fields.id)) throw new HttpError(400, "Invalid still id. Expected a UUID.");
     const id = fields.id ?? uuidv4();
-    const row = await withMovieWrite(db, movieId, async (client, movie) => {
+    const row = await withFilmWrite(pool, { movieId }, async (client, movie) => {
         // Replaying creation keeps subsequent edits, even if the original time is now occupied.
         const existing = await client.query(
             `SELECT ${STILL_COLUMNS_SQL} FROM annotations WHERE id = $1 AND movie_id = $2`,
@@ -169,8 +164,8 @@ export async function createStill(db, movieId, body) {
             ).rows[0];
         if (!saved) throw new HttpError(409, "Still identity is already in use.");
         return saved;
-    }).catch((error) => stillWriteError(db, { movieId, seconds: fields.time_seconds, stillId: id }, error));
-    queueThumbnailsForRows(db, [row]);
+    }).catch((error) => stillWriteError(pool, { movieId, seconds: fields.time_seconds, stillId: id }, error));
+    queueThumbnailsForRows(pool, [row]);
     return toStillResponse(row);
 }
 
@@ -217,11 +212,11 @@ export async function sampleStills(db) {
 }
 
 /** Replaces the time. The image is kept when the body leaves image_key out, and null removes it. */
-export async function updateStill(db, { movieId, stillId, body }) {
+export async function updateStill(pool, { movieId, stillId, body }) {
     const fields = body ?? {};
     if (!isValidStillBody(fields)) throw new HttpError(400, INVALID_BODY_MESSAGE);
 
-    const row = await withMovieWrite(db, movieId, async (client, movie) => {
+    const row = await withFilmWrite(pool, { movieId }, async (client, movie) => {
         const saved = await client.query(`SELECT image_key FROM annotations WHERE id = $1 AND movie_id = $2`, [stillId, movieId]);
         if (!saved.rows[0]) throw new HttpError(404, "Annotation not found");
         await validateStillTime(client, movie, fields.time_seconds, stillId);
@@ -241,9 +236,9 @@ export async function updateStill(db, { movieId, stillId, body }) {
         );
         if (!result.rows[0]) throw new HttpError(404, "Annotation not found");
         return result.rows[0];
-    }).catch((error) => stillWriteError(db, { movieId, seconds: fields.time_seconds, stillId }, error));
+    }).catch((error) => stillWriteError(pool, { movieId, seconds: fields.time_seconds, stillId }, error));
 
-    queueThumbnailsForRows(db, [row]);
+    queueThumbnailsForRows(pool, [row]);
     return toStillResponse(row);
 }
 

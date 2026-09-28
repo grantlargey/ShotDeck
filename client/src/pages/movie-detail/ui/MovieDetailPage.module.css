@@ -168,10 +168,11 @@
 
 .heroTitle {
   margin: -8px 0 0;
+  font-family: var(--font-display);
   font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1.05;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   text-shadow: var(--shadow-text);
   overflow-wrap: anywhere;
 }
@@ -272,6 +273,30 @@
 }
 
 /* ---------- Film stills ---------- */
+
+/* The timeline pins under the site header (or the window top while a phone's
+   header is slid away) and stays until the stills section ends. */
+.timelineDock {
+  position: sticky;
+  top: var(--sd-header-offset);
+  z-index: 2;
+  margin: 0 calc(-1 * var(--page-gutter));
+  padding: 14px var(--page-gutter) 0;
+  background: var(--color-bg);
+  transition: top 0.22s ease;
+}
+
+/* A short fade so stills slip under the timeline rather than cut off at a line. */
+.timelineDock::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 14px;
+  background: linear-gradient(var(--color-bg), transparent);
+  pointer-events: none;
+}
 
 .stillGrid {
   list-style: none;
@@ -386,6 +411,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .timelineDock {
+    transition: none;
+  }
+
   .backdropStill,
   .backdropStill.backdropLoaded {
     transform: none;
