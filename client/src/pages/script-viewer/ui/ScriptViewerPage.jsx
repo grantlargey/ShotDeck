@@ -14,7 +14,6 @@ import {
 } from "@/entities/script-scene/model/scriptLocation.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { getMovie } from "@/shared/api/movies.js";
-import { formatScreenplaySelection } from "@/shared/api/screenplayFormat.js";
 import { getScript } from "@/shared/api/scripts.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
@@ -25,8 +24,9 @@ import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { CloseIcon } from "@/shared/ui/icons.jsx";
 import { LoadingState } from "@/shared/ui/LoadingState.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
-import { renderSelectionSnapshots } from "../lib/pageSnapshots.js";
+import { requestScreenplayProposal } from "../model/aiScreenplayFormat.js";
 import { buildSceneSegmentsByPage } from "../model/anchors.js";
+import { nextScrollAction } from "../model/pendingScrollIntent.js";
 import { useSceneCollection } from "../model/sceneCollection.js";
 import { useSceneDraft } from "../model/sceneDraft.js";
 import { usePdfPageWindowing } from "../model/usePdfPageWindowing.js";
@@ -225,7 +225,7 @@ function ScriptViewerPage() {
     if (canEdit) draftActions.loadScene(target);
     else setFocusSceneId(target.id);
     const scroll = sceneScrollTarget(target, textIndex.pages);
-    // The scene the intent belongs to travels with it; see pendingScrollSuperseded.
+    // The scene the intent belongs to travels with it; see the "drop" case.
     if (scroll) setPendingScroll({ ...scroll, location: target.script_location, sceneId: target.id });
   }, [sessionReady, canEdit, sceneIdFromQuery, scenes.list, draftActions, textIndex.pages]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -239,36 +239,19 @@ function ScriptViewerPage() {
     });
   });
 
-  const pendingScrollReady = numPages > 0 && Boolean(pendingScroll) &&
-    (!pendingScroll.location || textIndex.pages.has(pendingScroll.page));
-  // The scene the intent was made for is no longer the scene in hand: the admin
-  // started a new scene draft or opened another captured scene, or a visitor
-  // opened or revealed one. Hanging the intent off activeSceneId rather than off
-  // each of those handlers is what stops a handler forgetting to cancel, which
-  // is how "New scene" came to leave a link armed — it changes the draft without
-  // scrolling, so no scroll of its own would have covered it.
-  const pendingScrollSuperseded = Boolean(pendingScroll?.sceneId) && pendingScroll.sceneId !== activeSceneId;
-  // Some pages are never indexed: a scan carries no extractable text, and a
-  // location can name a page past the end of this document. Once indexing is
-  // complete no later publish will add one, so waiting on a page that is still
-  // missing is waiting for good.
-  const pendingScrollUnreachable = Boolean(pendingScroll?.location) && textIndex.complete &&
-    !textIndex.pages.has(pendingScroll.page);
+  // Which case wins, and why they are tested in this order, lives with the rule
+  // in pendingScrollIntent.js.
+  const scrollAction = nextScrollAction(pendingScroll, {
+    numPages,
+    indexedPages: textIndex.pages,
+    indexComplete: textIndex.complete,
+    activeSceneId,
+  });
   useEffect(() => {
-    // Superseded is read first: someone who has already moved on doesn't need to
-    // be told that the link they left behind couldn't be followed either.
-    if (pendingScrollSuperseded) dropPendingScroll();
-    else if (pendingScrollUnreachable) abandonUnreachableScene();
-    else if (pendingScrollReady) runPendingScroll(pendingScroll);
-  }, [
-    pendingScroll,
-    pendingScrollReady,
-    pendingScrollSuperseded,
-    pendingScrollUnreachable,
-    runPendingScroll,
-    dropPendingScroll,
-    abandonUnreachableScene,
-  ]);
+    if (scrollAction === "drop") dropPendingScroll();
+    else if (scrollAction === "abandon") abandonUnreachableScene();
+    else if (scrollAction === "run") runPendingScroll(pendingScroll);
+  }, [scrollAction, pendingScroll, runPendingScroll, dropPendingScroll, abandonUnreachableScene]);
 
   useEffect(() => {
     if (notice?.tone !== "info") return undefined;
@@ -407,19 +390,11 @@ function ScriptViewerPage() {
     if (!request) return;
 
     try {
-      const snapshots =
-        request.snapshotAnchors && pdfDocument
-          ? await renderSelectionSnapshots(pdfDocument, request.snapshotAnchors, textIndex.pages)
-          : { pageImages: [], omittedPageCount: 0 };
-      const { capturedText, draftMarkdown, pageStart, pageEnd } = request;
-      const result = await formatScreenplaySelection({
-        capturedText,
-        draftMarkdown,
-        pageStart,
-        pageEnd,
-        ...snapshots,
+      const markdown = await requestScreenplayProposal(request, {
+        pdfDocument,
+        indexedPages: textIndex.pages,
       });
-      draftActions.proposalReady(request.token, result?.markdown || "");
+      draftActions.proposalReady(request.token, markdown);
     } catch (error) {
       draftActions.proposalFailed(request.token, getErrorMessage(error, "AI formatting failed."));
     }
