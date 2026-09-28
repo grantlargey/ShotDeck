@@ -83,10 +83,9 @@ export function AnnotationTimeline({
   const stripRef = useRef(null);
   const draggingRef = useRef(false);
   const [binCount, setBinCount] = useState(0);
-  // The still being previewed, and where the lit band is centred (the pointer, or the still itself).
-  const [preview, setPreview] = useState(null);
-  // Where the keyboard picks up: the last still previewed.
-  const [cursorIndex, setCursorIndex] = useState(0);
+  // The index survives hiding the preview so keyboard navigation can pick up there.
+  // A null previewPercent hides the preview; otherwise it centres the lit band.
+  const [cursor, setCursor] = useState({ index: 0, previewPercent: null });
 
   useEffect(() => {
     const strip = stripRef.current;
@@ -106,16 +105,20 @@ export function AnnotationTimeline({
 
   const count = annotations.length;
   const percentOf = (index) => getTimelinePositionPercent(annotations[index], runtimeSeconds);
+  const previewActive = cursor.previewPercent !== null;
+  const valueIndex = clampIndex(cursor.index, count);
 
-  function showStill(index, spot) {
+  function showStill(index, percent) {
     const next = clampIndex(index, count);
     if (next < 0) return;
-    setPreview({ index: next, spot: spot ?? percentOf(next) });
-    setCursorIndex(next);
+    setCursor({ index: next, previewPercent: percent ?? percentOf(next) });
   }
 
   function hidePreview() {
-    setPreview(null);
+    setCursor((current) => {
+      if (current.previewPercent === null) return current;
+      return { ...current, previewPercent: null };
+    });
   }
 
   function pointerPercent(event) {
@@ -139,7 +142,7 @@ export function AnnotationTimeline({
     if (event.pointerType === "mouse" || draggingRef.current) previewAtPointer(event);
   }
 
-  // Touch and pen scrub while pressed and open on release; the mouse opens on click.
+  // A completed gesture opens the still at release; only the mouse keeps its preview.
   function handlePointerUp(event) {
     if (!draggingRef.current) return;
     draggingRef.current = false;
@@ -158,7 +161,7 @@ export function AnnotationTimeline({
   }
 
   function handleKeyDown(event) {
-    const from = preview?.index ?? clampIndex(cursorIndex, count);
+    const from = previewActive ? cursor.index : valueIndex;
     let index;
     if (KEY_STEPS.has(event.key)) index = from + KEY_STEPS.get(event.key);
     else if (event.key === "Home") index = 0;
@@ -174,12 +177,13 @@ export function AnnotationTimeline({
   }
 
   function handleFocus(event) {
-    if (event.currentTarget.matches(":focus-visible")) showStill(cursorIndex);
+    if (event.currentTarget.matches(":focus-visible")) showStill(cursor.index);
   }
 
-  const previewAnnotation = preview ? annotations[preview.index] : null;
-  const valueIndex = clampIndex(preview?.index ?? cursorIndex, count);
-  const liveSpot = preview?.spot ?? (highlightedIndex >= 0 ? percentOf(highlightedIndex) : null);
+  const previewAnnotation = previewActive ? annotations[cursor.index] : null;
+  let liveSpot = null;
+  if (previewActive) liveSpot = cursor.previewPercent;
+  else if (highlightedIndex >= 0) liveSpot = percentOf(highlightedIndex);
   // The lit band fades out where it last was, rather than sliding to the start as it goes.
   const [restingSpot, setRestingSpot] = useState(null);
   if (liveSpot !== null && liveSpot !== restingSpot) setRestingSpot(liveSpot);
@@ -219,15 +223,15 @@ export function AnnotationTimeline({
           <span className={cx(styles.mark, styles.selectedMark)} style={{ left: `${percentOf(selectedIndex)}%` }} />
         )}
         {previewAnnotation && (
-          <span className={cx(styles.mark, styles.playhead)} style={{ left: `${percentOf(preview.index)}%` }} />
+          <span className={cx(styles.mark, styles.playhead)} style={{ left: `${percentOf(cursor.index)}%` }} />
         )}
       </div>
 
       {previewAnnotation && (
         <StillPreview
           annotation={previewAnnotation}
-          index={preview.index}
-          percent={percentOf(preview.index)}
+          index={cursor.index}
+          percent={percentOf(cursor.index)}
           total={count}
         />
       )}
