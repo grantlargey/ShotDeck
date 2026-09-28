@@ -9,7 +9,8 @@ import { useSignedMediaUrl } from "./useSignedMediaUrl.js";
  * expiry the hook reads out of a URL are real.
  *
  * Each case uses its own key, because the cache outlives a test the way it
- * outlives a component.
+ * outlives a component. A case that renders more than one consumer of one key has
+ * them share that cache exactly as two stills of one film on a page do.
  */
 
 const api = vi.hoisted(() => ({ getViewUrlForKey: vi.fn() }));
@@ -17,6 +18,7 @@ const api = vi.hoisted(() => ({ getViewUrlForKey: vi.fn() }));
 vi.mock("@/shared/api/uploads.js", () => ({ getViewUrlForKey: api.getViewUrlForKey }));
 
 const NOW = Date.UTC(2026, 8, 27, 10, 0, 0);
+const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 // The API signs a URL for two windows of an hour.
 const LIFETIME_MS = 2 * HOUR_MS;
@@ -36,13 +38,14 @@ function viewUrl(name, signedAt = NOW) {
   return { url: signedUrl(name, signedAt), expiresAt: new Date(signedAt + LIFETIME_MS).toISOString() };
 }
 
-function Probe({ mediaKey, apiUrl }) {
+/** One consumer of a key; several in a case name themselves apart. */
+function Probe({ mediaKey, apiUrl, name = "shown" }) {
   const url = useSignedMediaUrl(mediaKey, apiUrl);
-  return <span data-testid="shown">{url ?? ""}</span>;
+  return <span data-testid={name}>{url ?? ""}</span>;
 }
 
-function shown() {
-  return screen.getByTestId("shown").textContent;
+function shown(name = "shown") {
+  return screen.getByTestId(name).textContent;
 }
 
 /** Runs the clock on, letting the hook's timers and requests settle. */
@@ -119,6 +122,76 @@ describe("a signed media URL", () => {
 
     await passTime(RETRY_MS);
     expect(api.getViewUrlForKey).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a key shown by more than one consumer", () => {
+  it("wakes the others when one of them fetches a replacement", async () => {
+    // Signed all but the last twenty minutes of a lifetime ago.
+    const ageing = signedUrl("ageing", NOW - LIFETIME_MS + 20 * MINUTE_MS);
+    const replacement = viewUrl("shared");
+    api.getViewUrlForKey.mockResolvedValue(replacement);
+
+    // One still shows the URL its record came with, and asks for nothing.
+    render(<Probe name="ageing" mediaKey="annotations/m/shared.jpg" apiUrl={ageing} />);
+    expect(shown("ageing")).toBe(ageing);
+    expect(api.getViewUrlForKey).not.toHaveBeenCalled();
+
+    // The other arrived without a URL, so its request fills the shared cache.
+    render(<Probe name="signed" mediaKey="annotations/m/shared.jpg" />);
+    await passTime(0);
+    expect(shown("signed")).toBe(replacement.url);
+    expect(api.getViewUrlForKey).toHaveBeenCalledTimes(1);
+
+    // The still that asked for nothing has to take up that replacement as well,
+    // rather than go on handing an image a URL with twenty minutes left in it.
+    expect(shown("ageing")).toBe(replacement.url);
+
+    // Past the moment its own URL died, and still on one request for the key.
+    await passTime(21 * MINUTE_MS);
+    expect(shown("ageing")).toBe(replacement.url);
+    expect(api.getViewUrlForKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("costs a still that arrives on a signed key nothing, and replaces the URL for both", async () => {
+    const first = viewUrl("first");
+    const second = viewUrl("second", NOW + LIFETIME_MS);
+    api.getViewUrlForKey.mockResolvedValueOnce(first).mockResolvedValue(second);
+
+    render(<Probe name="left" mediaKey="annotations/m/twice-shown.jpg" />);
+    await passTime(0);
+    expect(shown("left")).toBe(first.url);
+    expect(api.getViewUrlForKey).toHaveBeenCalledTimes(1);
+
+    // The key is signed already, so the second still shows it without a request.
+    render(<Probe name="right" mediaKey="annotations/m/twice-shown.jpg" />);
+    expect(shown("right")).toBe(first.url);
+    expect(api.getViewUrlForKey).toHaveBeenCalledTimes(1);
+
+    // Whichever of them asks for the replacement, both end up showing it.
+    await passTime(LIFETIME_MS - MARGIN_MS + 1000);
+    expect(shown("left")).toBe(second.url);
+    expect(shown("right")).toBe(second.url);
+  });
+
+  it("goes on refreshing a key for the still left behind when the one that fetched it leaves", async () => {
+    const first = viewUrl("first");
+    const second = viewUrl("second", NOW + LIFETIME_MS);
+    api.getViewUrlForKey.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const ageing = signedUrl("ageing", NOW - LIFETIME_MS + 20 * MINUTE_MS);
+
+    render(<Probe name="staying" mediaKey="annotations/m/outliving.jpg" apiUrl={ageing} />);
+    const leaving = render(<Probe name="leaving" mediaKey="annotations/m/outliving.jpg" />);
+    await passTime(0);
+    expect(shown("staying")).toBe(first.url);
+
+    // The URL it fetched stays behind for the still on screen, which now has the
+    // refreshing of the key to itself.
+    leaving.unmount();
+
+    await passTime(LIFETIME_MS - MARGIN_MS + 1000);
+    expect(api.getViewUrlForKey).toHaveBeenCalledTimes(2);
+    expect(shown("staying")).toBe(second.url);
   });
 });
 

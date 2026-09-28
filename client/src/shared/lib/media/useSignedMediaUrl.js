@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { getViewUrlForKey } from "@/shared/api/uploads.js";
 
 /*
@@ -16,6 +16,12 @@ import { getViewUrlForKey } from "@/shared/api/uploads.js";
  * An embedded URL usually travels on its own, without the expiry its record
  * carries beside it, so when nobody says when a URL dies this module reads the
  * moment out of the signature the URL carries.
+ *
+ * A key is signed once for everything showing it, which only works if a
+ * replacement reaches the consumers other than the one that fetched it. Each of
+ * them rendered the URL it could see at the time and has no way of its own to
+ * notice a newer one, so the shared cache wakes every consumer of a key whenever
+ * that key's URL changes.
  */
 
 // A URL is replaced this long before it expires, so an image that starts loading
@@ -31,6 +37,16 @@ const MAX_ATTEMPTS = 3;
 
 // Every component showing one key shares its URL.
 const urlCache = new Map();
+/*
+ * Who to wake for a key. Without this, a consumer that did not fetch the
+ * replacement itself keeps showing the URL it last rendered: its own next look at
+ * the cache finds the shared URL already fresh, plans a wake-up far ahead and
+ * returns, having rendered nothing. The still it draws then breaks the moment its
+ * own URL expires, and an image that only asks for its bytes when it scrolls into
+ * view asks for them with a dead URL. These watchers are what turn one consumer's
+ * replacement into a rerender for all of them.
+ */
+const cacheWatchers = new Map();
 
 /**
  * The moment a presigned URL stops working, read from the signature it carries:
@@ -50,6 +66,36 @@ function signatureExpiry(url) {
 
   const [, year, month, day, hour, minute, second] = signedAt.map(Number);
   return Date.UTC(year, month - 1, day, hour, minute, second) + lifetimeSeconds * 1000;
+}
+
+/**
+ * The URL last fetched for a key, or null for a key nothing has fetched yet. The
+ * same object comes back until a fetch replaces it, which is what lets a consumer
+ * tell a changed URL from an unchanged one by identity alone.
+ */
+function readCachedUrl(key) {
+  return (key && urlCache.get(key)) || null;
+}
+
+/** Shares a freshly signed URL with every consumer of its key. */
+function publishCachedUrl(key, viewUrl) {
+  urlCache.set(key, viewUrl);
+  // Over a copy of the set, because waking a consumer can unmount another one and
+  // take it out of the round.
+  for (const wake of [...(cacheWatchers.get(key) ?? [])]) wake();
+}
+
+/** Asks to be woken when a key's shared URL changes, until the returned call gives that up. */
+function watchCachedUrl(key, wake) {
+  const watchers = cacheWatchers.get(key) ?? new Set();
+  cacheWatchers.set(key, watchers);
+  watchers.add(wake);
+  return () => {
+    watchers.delete(wake);
+    // A key nobody watches any more leaves nothing behind, so scrolling through a
+    // film's stills does not accumulate an empty set for every key gone past.
+    if (watchers.size === 0) cacheWatchers.delete(key);
+  };
 }
 
 /** A URL with the moment it dies, from either the pair the API gives or a bare URL. */
@@ -74,15 +120,14 @@ function lifetimeEnd(viewUrl) {
 }
 
 /**
- * The URL to show for a key: whichever of the URL fetched for it and the URL its
- * record came with lasts longer. Choosing by their expiries rather than by the
- * clock keeps the current time out of rendering, and it answers both cases that
- * matter: a page that has already fetched a replacement keeps it, and a record
- * that has just arrived with a newer URL is believed over a fetch from an older
- * window. A URL in its last minutes still beats showing nothing.
+ * The URL to show: whichever of the URL fetched for the key and the URL its record
+ * came with lasts longer. Choosing by their expiries rather than by the clock keeps
+ * the current time out of rendering, and it answers both cases that matter: a page
+ * that has already fetched a replacement keeps it, and a record that has just
+ * arrived with a newer URL is believed over a fetch from an older window. A URL in
+ * its last minutes still beats showing nothing.
  */
-function pickViewUrl(key, embedded) {
-  const fetched = (key && urlCache.get(key)) || null;
+function pickViewUrl(fetched, embedded) {
   if (!fetched || !embedded) return fetched ?? embedded;
   return lifetimeEnd(fetched) >= lifetimeEnd(embedded) ? fetched : embedded;
 }
@@ -94,9 +139,18 @@ function pickViewUrl(key, embedded) {
  * before it expires, for as long as the component is on screen.
  */
 export function useSignedMediaUrl(key, apiUrl = null) {
-  const [, setVersion] = useState(0);
   const embedded = useMemo(() => toViewUrl(apiUrl), [apiUrl]);
-  const shown = pickViewUrl(key, embedded);
+  /*
+   * Reading the shared cache through a subscription is what keeps this consumer in
+   * step with the others showing the same key: it rerenders whenever that key's URL
+   * changes, whoever fetched it, including when this consumer fetched it itself.
+   * React also re-reads the cache directly after subscribing, so a URL that landed
+   * between this render and the subscription it commits is not missed either.
+   */
+  const watch = useCallback((wake) => (key ? watchCachedUrl(key, wake) : () => {}), [key]);
+  const readShared = useCallback(() => readCachedUrl(key), [key]);
+  const fetchedForKey = useSyncExternalStore(watch, readShared);
+  const shown = pickViewUrl(fetchedForKey, embedded);
 
   useEffect(() => {
     if (!key) return undefined;
@@ -110,7 +164,7 @@ export function useSignedMediaUrl(key, apiUrl = null) {
 
     function check() {
       const now = Date.now();
-      const held = pickViewUrl(key, embedded);
+      const held = pickViewUrl(readCachedUrl(key), embedded);
       if (!isFresh(held, now)) {
         fetchUrl();
         return;
@@ -123,12 +177,15 @@ export function useSignedMediaUrl(key, apiUrl = null) {
       attempts += 1;
       getViewUrlForKey(key)
         .then((answer) => {
-          const fetched = toViewUrl(answer);
-          if (!fetched) return;
-          urlCache.set(key, fetched);
+          const signed = toViewUrl(answer);
+          if (!signed) return;
+          // Published before the consumer's own state is considered, because a URL
+          // asked for here still serves whoever else is showing the key even when
+          // whatever asked for it has gone. Publishing is also what rerenders this
+          // consumer, as one of the key's watchers.
+          publishCachedUrl(key, signed);
           if (cancelled) return;
-          if (isFresh(fetched, Date.now())) attempts = 0;
-          setVersion((version) => version + 1);
+          if (isFresh(signed, Date.now())) attempts = 0;
           check();
         })
         .catch(() => {
