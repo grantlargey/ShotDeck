@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BackToTop from "./BackToTop.jsx";
 
 let scrollY = 0;
+let scrollDescriptor;
 
 function scrollWindowTo(y) {
   scrollY = y;
@@ -11,13 +12,23 @@ function scrollWindowTo(y) {
   });
 }
 
+/*
+ * jsdom never scrolls, so the window's position is faked with a getter. The
+ * real descriptor is put back afterwards, because the window is shared for the
+ * life of the environment and `vi.restoreAllMocks` reverts spies but not a
+ * redefined property: a fake left behind would outlast this file and quietly
+ * answer for every other test that reads where the reader is on the page.
+ */
 beforeEach(() => {
   scrollY = 0;
+  scrollDescriptor = Object.getOwnPropertyDescriptor(window, "scrollY");
   Object.defineProperty(window, "scrollY", { configurable: true, get: () => scrollY });
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
 });
 
 afterEach(() => {
+  if (scrollDescriptor) Object.defineProperty(window, "scrollY", scrollDescriptor);
+  else delete window.scrollY;
   vi.restoreAllMocks();
 });
 

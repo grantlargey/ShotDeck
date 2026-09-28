@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigationType } from "react-router-dom";
 
 const STORAGE_KEY = "scriptdeck:scroll-positions";
@@ -84,7 +84,12 @@ function restoreScroll(y, onFinished) {
 export function useScrollRestoration() {
   const location = useLocation();
   const navigationType = useNavigationType();
-  const [positions] = useState(readPositions);
+  // Remembered positions are written as the reader scrolls and read back on
+  // Back and Forward. Nothing renders from them, so they belong in a ref: the
+  // map is mutated in place, which state is not meant to be.
+  const positionsRef = useRef(null);
+  positionsRef.current ??= readPositions();
+  const positions = positionsRef.current;
   const entryIdRef = useRef(entryId(location));
   const restoringRef = useRef(false);
   const pathnameRef = useRef(location.pathname);
@@ -142,7 +147,21 @@ export function useScrollRestoration() {
       return restoreScroll(positions[id] ?? 0, () => { restoringRef.current = false; });
     }
     // Filters and dialogs that only change the query string keep the reader's place.
-    if (pathnameChanged) window.scrollTo(0, 0);
+    if (pathnameChanged) {
+      window.scrollTo(0, 0);
+      return undefined;
+    }
+    // The place the reader keeps is also the place this new entry should come
+    // back to. Only the scroll listener files positions, and standing still
+    // fires no scroll, so nothing would be remembered for the entry at all and
+    // a later Back and then Forward would read it as the top of the page. Write
+    // the inherited position down here instead. Pushing and replacing both mint
+    // a fresh entry key, so both need it. A POP never does: those entries
+    // restore just above, and the tab's opening render is reported as a POP as
+    // well, where there is no earlier entry and so nothing to inherit.
+    if (navigationType === "PUSH" || navigationType === "REPLACE") {
+      positions[id] = window.scrollY;
+    }
     return undefined;
   }, [location, navigationType, positions]);
 }

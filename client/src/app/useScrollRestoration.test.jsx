@@ -41,6 +41,7 @@ function Harness() {
     <>
       <button onClick={() => navigate("/b")}>Other page</button>
       <button onClick={() => navigate("/a?filter=on")}>Filter</button>
+      <button onClick={() => navigate("/a?filter=off", { replace: true })}>Refine</button>
       <button onClick={() => navigate(-1)}>Back</button>
       <button onClick={() => navigate(1)}>Forward</button>
     </>
@@ -108,6 +109,41 @@ describe("useScrollRestoration", () => {
 
     click("Filter");
 
+    expect(scrollY).toBe(500);
+  });
+
+  /*
+   * A query-only entry is the one entry the reader never scrolls on arrival,
+   * because arriving is what leaves them where they were. Its place therefore
+   * has to be remembered for it, or Forward into it reads as the top.
+   */
+  it("returns to the inherited place on Forward into a pushed query-only entry", () => {
+    renderAt();
+    scrollWindowTo(500);
+    click("Filter");
+
+    click("Back");
+    expect(scrollY).toBe(500);
+    // The reader moves on the page they came back to, so the place Forward
+    // finds can only have come from the query-only entry itself.
+    scrollWindowTo(120);
+
+    click("Forward");
+    expect(scrollY).toBe(500);
+  });
+
+  it("returns to the inherited place on Forward into a replaced query-only entry", () => {
+    renderAt();
+    scrollWindowTo(500);
+    click("Filter");
+    click("Refine");
+    expect(scrollY).toBe(500);
+
+    click("Back");
+    expect(scrollY).toBe(500);
+    scrollWindowTo(120);
+
+    click("Forward");
     expect(scrollY).toBe(500);
   });
 
