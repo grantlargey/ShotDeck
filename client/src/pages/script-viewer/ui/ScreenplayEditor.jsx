@@ -27,6 +27,43 @@ function blocksFromMarkdown(markdown) {
   return blocks.length > 0 ? blocks : [createBlock("action")];
 }
 
+// Each edit keeps the document change and its caret destination together.
+function splitBlock(blocks, index, { value, selectionStart, selectionEnd }) {
+  const block = blocks[index];
+  const before = { ...block, text: value.slice(0, selectionStart) };
+  const remainingText = value.slice(selectionEnd);
+  const nextType = remainingText ? block.type : NEXT_SCREENPLAY_TYPE[block.type];
+  const created = createBlock(nextType, remainingText);
+  const nextBlocks = [...blocks];
+  nextBlocks.splice(index, 1, before, created);
+  return { blocks: nextBlocks, focus: { id: created.id, caret: 0 } };
+}
+
+function mergeBlockBackward(blocks, index, text) {
+  const block = blocks[index];
+  const previous = blocks[index - 1];
+  const nextBlocks = [...blocks];
+
+  // An empty preceding block is removed without changing the current block's type.
+  if (!previous.text) {
+    nextBlocks.splice(index - 1, 1);
+    return { blocks: nextBlocks, focus: { id: block.id, caret: 0 } };
+  }
+
+  const merged = { ...previous, text: previous.text + text };
+  nextBlocks.splice(index - 1, 2, merged);
+  return { blocks: nextBlocks, focus: { id: previous.id, caret: previous.text.length } };
+}
+
+function mergeBlockForward(blocks, index, text) {
+  const block = blocks[index];
+  const next = blocks[index + 1];
+  const merged = { ...block, text: text + next.text };
+  const nextBlocks = [...blocks];
+  nextBlocks.splice(index, 2, merged);
+  return { blocks: nextBlocks, focus: { id: block.id, caret: text.length } };
+}
+
 function autosize(textarea) {
   if (!textarea) return;
   textarea.style.height = "auto";
@@ -165,10 +202,10 @@ function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
 
   const closeMenu = useCallback(() => setMenuBlockId(null), []);
 
-  function commit(nextBlocks, focus) {
-    if (focus) pendingFocusRef.current = focus;
-    setBlocks(nextBlocks);
-    onChange(serializeScreenplayMarkdown(nextBlocks));
+  function commit(edit) {
+    if (edit.focus) pendingFocusRef.current = edit.focus;
+    setBlocks(edit.blocks);
+    onChange(serializeScreenplayMarkdown(edit.blocks));
   }
 
   function setBlockType(blockId, type) {
@@ -180,10 +217,10 @@ function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
       focusInput(input, caret);
       return;
     }
-    commit(
-      blocks.map((item) => (item.id === blockId ? { ...item, type } : item)),
-      { id: blockId, caret }
-    );
+    commit({
+      blocks: blocks.map((item) => (item.id === blockId ? { ...item, type } : item)),
+      focus: { id: blockId, caret },
+    });
   }
 
   function handleKeyDown(event, block, index) {
@@ -213,36 +250,19 @@ function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
 
     if (event.key === "Enter" && !event.shiftKey && !modifier && !event.altKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      const after = value.slice(selectionEnd);
-      const created = createBlock(after ? block.type : NEXT_SCREENPLAY_TYPE[block.type], after);
-      commit(
-        [...blocks.slice(0, index), { ...block, text: value.slice(0, selectionStart) }, created, ...blocks.slice(index + 1)],
-        { id: created.id, caret: 0 }
-      );
+      commit(splitBlock(blocks, index, input));
       return;
     }
 
     if (event.key === "Backspace" && collapsed && selectionStart === 0 && index > 0) {
       event.preventDefault();
-      const previous = blocks[index - 1];
-      if (!previous.text) {
-        commit([...blocks.slice(0, index - 1), ...blocks.slice(index)], { id: block.id, caret: 0 });
-      } else {
-        commit(
-          [...blocks.slice(0, index - 1), { ...previous, text: previous.text + value }, ...blocks.slice(index + 1)],
-          { id: previous.id, caret: previous.text.length }
-        );
-      }
+      commit(mergeBlockBackward(blocks, index, value));
       return;
     }
 
     if (event.key === "Delete" && collapsed && selectionStart === value.length && index < blocks.length - 1) {
       event.preventDefault();
-      const next = blocks[index + 1];
-      commit(
-        [...blocks.slice(0, index), { ...block, text: value + next.text }, ...blocks.slice(index + 2)],
-        { id: block.id, caret: value.length }
-      );
+      commit(mergeBlockForward(blocks, index, value));
       return;
     }
 
@@ -302,7 +322,9 @@ function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
                 aria-label={`${element.label}, block ${index + 1}`}
                 onChange={(event) => {
                   autosize(event.currentTarget);
-                  commit(blocks.map((item) => (item.id === block.id ? { ...item, text: event.target.value } : item)));
+                  commit({
+                    blocks: blocks.map((item) => (item.id === block.id ? { ...item, text: event.target.value } : item)),
+                  });
                 }}
                 onFocus={() => setFocusedId(block.id)}
                 onBlur={() => setFocusedId((current) => (current === block.id ? null : current))}
