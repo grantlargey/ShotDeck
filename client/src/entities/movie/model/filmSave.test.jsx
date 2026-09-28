@@ -2,6 +2,7 @@ import { webcrypto } from "node:crypto";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useFilmSave } from "./filmSave.js";
+import { buildMovieSavePayload } from "./movieForms.js";
 
 const remote = vi.hoisted(() => ({ createMovie: vi.fn(), updateMovie: vi.fn(), updateMovieCover: vi.fn(), saveScript: vi.fn(), uploadMediaFile: vi.fn() }));
 const pdf = vi.hoisted(() => ({ getDocument: vi.fn() }));
@@ -21,6 +22,20 @@ const cover = () => new File(["cover"], "cover.png", { type: "image/png" });
 const open = (props = {}) => renderHook(() => useFilmSave({ ownerId: "admin-1", ...props }));
 const pdfPages = (numPages) => pdf.getDocument.mockReturnValue({ promise: Promise.resolve({ numPages }), destroy: async () => {} });
 const pdfUnreadable = () => pdf.getDocument.mockImplementationOnce(() => ({ promise: Promise.reject(new Error("not a screenplay")), destroy: async () => {} }));
+
+// The recovery the two earlier formats wrote, and the keys they wrote it under.
+// Both shipped the same job, so a version number is all that tells them apart.
+const legacyKey = (version, suffix = "new") => `scriptdeck:film-save:v${version}:admin-1:${suffix}`;
+const currentKey = (suffix = "new") => `scriptdeck:film-save:v3:admin-1:${suffix}`;
+const legacyJob = (version, job) => JSON.stringify({
+  version, movieId: "film-uuid-1", created: false, form,
+  creationPayload: null, savedPayload: null, cover: null, script: null, ...job,
+});
+// The content identity those releases stored, computed the way filmSave does.
+async function contentIdentity(chosen) {
+  const hash = await webcrypto.subtle.digest("SHA-256", await chosen.arrayBuffer());
+  return `${chosen.type}:${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
 
 async function submit(hook, input) {
   let result;
@@ -280,5 +295,120 @@ describe("film-save recovery through the caller's interface", () => {
     expect(newFilm.result.current.recovery).toBeNull();
     const existingFilm = open({ movieId });
     expect(existingFilm.result.current.recovery.form.title).toBe("Later edit");
+  });
+});
+
+describe("film-save recovery left behind by an earlier format", () => {
+  it.each([1, 2])("finishes a v%i film creation whose response was lost, under the identity it was sent with", async (version) => {
+    const original = buildMovieSavePayload(form);
+    localStorage.setItem(legacyKey(version), legacyJob(version, {
+      form: { ...form, title: "Revised title" }, creationPayload: original,
+    }));
+
+    const hook = open();
+    // The legacy record is gone only because the converted one took its place.
+    expect(localStorage.getItem(currentKey())).not.toBeNull();
+    expect(localStorage.getItem(legacyKey(version))).toBeNull();
+    expect(hook.result.current.recovery.movieId).toBe("film-uuid-1");
+    expect(hook.result.current.recovery.form.title).toBe("Revised title");
+
+    expect((await submit(hook, {})).error).toBeUndefined();
+    expect(remote.createMovie).toHaveBeenCalledTimes(1);
+    expect(remote.createMovie.mock.calls[0][0]).toEqual({ ...original, id: "film-uuid-1" });
+    expect(remote.updateMovie).toHaveBeenCalledWith("film-uuid-1", expect.objectContaining({ title: "Revised title" }));
+    expect(localStorage.length).toBe(0);
+  });
+
+  it.each([1, 2])("attaches a v%i upload that finished but was never attached, without uploading again", async (version) => {
+    localStorage.setItem(legacyKey(version, "film-uuid-1"), legacyJob(version, {
+      created: true, form: null, savedPayload: buildMovieSavePayload(form),
+      script: {
+        name: "script.pdf", fingerprint: "application/pdf:ab12", uploadId: "upload-7",
+        key: "script/film-uuid-1/upload-7", attached: false,
+      },
+    }));
+
+    const hook = open({ movieId: "film-uuid-1" });
+    expect(hook.result.current.recovery.message).toContain("Film details saved.");
+    expect(hook.result.current.recovery.message).not.toContain("Choose");
+
+    expect((await submit(hook, {})).error).toBeUndefined();
+    expect(remote.uploadMediaFile).not.toHaveBeenCalled();
+    expect(remote.saveScript).toHaveBeenCalledWith({ movieId: "film-uuid-1", key: "script/film-uuid-1/upload-7" });
+    expect(remote.createMovie).not.toHaveBeenCalled();
+    expect(remote.updateMovie).not.toHaveBeenCalled();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("finishes an upload a legacy record began, under the upload identity it began under", async () => {
+    localStorage.setItem(legacyKey(2, "film-uuid-1"), legacyJob(2, {
+      created: true, form: null,
+      script: {
+        name: "script.pdf", fingerprint: await contentIdentity(file()), uploadId: "upload-7",
+        key: null, attached: false,
+      },
+    }));
+
+    const hook = open({ movieId: "film-uuid-1" });
+    expect(hook.result.current.recovery.message).toContain("Choose “script.pdf” again");
+
+    expect((await submit(hook, { scriptFile: file() })).error).toBeUndefined();
+    expect(remote.uploadMediaFile).toHaveBeenCalledTimes(1);
+    expect(remote.uploadMediaFile.mock.calls[0][0].uploadId).toBe("upload-7");
+    expect(remote.saveScript.mock.calls[0][0].key).toContain("upload-7");
+  });
+
+  it("refuses a legacy record of a shape no release wrote, and leaves it where it is", async () => {
+    const foreign = JSON.stringify({ version: 1, movieId: "film-uuid-1", created: false, form, script: { name: "script.pdf" } });
+    localStorage.setItem(legacyKey(1), foreign);
+
+    const hook = open();
+    expect(hook.result.current.recovery.message).toContain("Restore this browser's site storage");
+    expect((await submit(hook, { form })).error.message).toContain("Restore this browser's site storage");
+    expect(remote.createMovie).not.toHaveBeenCalled();
+    expect(localStorage.getItem(legacyKey(1))).toBe(foreign);
+    expect(localStorage.length).toBe(1);
+  });
+
+  it("keeps a legacy record that cannot be converted, and converts it once storage allows", async () => {
+    const original = buildMovieSavePayload(form);
+    const pending = legacyJob(1, { creationPayload: original });
+    localStorage.setItem(legacyKey(1), pending);
+
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    const blocked = open();
+    write.mockRestore();
+    expect(localStorage.getItem(legacyKey(1))).toBe(pending);
+    expect(localStorage.getItem(currentKey())).toBeNull();
+    // The pending creation is refused rather than replaced by a second film.
+    expect((await submit(blocked, { form })).error.message).toContain("Restore this browser's site storage");
+    expect(remote.createMovie).not.toHaveBeenCalled();
+    blocked.unmount();
+
+    const recovered = open();
+    expect((await submit(recovered, {})).error).toBeUndefined();
+    expect(remote.createMovie.mock.calls[0][0]).toEqual({ ...original, id: "film-uuid-1" });
+  });
+
+  it("leaves a legacy record alone while this release's own record holds the key", async () => {
+    remote.createMovie.mockRejectedValueOnce(new Error("offline"));
+    const current = open();
+    await submit(current, { form });
+    const interrupted = localStorage.getItem(currentKey());
+    const pending = legacyJob(2, { creationPayload: buildMovieSavePayload(form) });
+    localStorage.setItem(legacyKey(2), pending);
+    current.unmount();
+
+    const reopened = open();
+    expect(localStorage.getItem(currentKey())).toBe(interrupted);
+    expect(localStorage.getItem(legacyKey(2))).toBe(pending);
+    expect(reopened.result.current.recovery.movieId).not.toBe("film-uuid-1");
+    expect((await submit(reopened, {})).error).toBeUndefined();
+    reopened.unmount();
+
+    // Once that film save lets the key go, the legacy record is converted.
+    const later = open();
+    expect(localStorage.getItem(legacyKey(2))).toBeNull();
+    expect(later.result.current.recovery.movieId).toBe("film-uuid-1");
   });
 });

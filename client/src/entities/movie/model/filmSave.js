@@ -38,6 +38,86 @@ function readEnvelope(value) {
   return envelope;
 }
 
+// The two formats that shipped before the journal, newest first: a browser that
+// lived through both upgrades can hold a record under each, and the later one is
+// the one that was still being written. Each kept the same job under its own
+// version number and its own key — the film identity and the details the admin
+// had entered, the payload the creation was pinned to and the one the API had
+// acknowledged, and per medium the upload identity, the object key once the
+// upload finished, and whether the film had it attached.
+const LEGACY_KEYS = [["scriptdeck:film-save:v2:", 2], ["scriptdeck:film-save:v1:", 1]];
+
+// A legacy job is untrusted input in the same way the journal's own record is:
+// only the shape those releases actually wrote can be resumed, and anything else
+// is refused rather than guessed at. One v2 release also recorded a script's
+// page count; nothing stores a script's length now, so it is read past and left
+// behind with the record it came from.
+function readLegacyJob(value, version) {
+  if (!value) return null;
+  const job = JSON.parse(value);
+  if (
+    job.version !== version || typeof job.movieId !== "string" || typeof job.created !== "boolean" ||
+    (job.form !== null && (typeof job.form !== "object" || Array.isArray(job.form))) ||
+    !MEDIA.every((kind) => job[kind] === null || (
+      typeof job[kind]?.uploadId === "string" && typeof job[kind]?.fingerprint === "string" &&
+      typeof job[kind]?.name === "string" && typeof job[kind]?.attached === "boolean" &&
+      (job[kind]?.key === null || typeof job[kind]?.key === "string")
+    ))
+  ) throw new Error("Invalid film-save recovery record");
+  return job;
+}
+
+// The same progress in the journal's words. The details step keeps the payload
+// the creation was sent with, so a film whose response was lost is replayed
+// under the identity it was sent with instead of being created a second time,
+// and keeps the payload the API acknowledged, so an unchanged retry does not
+// undo somebody's later edits. A medium keeps the upload identity it began
+// under, so bytes offered again finish that upload rather than leaving a second
+// object behind, and counts as acknowledged only once the film had it attached.
+function convertLegacyJob(job) {
+  const steps = {
+    [DETAILS]: { pinned: job.creationPayload ?? null, acknowledged: job.savedPayload ?? null, upload: null },
+  };
+  for (const kind of MEDIA) {
+    const media = job[kind];
+    if (!media) continue;
+    steps[kind] = {
+      pinned: null,
+      acknowledged: media.attached ? media.key : null,
+      upload: { identity: media.fingerprint, name: media.name, uploadId: media.uploadId, key: media.key },
+    };
+  }
+  return { movieId: job.movieId, form: job.form, journal: { created: job.created, steps } };
+}
+
+// Those releases' records were never read again once the journal arrived, which
+// left a film creation that had been sent but never answered invisible: the next
+// save would have minted a second film identity, and a finished upload would
+// have gone up again. So each legacy record is rewritten in this release's
+// format under this release's key, and only once that record is stored and
+// readable back is the legacy one dropped. A storage that refuses the write
+// leaves the legacy record where it is and the film save is refused, rather than
+// the film save starting over on a new identity.
+//
+// A key this release has already written is left exactly as it is, because that
+// record is the one this page and any other open page is saving through. The
+// legacy record beneath it keeps its place and is converted on a later visit,
+// once that film save has finished and let the key go.
+function recoverLegacyRecords(ownerId, movieId) {
+  for (const suffix of movieId ? [movieId, "new"] : ["new"]) {
+    const key = `${PREFIX}${ownerId}:${suffix}`;
+    for (const [legacyPrefix, version] of LEGACY_KEYS) {
+      const legacyKey = `${legacyPrefix}${ownerId}:${suffix}`;
+      const job = readLegacyJob(localStorage.getItem(legacyKey), version);
+      if (!job || localStorage.getItem(key) !== null) continue;
+      const record = JSON.stringify({ version: 3, ...convertLegacyJob(job) });
+      localStorage.setItem(key, record);
+      if (localStorage.getItem(key) !== record) throw new Error("Film-save recovery was not stored");
+      localStorage.removeItem(legacyKey);
+    }
+  }
+}
+
 // Content identity lets a reselected file reuse an interrupted upload, while
 // a replacement with the same filename gets its own object key.
 async function fingerprint(file) {
@@ -118,6 +198,7 @@ function createSave({ movieId, ownerId }) {
 
   if (ownerId) {
     try {
+      recoverLegacyRecords(ownerId, movieId);
       stored = localStorage.getItem(storageKey);
       let envelope = readEnvelope(stored);
       // A partially created film can also be resumed from its edit page.
