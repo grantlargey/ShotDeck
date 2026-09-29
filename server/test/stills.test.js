@@ -252,6 +252,34 @@ describe("sampling stills", () => {
 
         assert.equal((await api.get("/stills/sample")).body.length, 24);
     });
+
+    test("fills up on stills that have a thumbnail before it reaches for one without", async () => {
+        const movie = await createMovie(api, cookie);
+        for (let second = 0; second < 30; second += 1) {
+            const still = await createStill(movie, {
+                time_seconds: second,
+                image_key: `annotations/${movie.id}/ordered-${second}.jpg`,
+            });
+            // The queue makes thumbnails in the background, so most of these are
+            // still waiting for one while a handful already have theirs.
+            if (second % 6 !== 0) continue;
+            await pool.query("UPDATE annotations SET thumb_key = $1 WHERE id = $2", [
+                `annotations/${movie.id}/thumbs/ordered-${second}.jpg.webp`,
+                still.id,
+            ]);
+        }
+
+        const ready = await pool.query(
+            "SELECT count(*)::int AS total FROM annotations WHERE image_key IS NOT NULL AND thumb_key IS NOT NULL"
+        );
+        const sampled = (await api.get("/stills/sample")).body;
+        // Every place in the sample goes to a still with a thumbnail while one is
+        // left; only then does a still still waiting for its thumbnail stand in.
+        assert.equal(
+            sampled.filter((still) => still.thumb_key !== null).length,
+            Math.min(24, ready.rows[0].total)
+        );
+    });
 });
 
 describe("updating a still", () => {

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LibraryReel } from "./LibraryReel.jsx";
@@ -31,6 +31,11 @@ function still(n) {
     thumb_url: null,
     movie_title: "Night Diner",
   };
+}
+
+/** A still whose image the browser can't load, which the setup's stand-in fails on sight. */
+function unloadableStill(n) {
+  return { ...still(n), image_url: `https://media.test/broken-a${n}.jpg` };
 }
 
 const SCENE = {
@@ -140,6 +145,68 @@ describe("the library reel", () => {
     renderReel();
 
     await waitFor(() => expect(screen.queryByRole("region", SECTION)).toBeNull());
+  });
+
+  it("waits for the sampled stills to load before building the strips", async () => {
+    api.sampleStills.mockResolvedValue([still(1)]);
+    api.sampleScriptScenes.mockResolvedValue([SCENE]);
+    renderReel();
+
+    // The placeholder stands in the shape of the strips, so nothing in it is a link.
+    expect(section().getAttribute("aria-busy")).toBe("true");
+    expect(within(section()).queryAllByRole("link")).toEqual([]);
+
+    await waitFor(() => expect(section().getAttribute("aria-busy")).toBe("false"));
+    for (const image of section().querySelectorAll("img")) {
+      expect(image.getAttribute("src")).toBe("https://media.test/a1.jpg");
+      // Lazy loading waits on the viewport, which a strip that moves itself never reports.
+      expect(image.getAttribute("loading")).toBeNull();
+    }
+  });
+
+  it("brings the built strips up once their frames can be drawn", async () => {
+    api.sampleStills.mockResolvedValue([still(1)]);
+    api.sampleScriptScenes.mockResolvedValue([SCENE]);
+    const { container } = renderReel();
+    await waitFor(() => expect(section().getAttribute("aria-busy")).toBe("false"));
+
+    // The strips start out of sight, so a frame is never watched filling in;
+    // leaving them there would hide the whole reel.
+    await waitFor(() =>
+      expect(container.querySelector('[class*="stripsDrawn"]')).not.toBeNull()
+    );
+  });
+
+  it("leaves a still whose image won't load out of the reel", async () => {
+    api.sampleStills.mockResolvedValue([still(1), unloadableStill(2), still(3)]);
+    api.sampleScriptScenes.mockResolvedValue([]);
+    renderReel();
+    await waitFor(() => expect(section().getAttribute("aria-busy")).toBe("false"));
+
+    expect(within(section()).queryAllByRole("link", { name: /still at 00:02:00/ })).toEqual([]);
+    for (const name of ["still at 00:01:00", "still at 00:03:00"]) {
+      expect(within(section()).getAllByRole("link", { name: new RegExp(name) }).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("leaves the page when none of the sampled stills will load and there are no scenes", async () => {
+    api.sampleStills.mockResolvedValue([unloadableStill(1), unloadableStill(2)]);
+    api.sampleScriptScenes.mockResolvedValue([]);
+    renderReel();
+
+    await waitFor(() => expect(screen.queryByRole("region", SECTION)).toBeNull());
+  });
+
+  it("holds a frame as a placeholder rather than a broken image when its URL later dies", async () => {
+    api.sampleStills.mockResolvedValue([still(1)]);
+    api.sampleScriptScenes.mockResolvedValue([]);
+    renderReel();
+    await waitFor(() => expect(section().getAttribute("aria-busy")).toBe("false"));
+
+    const frame = within(section()).getAllByRole("link", { name: /still at 00:01:00/ })[0];
+    await act(async () => fireEvent.error(frame.querySelector("img")));
+
+    expect(frame.querySelector("img")).toBeNull();
   });
 
   it("shows the scenes when only the stills fail to load", async () => {

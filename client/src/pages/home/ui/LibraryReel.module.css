@@ -13,6 +13,28 @@
   gap: 12px;
 }
 
+/*
+ * The strips are built out of sight and come up once their frames can be drawn,
+ * so no frame is ever watched filling in.
+ */
+.strips {
+  opacity: 0;
+}
+
+.stripsDrawn {
+  animation: reveal 0.45s ease both;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 /* A strip fades out at both screen edges instead of being cut off. */
 .track {
   overflow: hidden;
@@ -144,19 +166,47 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Stands in for a still whose URL died while the page was left open. */
+.frameWaiting {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 0;
+}
+
+/* Held to size, like the frames they stand in for: the row they sit in is as
+ * wide as the page, and a flex item that shrank would leave the placeholder a
+ * different shape from the strip that replaces it. */
+.skeletonFrame,
+.skeletonFrameNarrow,
+.skeletonScene {
+  flex: none;
+  aspect-ratio: 16 / 9;
+}
+
 .skeletonFrame {
   width: 300px;
-  aspect-ratio: 16 / 9;
+}
+
+.skeletonFrameNarrow {
+  width: 240px;
+}
+
+.skeletonScene {
+  width: 300px;
+  aspect-ratio: 3 / 2;
 }
 
 @media (max-width: 600px) {
   .frame,
   .sceneFrame,
-  .skeletonFrame {
+  .skeletonFrame,
+  .skeletonScene {
     width: 220px;
   }
 
-  .trackReverse .frame {
+  .trackReverse .frame,
+  .skeletonFrameNarrow {
     width: 190px;
   }
 

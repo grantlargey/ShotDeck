@@ -197,7 +197,12 @@ export async function sampleStills(db) {
           SELECT ${STILL_COLUMNS_SQL}
           FROM annotations
           WHERE image_key IS NOT NULL
-          ORDER BY random()
+          -- Stills that already have a thumbnail go first. Without one the reel
+          -- pulls the full image into a frame a few hundred pixels wide, which
+          -- takes long enough to arrive that the frame drifts past empty. A
+          -- still without a thumbnail only stands in while the queue is still
+          -- working through a library, so the reel is never empty meanwhile.
+          ORDER BY (thumb_key IS NULL), random()
           LIMIT $1
         ) sampled
         JOIN movies m ON m.id = sampled.movie_id
