@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayScriptSceneText, getSceneScriptPath, sortScriptScenes } from "./capturedScene.js";
+import { displayScriptSceneText, getSceneScriptPath, sortScriptScenes, sortScriptScenesByTime } from "./capturedScene.js";
 
 function anchor(page, line) {
   return { page, y: 96 + line * 12 };
@@ -44,6 +44,28 @@ describe("sortScriptScenes", () => {
     expect(sortScriptScenes(rows)).not.toBe(rows);
     expect(rows.map(({ id }) => id)).toEqual(["b", "a"]);
     expect(sortScriptScenes(null)).toEqual([]);
+  });
+});
+
+describe("sortScriptScenesByTime", () => {
+  const timed = (id, page, line, start) =>
+    scene(id, page, line, { start_time_seconds: start, end_time_seconds: start === null ? null : start + 30 });
+
+  it("orders by the start of the film timing, not the page", () => {
+    const rows = [timed("flashback", 1, 0, 3600), timed("opening", 4, 0, 60), timed("middle", 2, 0, 1800)];
+    expect(sortScriptScenesByTime(rows).map(({ id }) => id)).toEqual(["opening", "middle", "flashback"]);
+  });
+
+  it("puts scenes with no timing last, in page order", () => {
+    const rows = [timed("late", 1, 0, null), timed("early", 2, 0, null), timed("timed", 3, 0, 600)];
+    expect(sortScriptScenesByTime(rows).map(({ id }) => id)).toEqual(["timed", "late", "early"]);
+  });
+
+  it("returns a new array and accepts a missing collection", () => {
+    const rows = [timed("b", 1, 0, 90), timed("a", 2, 0, 30)];
+    expect(sortScriptScenesByTime(rows)).not.toBe(rows);
+    expect(rows.map(({ id }) => id)).toEqual(["b", "a"]);
+    expect(sortScriptScenesByTime(null)).toEqual([]);
   });
 });
 

@@ -52,6 +52,21 @@ it("loads search films by owner and resumes the result list after an unlisted sc
   expect(listStills).toHaveBeenCalledTimes(2);
 });
 
+it("steps a script's scenes in film order, whatever order they sit on the page", () => {
+  const paged = (id, y, start) => ({ ...scene(id, start ?? 0), start_time_seconds: start,
+    end_time_seconds: start === null ? null : start + 9,
+    script_location: { start: { page: 1, y }, end: { page: 1, y: y + 9 } } });
+  const scenes = [paged("flashback", 10, 300), paged("opening", 20, 10), paged("untimed", 30, null)];
+  const { result } = renderHook(() => useSceneViewer({ initial: { sceneId: "opening" },
+    source: { film: { id: "m1", scriptId: "m1-script", stills: [], scriptScenes: scenes } } }));
+  expect(result.current.counter).toBe("1 / 3");
+  act(() => result.current.step(1));
+  expect(result.current.scene.id).toBe("flashback");
+  act(() => result.current.step(1));
+  expect(result.current.scene.id).toBe("untimed");
+  expect(result.current.hasNext).toBe(false);
+});
+
 it("reports failed scene loads and a missing script separately", async () => {
   listScriptScenes.mockRejectedValue(new Error("offline"));
   const { result } = renderHook(() => useSceneViewer({ initial: { view: "still", stillId: "x" },

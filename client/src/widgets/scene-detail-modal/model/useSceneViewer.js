@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { sortScriptScenesByTime } from "@/entities/script-scene/model/capturedScene.js";
 import { createSceneViewerCursor, resolveSceneViewerCursor, setSceneViewerView,
   stepSceneViewerToScene, stepSceneViewerToStill } from "./sceneViewerCursor.js";
 import { useSceneViewerData } from "./useSceneViewerData.js";
@@ -24,7 +25,13 @@ export function useSceneViewer({ initial, source }) {
     stills: ownsFilm ? film.stills : undefined,
     scriptScenes: ownsFilm && film?.scriptId === cursor.context.scriptId ? film.scriptScenes : undefined,
   });
-  const stepScenes = scenes ?? data.scriptScenes ?? [];
+  // A page's own list steps in the order it shows there; a whole script steps
+  // in film order, the order the still tab already steps in, because a script's
+  // scenes need not run down its pages in the order the film plays them.
+  const stepScenes = useMemo(
+    () => scenes ?? (data.scriptScenes ? sortScriptScenesByTime(data.scriptScenes) : []),
+    [scenes, data.scriptScenes]
+  );
   const current = resolveSceneViewerCursor(cursor, { scenes: stepScenes, ...data });
   const showStill = cursor.view === "still";
   const index = showStill ? current.stillIndex : current.sceneIndex;
