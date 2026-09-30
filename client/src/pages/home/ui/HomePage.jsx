@@ -63,7 +63,7 @@ export default function HomePage() {
           <div className={styles.heroIntro}>
             <h1 className={styles.heroTitle}>Read between the lines.</h1>
             <p className={styles.heroSubtitle}>
-              Analyze scripts, annotate scenes, and study how great stories are built.
+              Analyze scripts, explore shots, and study how great stories are built.
             </p>
           </div>
 
