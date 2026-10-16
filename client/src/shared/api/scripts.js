@@ -1,12 +1,12 @@
 import { req } from "./request.js";
 
-/** Returns the movie's one script, or null when it has none. */
-export function getMovieScript(movieId) {
-  return req(`/movies/${encodeURIComponent(movieId)}/scripts`);
+/** Returns the film's one script, or null when it has none. */
+export function getFilmScript(filmId) {
+  return req(`/movies/${encodeURIComponent(filmId)}/scripts`);
 }
 
-export function getScript(movieId, scriptId) {
-  return req(`/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}`);
+export function getScript(filmId, scriptId) {
+  return req(`/movies/${encodeURIComponent(filmId)}/scripts/${encodeURIComponent(scriptId)}`);
 }
 
 /**
@@ -14,8 +14,8 @@ export function getScript(movieId, scriptId) {
  * PDF. Upload progress belongs to the film-save module, so attachment can be
  * retried without another upload.
  */
-export async function saveScript({ movieId, key }) {
-  return req(`/movies/${encodeURIComponent(movieId)}/scripts`, {
+export async function saveScript({ filmId, key }) {
+  return req(`/movies/${encodeURIComponent(filmId)}/scripts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ s3_key: key }),

@@ -2,9 +2,9 @@
 import { ApiError, ValidationError } from "@/shared/lib/errors.js";
 import { req } from "./request.js";
 
-function presignUpload({ movieId, type, contentType, uploadId }) {
+function presignUpload({ filmId, type, contentType, uploadId }) {
   // Basic client-side guardrails
-  if (!movieId) throw new Error("presignUpload: movieId is required");
+  if (!filmId) throw new Error("presignUpload: filmId is required");
   if (type !== "cover" && type !== "annotation" && type !== "script") {
     throw new Error('presignUpload: type must be "cover", "annotation", or "script"');
   }
@@ -22,7 +22,8 @@ function presignUpload({ movieId, type, contentType, uploadId }) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      movieId: String(movieId),
+      // The API still names the film movieId.
+      movieId: String(filmId),
       type,
       contentType, // IMPORTANT: send exact mime type (image/jpeg, image/png, etc.)
       ...(uploadId ? { uploadId } : {}),
@@ -65,11 +66,11 @@ async function uploadToS3(uploadUrl, file) {
  * Uploads a file straight to S3 through a presigned URL. Returns the stable
  * object key that should be saved in the database.
  */
-export async function uploadMediaFile({ movieId, type, file, uploadId }) {
+export async function uploadMediaFile({ filmId, type, file, uploadId }) {
   if (!file) throw new ValidationError("Please choose a file to upload.");
 
   const { uploadUrl, key } = await presignUpload({
-    movieId,
+    filmId,
     type,
     contentType: file.type,
     uploadId,

@@ -71,6 +71,6 @@ describe("sortScriptScenesByTime", () => {
 
 describe("getSceneScriptPath", () => {
   it("opens the scene on its start anchor's page", () => {
-    expect(getSceneScriptPath(scene("scene-1", 12, 3))).toBe("/movies/m1/scripts/s1?sceneId=scene-1&page=12");
+    expect(getSceneScriptPath(scene("scene-1", 12, 3))).toBe("/films/m1/scripts/s1?sceneId=scene-1&page=12");
   });
 });

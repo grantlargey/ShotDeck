@@ -16,7 +16,7 @@ import styles from "./SceneDetailModal.module.css";
 // Why a tab is unavailable; shown as its tooltip and in an empty stage.
 const SCRIPT_UNAVAILABLE = {
   loading: "Loading this script's scenes…",
-  "no-script": "This project has no script yet",
+  "no-script": "This film has no script yet",
   failed: "Couldn't load this script's scenes",
   none: "No captured scene covers this still",
 };
@@ -36,7 +36,7 @@ const STILL_SCENE_NOTES = {
 };
 
 /**
- * The site's one expanded scene viewer, shared by Script Search, the project
+ * The site's one expanded scene viewer, shared by Script Search, the film
  * page, and the script viewer. It shows a moment of a film as a captured
  * scene's script or as a film still, with arrows on both tabs; the tab not
  * being stepped follows along (see sceneViewerCursor.js).
@@ -111,8 +111,8 @@ export function SceneViewerModal({
         <>
           {renderActions?.({ view: current.view, scene, still })}
           {onOpenStill && still && (
-            <Button onClick={() => onOpenStill(still, current.movieId)}>
-              {!current.stillLeads ? "Open first still" : "Open still in project"}
+            <Button onClick={() => onOpenStill(still, current.filmId)}>
+              {!current.stillLeads ? "Open first still" : "Open on film page"}
             </Button>
           )}
           {onOpenScene && scene && (

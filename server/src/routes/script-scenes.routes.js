@@ -10,7 +10,7 @@ import * as scriptScenes from "../services/script-scenes.service.js";
 
 const router = Router();
 
-const SCENES_PATH = "/movies/:movieId/scripts/:scriptId/scene-annotations";
+const SCENES_PATH = "/movies/:filmId/scripts/:scriptId/scene-annotations";
 
 /** Search's `tags` query: comma-separated values, and the parameter may repeat. */
 function tagsFromQuery(value) {
@@ -23,23 +23,23 @@ function tagsFromQuery(value) {
 }
 
 router.post(SCENES_PATH, requireAdmin, async (req, res) => {
-    const { movieId, scriptId } = req.params;
-    res.status(201).json(await scriptScenes.saveScriptScene(pool, { movieId, scriptId, body: req.body }));
+    const { filmId, scriptId } = req.params;
+    res.status(201).json(await scriptScenes.saveScriptScene(pool, { filmId, scriptId, body: req.body }));
 });
 
 router.get(SCENES_PATH, async (req, res) => {
-    const { movieId, scriptId } = req.params;
-    res.json(await scriptScenes.listScriptScenes(pool, { movieId, scriptId }));
+    const { filmId, scriptId } = req.params;
+    res.json(await scriptScenes.listScriptScenes(pool, { filmId, scriptId }));
 });
 
 router.put(`${SCENES_PATH}/:sceneId`, requireAdmin, async (req, res) => {
-    const { movieId, scriptId, sceneId } = req.params;
-    res.json(await scriptScenes.saveScriptScene(pool, { movieId, scriptId, sceneId, body: req.body }));
+    const { filmId, scriptId, sceneId } = req.params;
+    res.json(await scriptScenes.saveScriptScene(pool, { filmId, scriptId, sceneId, body: req.body }));
 });
 
 router.delete(`${SCENES_PATH}/:sceneId`, requireAdmin, async (req, res) => {
-    const { movieId, scriptId, sceneId } = req.params;
-    await scriptScenes.deleteScriptScene(pool, { movieId, scriptId, sceneId });
+    const { filmId, scriptId, sceneId } = req.params;
+    await scriptScenes.deleteScriptScene(pool, { filmId, scriptId, sceneId });
     res.status(204).send();
 });
 

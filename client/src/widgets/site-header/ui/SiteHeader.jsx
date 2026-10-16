@@ -23,15 +23,14 @@ export default function SiteHeader({ pinned = true }) {
   const { isAdmin, isOwner, user, signOut } = useSession();
   const [changingPassword, setChangingPassword] = useState(false);
   const isExplore = pathname === "/";
-  const isNew = pathname === "/movies/new";
+  const isNew = pathname === "/films/new";
 
   const navLinks = [
     { to: "/", label: "Explore", isActive: pathname === "/" },
     {
-      to: "/movies",
-      // Visitors browse the projects; the library is "mine" only once signed in.
-      label: isAdmin ? "My Projects" : "Projects",
-      isActive: pathname.startsWith("/movies") && pathname !== "/movies/new",
+      to: "/library",
+      label: "Library",
+      isActive: pathname === "/library" || (pathname.startsWith("/films/") && pathname !== "/films/new"),
     },
     { to: "/script-search", label: "Script Search", isActive: pathname === "/script-search" },
   ];
@@ -89,13 +88,13 @@ export default function SiteHeader({ pinned = true }) {
           <div className={styles.actions}>
             <Button
               as={Link}
-              to="/movies/new"
+              to="/films/new"
               variant="primary"
               className={cx(styles.cta, isNew && styles.ctaActive)}
               aria-current={isNew ? "page" : undefined}
             >
               <PlusIcon size={14} />
-              New Project
+              Add Film
             </Button>
 
             <DropdownMenu

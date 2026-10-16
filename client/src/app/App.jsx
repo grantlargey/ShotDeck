@@ -2,15 +2,16 @@ import { lazy, Suspense } from "react";
 import { matchPath, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import HomePage from "@/pages/home/ui/HomePage.jsx";
 import LoginPage from "@/pages/login/ui/LoginPage.jsx";
-import MovieDetailPage from "@/pages/movie-detail/ui/MovieDetailPage.jsx";
-import MovieFormPage from "@/pages/movie-form/ui/MovieFormPage.jsx";
-import MoviesListPage from "@/pages/movies-list/ui/MoviesListPage.jsx";
+import FilmDetailPage from "@/pages/film-detail/ui/FilmDetailPage.jsx";
+import FilmFormPage from "@/pages/film-form/ui/FilmFormPage.jsx";
+import LibraryPage from "@/pages/library/ui/LibraryPage.jsx";
 import ScriptSearchPage from "@/pages/script-search/ui/ScriptSearchPage.jsx";
 import { LoadingState } from "@/shared/ui/LoadingState.jsx";
 import BackToTop from "@/widgets/back-to-top/ui/BackToTop.jsx";
 import SiteFooter from "@/widgets/site-footer/ui/SiteFooter.jsx";
 import SiteHeader from "@/widgets/site-header/ui/SiteHeader.jsx";
 import { ErrorBoundary } from "./ErrorBoundary.jsx";
+import { LegacyMoviesRedirect } from "./LegacyMoviesRedirect.jsx";
 import { RequireAdmin } from "./RequireAdmin.jsx";
 import { useScrollRestoration } from "./useScrollRestoration.js";
 import page from "./styles/page.module.css";
@@ -20,7 +21,7 @@ const ScriptViewerPage = lazy(() => import("@/pages/script-viewer/ui/ScriptViewe
 // Only the owner opens this, so visitors never download it.
 const AdminUsersPage = lazy(() => import("@/pages/admin-users/ui/AdminUsersPage.jsx"));
 
-const SCRIPT_VIEWER_PATH = "/movies/:movieId/scripts/:scriptId";
+const SCRIPT_VIEWER_PATH = "/films/:filmId/scripts/:scriptId";
 const FULL_BLEED_PATHS = ["/", "/script-search", SCRIPT_VIEWER_PATH];
 const MAIN_ID = "main-content";
 const SKIP_LINK_ID = "skip-link";
@@ -35,9 +36,9 @@ function focusMain(event) {
 export default function App() {
   const { pathname } = useLocation();
   useScrollRestoration();
-  // The project page draws its own full-width hero; "/movies/new" also matches ":id".
-  const isProjectPage = pathname !== "/movies/new" && Boolean(matchPath("/movies/:id", pathname));
-  const isFullBleed = isProjectPage || FULL_BLEED_PATHS.some((path) => matchPath(path, pathname));
+  // The film page draws its own full-width hero; "/films/new" also matches ":id".
+  const isFilmPage = pathname !== "/films/new" && Boolean(matchPath("/films/:id", pathname));
+  const isFullBleed = isFilmPage || FULL_BLEED_PATHS.some((path) => matchPath(path, pathname));
   const mainClassName = isFullBleed ? page.mainFullBleed : page.main;
   // The script viewer pins its own tool bar, so the site header above it scrolls away.
   const pinHeader = !matchPath(SCRIPT_VIEWER_PATH, pathname);
@@ -57,24 +58,25 @@ export default function App() {
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/movies" element={<MoviesListPage />} />
+              <Route path="/library" element={<LibraryPage />} />
+              <Route path="/films" element={<Navigate to="/library" replace />} />
               <Route
-                path="/movies/new"
+                path="/films/new"
                 element={
                   <RequireAdmin>
-                    <MovieFormPage mode="create" />
+                    <FilmFormPage mode="create" />
                   </RequireAdmin>
                 }
               />
               <Route
-                path="/movies/:id/edit"
+                path="/films/:id/edit"
                 element={
                   <RequireAdmin>
-                    <MovieFormPage mode="edit" />
+                    <FilmFormPage mode="edit" />
                   </RequireAdmin>
                 }
               />
-              <Route path="/movies/:id" element={<MovieDetailPage />} />
+              <Route path="/films/:id" element={<FilmDetailPage />} />
               <Route
                 path={SCRIPT_VIEWER_PATH}
                 element={
@@ -84,6 +86,7 @@ export default function App() {
                 }
               />
               <Route path="/script-search" element={<ScriptSearchPage />} />
+              <Route path="/movies/*" element={<LegacyMoviesRedirect />} />
               <Route
                 path="/admin/users"
                 element={

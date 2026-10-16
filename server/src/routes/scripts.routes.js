@@ -14,9 +14,9 @@ router.get("/movies/:id/scripts", async (req, res) => {
     res.json(await scriptsService.listScripts(pool, req.params.id));
 });
 
-router.get("/movies/:movieId/scripts/:scriptId", async (req, res) => {
-    const { movieId, scriptId } = req.params;
-    res.json(await scriptsService.getScript(pool, { movieId, scriptId }));
+router.get("/movies/:filmId/scripts/:scriptId", async (req, res) => {
+    const { filmId, scriptId } = req.params;
+    res.json(await scriptsService.getScript(pool, { filmId, scriptId }));
 });
 
 export default router;

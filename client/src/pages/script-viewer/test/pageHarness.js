@@ -13,7 +13,7 @@ import { sceneRow, textIndexFrom } from "./textIndexFixtures.js";
  * cycle.
  */
 
-export const MOVIE = { id: "m1", title: "Night Diner", runtime_minutes: 120 };
+export const FILM = { id: "m1", title: "Night Diner", runtime_minutes: 120 };
 export const SCRIPT = { id: "s1", movie_id: "m1", script_url: "fixture.pdf", s3_key: "scripts/m1/fixture.pdf" };
 
 const scenario = { scenes: [], stills: [], nextSceneNumber: 1 };
@@ -48,7 +48,7 @@ export function sceneRowFromPayload(id, payload) {
 }
 
 export const fakeApi = {
-  getMovie: vi.fn(),
+  getFilm: vi.fn(),
   getScript: vi.fn(),
   listScriptScenes: vi.fn(),
   createScriptScene: vi.fn(),
@@ -62,7 +62,7 @@ export const fakeApi = {
 /** The same doubles, grouped by the API module that owns each operation, for the suite's vi.mock factories. */
 export const apiModules = {
   stills: { listStills: fakeApi.listStills },
-  movies: { getMovie: fakeApi.getMovie },
+  films: { getFilm: fakeApi.getFilm },
   screenplayFormat: { formatScreenplaySelection: fakeApi.formatScreenplaySelection },
   scriptScenes: {
     listScriptScenes: fakeApi.listScriptScenes,
@@ -75,18 +75,18 @@ export const apiModules = {
 };
 
 function installApi() {
-  fakeApi.getMovie.mockImplementation(async () => ({ ...MOVIE }));
+  fakeApi.getFilm.mockImplementation(async () => ({ ...FILM }));
   fakeApi.getScript.mockImplementation(async () => ({ ...SCRIPT }));
   fakeApi.listScriptScenes.mockImplementation(async () => scenario.scenes);
-  fakeApi.createScriptScene.mockImplementation((movieId, scriptId, payload) => {
+  fakeApi.createScriptScene.mockImplementation((filmId, scriptId, payload) => {
     const id = `scene-new-${scenario.nextSceneNumber++}`;
-    return track(pending.saves, [movieId, scriptId, payload], sceneRowFromPayload(id, payload));
+    return track(pending.saves, [filmId, scriptId, payload], sceneRowFromPayload(id, payload));
   });
-  fakeApi.updateScriptScene.mockImplementation((movieId, scriptId, sceneId, payload) =>
-    track(pending.saves, [movieId, scriptId, sceneId, payload], sceneRowFromPayload(sceneId, payload))
+  fakeApi.updateScriptScene.mockImplementation((filmId, scriptId, sceneId, payload) =>
+    track(pending.saves, [filmId, scriptId, sceneId, payload], sceneRowFromPayload(sceneId, payload))
   );
-  fakeApi.deleteScriptScene.mockImplementation((movieId, scriptId, sceneId) =>
-    track(pending.deletes, [movieId, scriptId, sceneId], null)
+  fakeApi.deleteScriptScene.mockImplementation((filmId, scriptId, sceneId) =>
+    track(pending.deletes, [filmId, scriptId, sceneId], null)
   );
   fakeApi.formatScreenplaySelection.mockImplementation((payload) => track(pending.formats, [payload], undefined));
   fakeApi.getViewUrlForKey.mockImplementation(async () => ({ url: "" }));
@@ -274,7 +274,7 @@ function LocationProbe() {
 }
 
 /**
- * Renders the viewer route for movie m1 / script s1 and waits until the PDF
+ * Renders the viewer route for film m1 / script s1 and waits until the PDF
  * pages have mounted. Scenes, stills and the session are set before loading.
  * Pass `awaitPages: false` when the load is meant to render no pages at all,
  * such as a failed one; the test then waits for what it expects instead.
@@ -287,7 +287,7 @@ export async function renderViewer(
   scenario.stills = stills;
   session.isAdmin = admin;
   pdf.document = { numPages };
-  const entry = `/movies/m1/scripts/s1${sceneId ? `?sceneId=${encodeURIComponent(sceneId)}` : ""}`;
+  const entry = `/films/m1/scripts/s1${sceneId ? `?sceneId=${encodeURIComponent(sceneId)}` : ""}`;
 
   render(
     createElement(
@@ -297,7 +297,7 @@ export async function renderViewer(
       createElement(
         Routes,
         null,
-        createElement(Route, { path: "/movies/:movieId/scripts/:scriptId", element: createElement(ScriptViewerRoute) }),
+        createElement(Route, { path: "/films/:filmId/scripts/:scriptId", element: createElement(ScriptViewerRoute) }),
         createElement(Route, { path: "*", element: createElement("p", null, "Outside the script viewer") })
       )
     )

@@ -5,7 +5,7 @@ const remote = vi.hoisted(() => ({ req: vi.fn(), upload: vi.fn() }));
 vi.mock("@/shared/api/request.js", () => ({ req: remote.req }));
 vi.mock("@/shared/api/uploads.js", () => ({ uploadMediaFile: remote.upload }));
 
-const movieId = "film-1";
+const filmId = "film-1";
 const file = (content = "image") => new File([content], "still.png", { type: "image/png" });
 let records;
 
@@ -13,7 +13,7 @@ let records;
 async function write(path, { method, body }) {
   const input = JSON.parse(body);
   const id = method === "POST" ? input.id : path.split("/").at(-1);
-  if (method === "POST" && !records.has(id)) records.set(id, { ...input, movie_id: movieId });
+  if (method === "POST" && !records.has(id)) records.set(id, { ...input, movie_id: filmId });
   if (method === "PUT") records.set(id, { ...records.get(id), ...input });
   return { ...records.get(id) };
 }
@@ -21,13 +21,13 @@ async function write(path, { method, body }) {
 beforeEach(() => {
   records = new Map();
   remote.req.mockReset().mockImplementation(write);
-  remote.upload.mockReset().mockImplementation(async ({ uploadId }) => `annotations/${movieId}/${uploadId}.png`);
+  remote.upload.mockReset().mockImplementation(async ({ uploadId }) => `annotations/${filmId}/${uploadId}.png`);
 });
 
 describe("still saves through the editor's interface", () => {
   it("keeps an uploaded image when creation fails and retries with the same still identity", async () => {
     remote.req.mockRejectedValueOnce(new Error("offline"));
-    const save = createStillSave({ movieId });
+    const save = createStillSave({ filmId });
     const input = { timeSeconds: 10, file: file() };
     await expect(save(input)).rejects.toThrow("offline");
     const still = await save(input);
@@ -40,7 +40,7 @@ describe("still saves through the editor's interface", () => {
 
   it("drops a creation the API refused, so the next save carries the corrected moment", async () => {
     remote.req.mockRejectedValueOnce(Object.assign(new Error("00:00:10 already holds a shot."), { status: 409 }));
-    const save = createStillSave({ movieId });
+    const save = createStillSave({ filmId });
     const image = file();
     await expect(save({ timeSeconds: 10, file: image })).rejects.toThrow("already holds a shot");
 
@@ -59,7 +59,7 @@ describe("still saves through the editor's interface", () => {
     { status: undefined, verdict: "replays", replayed: 10 },
   ])("$verdict a still creation the API answered with $status", async ({ status, replayed }) => {
     remote.req.mockRejectedValueOnce(Object.assign(new Error("refused"), { status }));
-    const save = createStillSave({ movieId });
+    const save = createStillSave({ filmId });
     const image = file();
     await expect(save({ timeSeconds: 10, file: image })).rejects.toThrow("refused");
 
@@ -72,7 +72,7 @@ describe("still saves through the editor's interface", () => {
       await write(...args);
       throw new Error("response lost");
     });
-    const save = createStillSave({ movieId });
+    const save = createStillSave({ filmId });
     await expect(save({ timeSeconds: 10, file: file("first") })).rejects.toThrow("response lost");
     const original = [...records.values()][0];
     const still = await save({ timeSeconds: 20, file: file("replacement") });
@@ -90,7 +90,7 @@ describe("still saves through the editor's interface", () => {
       records.set(saved.id, { ...saved, time_seconds: 99 });
       throw new Error("response lost");
     });
-    const save = createStillSave({ movieId });
+    const save = createStillSave({ filmId });
     const input = { timeSeconds: 10, file: file() };
     await expect(save(input)).rejects.toThrow();
     expect((await save(input)).time_seconds).toBe(99);
@@ -100,7 +100,7 @@ describe("still saves through the editor's interface", () => {
   it("reuses an uncertain upload identity, and changes it for a replacement file with the same name", async () => {
     remote.upload.mockRejectedValueOnce(new Error("PUT response lost"));
     remote.req.mockRejectedValueOnce(new Error("record failed"));
-    const save = createStillSave({ movieId, stillId: "still-1" });
+    const save = createStillSave({ filmId, stillId: "still-1" });
     const input = { timeSeconds: 10, file: file() };
     await expect(save(input)).rejects.toThrow("PUT response lost");
     await expect(save(input)).rejects.toThrow("record failed");
@@ -112,7 +112,7 @@ describe("still saves through the editor's interface", () => {
 
   it("retries only the record when replacing an image, and retains acknowledged completion", async () => {
     remote.req.mockRejectedValueOnce(new Error("offline"));
-    const save = createStillSave({ movieId, stillId: "still-1" });
+    const save = createStillSave({ filmId, stillId: "still-1" });
     const input = { timeSeconds: 10, file: file() };
     await expect(save(input)).rejects.toThrow("offline");
     const saved = await save(input);
@@ -123,7 +123,7 @@ describe("still saves through the editor's interface", () => {
   });
 
   it("saves a timestamp with the existing image without uploading", async () => {
-    const save = createStillSave({ movieId, stillId: "still-1" });
+    const save = createStillSave({ filmId, stillId: "still-1" });
     await save({ timeSeconds: 20, imageKey: "existing.png" });
     expect(remote.upload).not.toHaveBeenCalled();
     expect(records.get("still-1")).toMatchObject({ time_seconds: 20, image_key: "existing.png" });
@@ -132,7 +132,7 @@ describe("still saves through the editor's interface", () => {
   it("refuses a second submission while the upload is pending", async () => {
     let finish;
     remote.upload.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
-    const save = createStillSave({ movieId });
+    const save = createStillSave({ filmId });
     const input = { timeSeconds: 10, file: file() };
     const pending = save(input);
     await expect(save(input)).rejects.toThrow("already in progress");

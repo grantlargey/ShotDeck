@@ -71,20 +71,20 @@ describe("presigning an upload", () => {
         }
     });
 
-    test("doesn't check the movie exists, and turns the movie id into one safe path segment", async () => {
+    test("doesn't check the film exists, and turns the film id into one safe path segment", async () => {
         const response = await presign({ movieId: " my movie/../x ", type: "cover", contentType: "image/png" });
         assert.equal(response.status, 200, response.text);
         assert.match(response.body.key, /^covers\/my_movie_\.\._x\/[0-9a-f-]{36}\.png$/);
     });
 
-    test("a movie id with no usable characters is a 500", async (t) => {
+    test("a film id with no usable characters is a 500", async (t) => {
         t.mock.method(console, "error", () => {});
         for (const movieId of ["", "///"]) {
             await expectError(presign({ movieId, type: "cover", contentType: "image/png" }), 500, "Something went wrong on the server.");
         }
     });
 
-    test("requires a string movie id, a known type and a content type that suits it", async () => {
+    test("requires a string film id, a known type and a content type that suits it", async () => {
         const movieId = randomUUID();
         const invalid = [
             {},

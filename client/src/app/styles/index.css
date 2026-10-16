@@ -46,9 +46,9 @@ a {
   text-align: left !important;
 }
 
-/* A project card opening its project: the poster glides into place while the
-   rest of the page cross-fades (see entities/movie/model/posterTransition.js). */
-::view-transition-group(project-poster) {
+/* A film card opening its film: the poster glides into place while the
+   rest of the page cross-fades (see entities/film/model/posterTransition.js). */
+::view-transition-group(film-poster) {
   animation-duration: 0.34s;
   animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
 }

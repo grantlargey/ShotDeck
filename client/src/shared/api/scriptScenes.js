@@ -1,16 +1,16 @@
 import { normalizeTags } from "./normalizers.js";
 import { req } from "./request.js";
 
-export function listScriptScenes(movieId, scriptId) {
+export function listScriptScenes(filmId, scriptId) {
   return req(
-    `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations`
+    `/movies/${encodeURIComponent(filmId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations`
   );
 }
 
 /** Scene writes include script_key from the PDF loaded for capture. */
-export function createScriptScene(movieId, scriptId, payload) {
+export function createScriptScene(filmId, scriptId, payload) {
   return req(
-    `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations`,
+    `/movies/${encodeURIComponent(filmId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -19,9 +19,9 @@ export function createScriptScene(movieId, scriptId, payload) {
   );
 }
 
-export function updateScriptScene(movieId, scriptId, sceneId, payload) {
+export function updateScriptScene(filmId, scriptId, sceneId, payload) {
   return req(
-    `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations/${encodeURIComponent(sceneId)}`,
+    `/movies/${encodeURIComponent(filmId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations/${encodeURIComponent(sceneId)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -30,9 +30,9 @@ export function updateScriptScene(movieId, scriptId, sceneId, payload) {
   );
 }
 
-export function deleteScriptScene(movieId, scriptId, sceneId) {
+export function deleteScriptScene(filmId, scriptId, sceneId) {
   return req(
-    `/movies/${encodeURIComponent(movieId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations/${encodeURIComponent(sceneId)}`,
+    `/movies/${encodeURIComponent(filmId)}/scripts/${encodeURIComponent(scriptId)}/scene-annotations/${encodeURIComponent(sceneId)}`,
     { method: "DELETE" }
   );
 }

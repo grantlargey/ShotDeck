@@ -208,7 +208,7 @@ async function setTiming(panel, start, end) {
   throwIfShuttingDown();
 }
 
-const movieId = randomUUID();
+const filmId = randomUUID();
 const scriptId = randomUUID();
 const userId = randomUUID();
 const stillId = randomUUID();
@@ -279,17 +279,17 @@ try {
   );
   await database.query(
     "INSERT INTO movies(id, title, director, year, runtime_minutes) VALUES ($1, $2, $3, $4, $5)",
-    [movieId, "Browser smoke film", "Synthetic Director", 2026, 120]
+    [filmId, "Browser smoke film", "Synthetic Director", 2026, 120]
   );
   // make-pdf.mjs builds the synthetic screenplay with three pages.
   await database.query("INSERT INTO scripts(id, movie_id, s3_key) VALUES ($1, $2, $3)", [
     scriptId,
-    movieId,
+    filmId,
     "scripts/smoke/script.pdf",
   ]);
   await database.query(
     "INSERT INTO annotations(id, movie_id, time_seconds, image_key) VALUES ($1, $2, 1, $3)",
-    [stillId, movieId, "annotations/smoke/still.png"]
+    [stillId, filmId, "annotations/smoke/still.png"]
   );
   throwIfShuttingDown();
 
@@ -369,17 +369,17 @@ try {
     }
     return route.continue();
   });
-  await recoveryPage.goto(`${appOrigin}/movies/new`);
+  await recoveryPage.goto(`${appOrigin}/films/new`);
   await recoveryPage.getByRole("textbox", { name: /^Title/ }).fill("Recoverable smoke film");
   await recoveryPage.getByRole("textbox", { name: /^Director/ }).fill("Synthetic Director");
   await recoveryPage.getByRole("spinbutton", { name: /^Release year/ }).fill("2026");
   await recoveryPage.getByPlaceholder("00:00:00").fill("02:00:00");
-  await recoveryPage.getByRole("button", { name: "Create project", exact: true }).click();
+  await recoveryPage.getByRole("button", { name: "Add film", exact: true }).click();
   await recoveryPage.getByRole("button", { name: "Retry save", exact: true }).waitFor();
   await recoveryPage.reload();
   assert.equal(await recoveryPage.getByRole("textbox", { name: /^Title/ }).inputValue(), "Recoverable smoke film");
   await recoveryPage.getByRole("button", { name: "Retry save", exact: true }).click();
-  await recoveryPage.waitForURL(`${appOrigin}/movies`);
+  await recoveryPage.waitForURL(`${appOrigin}/library`);
   const recoveredFilms = await database.query("SELECT id FROM movies WHERE title = $1", ["Recoverable smoke film"]);
   assert.deepEqual(recoveredFilms.rows, [{ id: recoveredFilmId }]);
   assert.deepEqual(recoveryErrors, []);
@@ -395,7 +395,7 @@ try {
   });
   page.on("dialog", (dialog) => dialog.accept());
   const sceneWrites = [];
-  const scenesPath = `/movies/${movieId}/scripts/${scriptId}/scene-annotations`;
+  const scenesPath = `/movies/${filmId}/scripts/${scriptId}/scene-annotations`;
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (url.pathname.startsWith(scenesPath) && ["POST", "PUT", "DELETE"].includes(request.method())) {
@@ -403,7 +403,7 @@ try {
     }
   });
 
-  const viewerUrl = `${appOrigin}/movies/${movieId}/scripts/${scriptId}`;
+  const viewerUrl = `${appOrigin}/films/${filmId}/scripts/${scriptId}`;
   const panel = page.getByRole("complementary", { name: "Scene annotator" });
   async function ready() {
     throwIfShuttingDown();

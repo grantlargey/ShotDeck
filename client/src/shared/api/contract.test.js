@@ -7,7 +7,7 @@ const dependencies = vi.hoisted(() => ({
 vi.mock("./request.js", () => ({ req: dependencies.req }));
 
 import { sampleStills } from "./stills.js";
-import { createMovie, deleteMovie, getMovie, listMovies, updateMovie } from "./movies.js";
+import { createFilm, deleteFilm, getFilm, listFilms, updateFilm } from "./films.js";
 import {
   createScriptScene,
   deleteScriptScene,
@@ -16,7 +16,7 @@ import {
   searchScriptScenes,
   updateScriptScene,
 } from "./scriptScenes.js";
-import { getMovieScript, getScript, saveScript } from "./scripts.js";
+import { getFilmScript, getScript, saveScript } from "./scripts.js";
 
 const SCENE_BODY = {
   start_time_seconds: 60,
@@ -33,55 +33,55 @@ beforeEach(() => {
   dependencies.req.mockReset();
 });
 
-describe("movie endpoints", () => {
-  it("uses the movie collection and member paths with exact payloads", () => {
+describe("film endpoints", () => {
+  it("uses the film collection and member paths with exact payloads", () => {
     const payload = { title: "Night Diner", director: "A. Director", runtime_minutes: 120 };
 
-    listMovies();
-    getMovie("movie/1");
-    createMovie(payload);
-    updateMovie("movie/1", payload);
-    deleteMovie("movie/1");
+    listFilms();
+    getFilm("film/1");
+    createFilm(payload);
+    updateFilm("film/1", payload);
+    deleteFilm("film/1");
 
     expect(dependencies.req.mock.calls).toEqual([
       ["/movies"],
-      ["/movies/movie%2F1"],
+      ["/movies/film%2F1"],
       ["/movies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }],
-      ["/movies/movie%2F1", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }],
-      ["/movies/movie%2F1", { method: "DELETE" }],
+      ["/movies/film%2F1", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }],
+      ["/movies/film%2F1", { method: "DELETE" }],
     ]);
   });
 });
 
 describe("script endpoints", () => {
-  it("reads the movie's one script from the retained plural path", () => {
-    getMovieScript("movie/1");
-    getScript("movie/1", "script/1");
+  it("reads the film's one script from the retained plural path", () => {
+    getFilmScript("film/1");
+    getScript("film/1", "script/1");
 
     expect(dependencies.req.mock.calls).toEqual([
-      ["/movies/movie%2F1/scripts"],
-      ["/movies/movie%2F1/scripts/script%2F1"],
+      ["/movies/film%2F1/scripts"],
+      ["/movies/film%2F1/scripts/script%2F1"],
     ]);
   });
 
   it("attaches an uploaded script with the canonical key", async () => {
-    await saveScript({ movieId: "movie/1", key: "scripts/movie-1.pdf" });
-    expect(dependencies.req).toHaveBeenCalledWith("/movies/movie%2F1/scripts", {
+    await saveScript({ filmId: "film/1", key: "scripts/film-1.pdf" });
+    expect(dependencies.req).toHaveBeenCalledWith("/movies/film%2F1/scripts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ s3_key: "scripts/movie-1.pdf" }),
+      body: JSON.stringify({ s3_key: "scripts/film-1.pdf" }),
     });
   });
 });
 
 describe("captured-scene endpoints", () => {
   it("uses the canonical collection and member paths with exact write bodies", () => {
-    listScriptScenes("movie/1", "script/1");
-    createScriptScene("movie/1", "script/1", SCENE_BODY);
-    updateScriptScene("movie/1", "script/1", "scene/1", SCENE_BODY);
-    deleteScriptScene("movie/1", "script/1", "scene/1");
+    listScriptScenes("film/1", "script/1");
+    createScriptScene("film/1", "script/1", SCENE_BODY);
+    updateScriptScene("film/1", "script/1", "scene/1", SCENE_BODY);
+    deleteScriptScene("film/1", "script/1", "scene/1");
 
-    const collection = "/movies/movie%2F1/scripts/script%2F1/scene-annotations";
+    const collection = "/movies/film%2F1/scripts/script%2F1/scene-annotations";
     expect(dependencies.req.mock.calls).toEqual([
       [collection],
       [collection, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(SCENE_BODY) }],

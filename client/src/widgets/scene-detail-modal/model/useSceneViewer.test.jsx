@@ -5,8 +5,8 @@ import { listScriptScenes } from "@/shared/api/scriptScenes.js";
 import { useSceneViewer } from "./useSceneViewer.js";
 vi.mock("@/shared/api/stills.js", () => ({ listStills: vi.fn() }));
 vi.mock("@/shared/api/scriptScenes.js", () => ({ listScriptScenes: vi.fn() }));
-const scene = (id, start, movie = "m1") => ({ id, movie_id: movie, movie_title: movie,
-  script_id: `${movie}-script`, script_location: { start: { page: 1, y: start }, end: { page: 1, y: start + 9 } }, start_time_seconds: start, end_time_seconds: start + 9 });
+const scene = (id, start, film = "m1") => ({ id, movie_id: film, movie_title: film,
+  script_id: `${film}-script`, script_location: { start: { page: 1, y: start }, end: { page: 1, y: start + 9 } }, start_time_seconds: start, end_time_seconds: start + 9 });
 const still = (id, time_seconds) => ({ id, time_seconds, image_key: `annotations/${id}.jpg` });
 beforeEach(() => { vi.resetAllMocks(); listStills.mockResolvedValue([]); listScriptScenes.mockResolvedValue([]); });
 
@@ -45,10 +45,10 @@ it("loads search films by owner and resumes the result list after an unlisted sc
   act(() => result.current.step(1));
   expect(result.current.scene.id).toBe("b");
   act(() => result.current.step(1));
-  expect(result.current.movieId).toBe("m2");
+  expect(result.current.filmId).toBe("m2");
   await waitFor(() => expect(listStills).toHaveBeenCalledWith("m2"));
   act(() => result.current.step(-1));
-  await waitFor(() => expect(result.current.movieId).toBe("m1"));
+  await waitFor(() => expect(result.current.filmId).toBe("m1"));
   expect(listStills).toHaveBeenCalledTimes(2);
 });
 

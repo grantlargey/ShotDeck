@@ -95,7 +95,7 @@
   background: currentColor;
 }
 
-/* Admin-only controls: the New Project button and the account menu. */
+/* Admin-only controls: the Add Film button and the account menu. */
 .actions {
   justify-self: end;
   display: flex;

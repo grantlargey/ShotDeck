@@ -2,10 +2,10 @@ import { v4 as uuidv4 } from "uuid";
 import { withFilmWrite } from "./filmWrite.js";
 import { signViewUrl } from "../s3.js";
 import { HttpError } from "../utils/http-error.js";
-import { ensureMovieExists } from "./movies.service.js";
+import { ensureFilmExists } from "./films.service.js";
 
 /*
- * Scripts: the screenplay PDF attached to a movie, one per movie. This module
+ * Scripts: the screenplay PDF attached to a film, one per film. This module
  * owns script validation, the script SQL and the script response shape.
  */
 
@@ -20,7 +20,7 @@ async function withScriptViewUrl(row) {
 }
 
 /**
- * Saving a movie's script replaces the file of the movie's one script row. The
+ * Saving a film's script replaces the file of the film's one script row. The
  * API never parses the PDF; the browser reads whatever it needs from the file
  * it already has.
  *
@@ -29,7 +29,7 @@ async function withScriptViewUrl(row) {
  * their tags. Saving the same key again is the attachment retry the film-save
  * journal performs after a lost response, and keeps them.
  */
-export async function saveScript(pool, movieId, body) {
+export async function saveScript(pool, filmId, body) {
     const { s3_key } = body || {};
     const trimmedKey = typeof s3_key === "string" ? s3_key.trim() : "";
 
@@ -37,9 +37,9 @@ export async function saveScript(pool, movieId, body) {
         throw new HttpError(400, "Invalid body. Expected { s3_key:string }");
     }
 
-    const row = await withFilmWrite(pool, { movieId }, async (client) => {
+    const row = await withFilmWrite(pool, { filmId }, async (client) => {
         const existing = await client.query("SELECT id, s3_key FROM scripts WHERE movie_id = $1 FOR UPDATE", [
-            movieId,
+            filmId,
         ]);
         const previous = existing.rows[0];
         if (previous && previous.s3_key !== trimmedKey) {
@@ -54,23 +54,23 @@ export async function saveScript(pool, movieId, body) {
             DO UPDATE SET s3_key = EXCLUDED.s3_key
             RETURNING *
           `,
-            [uuidv4(), movieId, trimmedKey]
+            [uuidv4(), filmId, trimmedKey]
         );
         return result.rows[0];
     });
     return withScriptViewUrl(row);
 }
 
-export async function listScripts(db, movieId) {
-    await ensureMovieExists(db, movieId);
-    const result = await db.query(`SELECT * FROM scripts WHERE movie_id = $1`, [movieId]);
+export async function listScripts(db, filmId) {
+    await ensureFilmExists(db, filmId);
+    const result = await db.query(`SELECT * FROM scripts WHERE movie_id = $1`, [filmId]);
     return result.rows[0] ? withScriptViewUrl(result.rows[0]) : null;
 }
 
-export async function getScript(db, { movieId, scriptId }) {
+export async function getScript(db, { filmId, scriptId }) {
     const result = await db.query(`SELECT * FROM scripts WHERE id = $1 AND movie_id = $2`, [
         scriptId,
-        movieId,
+        filmId,
     ]);
     if (!result.rows[0]) throw new HttpError(404, "Script not found");
     return withScriptViewUrl(result.rows[0]);

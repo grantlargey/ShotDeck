@@ -48,7 +48,7 @@ import {
 import ScriptViewerRoute from "./ScriptViewerPage.jsx";
 
 vi.mock("@/shared/api/stills.js", async () => (await import("../test/pageHarness.js")).apiModules.stills);
-vi.mock("@/shared/api/movies.js", async () => (await import("../test/pageHarness.js")).apiModules.movies);
+vi.mock("@/shared/api/films.js", async () => (await import("../test/pageHarness.js")).apiModules.films);
 vi.mock("@/shared/api/screenplayFormat.js", async () => (await import("../test/pageHarness.js")).apiModules.screenplayFormat);
 vi.mock("@/shared/api/scriptScenes.js", async () => (await import("../test/pageHarness.js")).apiModules.scriptScenes);
 vi.mock("@/shared/api/scripts.js", async () => (await import("../test/pageHarness.js")).apiModules.scripts);
@@ -752,7 +752,7 @@ describe("delete races, visitor navigation and load failures", () => {
     expect(frameProps(1)).toBeNull();
     expect(screen.queryByTestId("pdf-document")).toBeNull();
     expect(loadedPdfDocument()).toMatchObject({ numPages: 3 });
-    expect(currentLocation()).toBe("/movies/m1/scripts/s1");
+    expect(currentLocation()).toBe("/films/m1/scripts/s1");
   });
 });
 

@@ -9,7 +9,7 @@ import styles from "./ScriptViewerPage.module.css";
 /**
  * The viewer's tool bar, under the site header. It stays pinned when the site
  * header scrolls away, so the script keeps the height: home link, back to the
- * project, the title, and viewer actions, in one row at every width. The
+ * film, the title, and viewer actions, in one row at every width. The
  * anchor-marker toggle only matters while capturing, so visitors don't get it.
  */
 export function ViewerTopBar({
@@ -19,7 +19,7 @@ export function ViewerTopBar({
   canEdit,
   anchorMarkersVisible,
   onToggleAnchorMarkers,
-  onBackToMovie,
+  onBackToFilm,
   onSearchScripts,
   onJumpToScenes,
 }) {
@@ -31,9 +31,9 @@ export function ViewerTopBar({
         <BrandLogo showWordmark={false} />
       </Link>
 
-      <Button size="sm" className={styles.backButton} onClick={onBackToMovie} title="Back to project">
+      <Button size="sm" className={styles.backButton} onClick={onBackToFilm} title="Back to film">
         <ChevronLeftIcon size={14} />
-        <span className={styles.collapsibleLabel}>Project</span>
+        <span className={styles.collapsibleLabel}>Film</span>
       </Button>
 
       <div className={styles.titleGroup}>

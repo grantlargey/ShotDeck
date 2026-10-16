@@ -5,7 +5,7 @@ import { createCorsOptions, getAllowedOrigins } from "./config/cors.js";
 import { createOriginCheck } from "./middleware/check-origin.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import authRoutes from "./routes/auth.routes.js";
-import moviesRoutes from "./routes/movies.routes.js";
+import filmsRoutes from "./routes/films.routes.js";
 import scriptsRoutes from "./routes/scripts.routes.js";
 import scriptScenesRoutes from "./routes/script-scenes.routes.js";
 import screenplayFormatRoutes from "./routes/screenplay-format.routes.js";
@@ -38,7 +38,7 @@ app.use(express.json({ limit: "2mb" })); // metadata only; no big file uploads
 app.get("/health", (req, res) => res.json({ ok: true }));
 app.use(authRoutes);
 app.use(stillsRoutes);
-app.use(moviesRoutes);
+app.use(filmsRoutes);
 app.use(scriptsRoutes);
 app.use(scriptScenesRoutes);
 app.use(uploadsRoutes);

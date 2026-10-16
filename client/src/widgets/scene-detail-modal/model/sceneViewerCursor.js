@@ -34,7 +34,7 @@ function findNearestStill(stills, seconds) {
 
 /**
  * Opens on a scene (`sceneId`) or a still (`stillId`). `context` supplies the
- * movie and script when the opening scene row doesn't carry them.
+ * film and script when the opening scene row doesn't carry them.
  */
 export function createSceneViewerCursor({ view, sceneId = null, stillId = null, scenes, stills, context = {} }) {
   const scene = findById(scenes, sceneId);
@@ -47,9 +47,9 @@ export function createSceneViewerCursor({ view, sceneId = null, stillId = null, 
     stillTime: still ? momentSeconds(still.time_seconds) : null,
     anchorSceneId: sceneId,
     context: {
-      movieId: scene?.movie_id ?? context.movieId ?? null,
+      filmId: scene?.movie_id ?? context.filmId ?? null,
       scriptId: scene?.script_id ?? context.scriptId ?? null,
-      movieTitle: scene?.movie_title || context.movieTitle || "",
+      filmTitle: scene?.movie_title || context.filmTitle || "",
     },
   };
 }
@@ -68,9 +68,9 @@ export function stepSceneViewerToScene(cursor, scene) {
     stillTime: null,
     anchorSceneId: scene.id,
     context: {
-      movieId: scene.movie_id ?? cursor.context.movieId,
+      filmId: scene.movie_id ?? cursor.context.filmId,
       scriptId: scene.script_id ?? cursor.context.scriptId,
-      movieTitle: scene.movie_title || cursor.context.movieTitle,
+      filmTitle: scene.movie_title || cursor.context.filmTitle,
     },
   };
 }

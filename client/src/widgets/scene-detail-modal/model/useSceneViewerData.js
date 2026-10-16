@@ -12,31 +12,31 @@ const EMPTY = [];
  * else is fetched once per open dialog, so stepping back to a title doesn't
  * refetch. A list is `null` while it loads.
  */
-export function useSceneViewerData({ movieId, scriptId, stills, scriptScenes }) {
+export function useSceneViewerData({ filmId, scriptId, stills, scriptScenes }) {
   const [fetched, setFetched] = useState({ stills: {}, scenes: {} });
-  const stillsEntry = movieId ? fetched.stills[movieId] : undefined;
+  const stillsEntry = filmId ? fetched.stills[filmId] : undefined;
   const scenesEntry = scriptId ? fetched.scenes[scriptId] : undefined;
-  const needsStills = !stills && Boolean(movieId) && !stillsEntry;
-  const needsScenes = !scriptScenes && Boolean(movieId && scriptId) && !scenesEntry;
+  const needsStills = !stills && Boolean(filmId) && !stillsEntry;
+  const needsScenes = !scriptScenes && Boolean(filmId && scriptId) && !scenesEntry;
 
   useEffect(() => {
     if (!needsStills) return undefined;
     let cancelled = false;
-    listStills(movieId)
+    listStills(filmId)
       .then((rows) => ({ rows: sortStillsByTime(rows), failed: false }))
       .catch(() => ({ rows: EMPTY, failed: true }))
       .then((entry) => {
-        if (!cancelled) setFetched((prev) => ({ ...prev, stills: { ...prev.stills, [movieId]: entry } }));
+        if (!cancelled) setFetched((prev) => ({ ...prev, stills: { ...prev.stills, [filmId]: entry } }));
       });
     return () => {
       cancelled = true;
     };
-  }, [needsStills, movieId]);
+  }, [needsStills, filmId]);
 
   useEffect(() => {
     if (!needsScenes) return undefined;
     let cancelled = false;
-    listScriptScenes(movieId, scriptId)
+    listScriptScenes(filmId, scriptId)
       .then((rows) => ({ rows: sortScriptScenes(rows), failed: false }))
       .catch(() => ({ rows: EMPTY, failed: true }))
       .then((entry) => {
@@ -45,10 +45,10 @@ export function useSceneViewerData({ movieId, scriptId, stills, scriptScenes }) 
     return () => {
       cancelled = true;
     };
-  }, [needsScenes, movieId, scriptId]);
+  }, [needsScenes, filmId, scriptId]);
 
   return {
-    stills: stills || (movieId ? stillsEntry?.rows ?? null : EMPTY),
+    stills: stills || (filmId ? stillsEntry?.rows ?? null : EMPTY),
     stillsFailed: !stills && Boolean(stillsEntry?.failed),
     scriptScenes: scriptScenes || (scriptId ? scenesEntry?.rows ?? null : EMPTY),
     scenesFailed: !scriptScenes && Boolean(scenesEntry?.failed),

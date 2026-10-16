@@ -10,12 +10,12 @@ const IMAGE = "image";
  * creation with the original input before applying any changed input.
  * Closing the editor discards this function; no recovery is stored on disk.
  */
-export function createStillSave({ movieId, stillId = null }) {
+export function createStillSave({ filmId, stillId = null }) {
   const id = stillId || crypto.randomUUID();
   const journal = openSaveJournal({ name: "still save", created: Boolean(stillId) });
 
   async function create(input) {
-    const still = await createStill({ movieId, id, ...input });
+    const still = await createStill({ filmId, id, ...input });
     if (still?.id !== id) throw new Error("Still creation returned an unexpected identity");
     return still;
   }
@@ -29,12 +29,12 @@ export function createStillSave({ movieId, stillId = null }) {
         await journal.settle(MOMENT, null, { create });
         journal.select(IMAGE, { identity: file, body: file });
         imageKey = await journal.upload(IMAGE, ({ uploadId, body }) =>
-          uploadMediaFile({ movieId, type: "annotation", file: body, uploadId })
+          uploadMediaFile({ filmId, type: "annotation", file: body, uploadId })
         );
       }
       return journal.settle(MOMENT, { timeSeconds, imageKey }, {
         create,
-        update: (moment) => updateStill({ movieId, stillId: id, ...moment }),
+        update: (moment) => updateStill({ filmId, stillId: id, ...moment }),
       });
     });
   };

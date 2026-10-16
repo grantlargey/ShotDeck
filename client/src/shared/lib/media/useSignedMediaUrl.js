@@ -7,7 +7,7 @@ import { getViewUrlForKey } from "@/shared/api/uploads.js";
  * A URL reaches this module two ways: embedded in a record the API answered with,
  * or fetched here for a key that arrived without one. Both kinds expire, so both
  * are replaced the same way. An embedded URL that was never replaced is how a
- * project page left open while tagging ends up showing nothing but broken images.
+ * film page left open while tagging ends up showing nothing but broken images.
  *
  * The API signs a URL from the start of a fixed window and only hands out one
  * with at least a window of life left, so asking for a replacement shortly before

@@ -16,11 +16,11 @@ export function useSceneViewer({ initial, source }) {
   const [cursor, setCursor] = useState(() => createSceneViewerCursor({
     view: initial.view ?? "script", sceneId: initial.sceneId, stillId: initial.stillId,
     scenes: scenes ?? film?.scriptScenes, stills: film?.stills,
-    context: { movieId: film?.id, scriptId: film?.scriptId, movieTitle: film?.title },
+    context: { filmId: film?.id, scriptId: film?.scriptId, filmTitle: film?.title },
   }));
-  const ownsFilm = film?.id === cursor.context.movieId;
+  const ownsFilm = film?.id === cursor.context.filmId;
   const data = useSceneViewerData({
-    movieId: cursor.context.movieId,
+    filmId: cursor.context.filmId,
     scriptId: cursor.context.scriptId,
     stills: ownsFilm ? film.stills : undefined,
     scriptScenes: ownsFilm && film?.scriptId === cursor.context.scriptId ? film.scriptScenes : undefined,
@@ -40,8 +40,8 @@ export function useSceneViewer({ initial, source }) {
   const next = showStill ? current.nextStill : current.nextScene;
   return {
     view: cursor.view,
-    title: cursor.context.movieTitle || "Untitled project",
-    movieId: cursor.context.movieId,
+    title: cursor.context.filmTitle || "Untitled film",
+    filmId: cursor.context.filmId,
     stillLeads: cursor.lead === "still",
     scene: current.scene, still: current.still,
     sceneStatus: current.sceneStatus, stillStatus: current.stillStatus,

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getRecentMovies } from "@/entities/movie/model/movieFilters.js";
-import { MovieCard, MovieCardGrid, MovieCardSkeleton } from "@/entities/movie/ui/MovieCard.jsx";
+import { getRecentFilms } from "@/entities/film/model/filmFilters.js";
+import { FilmCard, FilmCardGrid, FilmCardSkeleton } from "@/entities/film/ui/FilmCard.jsx";
 import { useSession } from "@/entities/session/model/useSession.js";
-import { listMovies } from "@/shared/api/movies.js";
+import { listFilms } from "@/shared/api/films.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { Button } from "@/shared/ui/Button.jsx";
@@ -15,13 +15,13 @@ import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import { LibraryReel } from "./LibraryReel.jsx";
 import styles from "./HomePage.module.css";
 
-const RECENT_PROJECT_LIMIT = 5;
+const RECENT_FILM_LIMIT = 5;
 
 export default function HomePage() {
   useDocumentTitle();
   const navigate = useNavigate();
   const { isAdmin } = useSession();
-  const [movies, setMovies] = useState([]);
+  const [films, setFilms] = useState([]);
   const [query, setQuery] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
@@ -29,31 +29,31 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadMovies() {
+    async function loadFilms() {
       setErr("");
       setLoading(true);
       try {
-        const data = await listMovies();
-        if (!cancelled) setMovies(Array.isArray(data) ? data : []);
+        const data = await listFilms();
+        if (!cancelled) setFilms(Array.isArray(data) ? data : []);
       } catch (e) {
-        if (!cancelled) setErr(getErrorMessage(e, "Failed to load recent projects."));
+        if (!cancelled) setErr(getErrorMessage(e, "Failed to load recent films."));
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    void loadMovies();
+    void loadFilms();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const recentProjects = useMemo(() => getRecentMovies(movies, RECENT_PROJECT_LIMIT), [movies]);
+  const recentFilms = useMemo(() => getRecentFilms(films, RECENT_FILM_LIMIT), [films]);
 
   function submitSearch(event) {
     event.preventDefault();
     const trimmed = query.trim();
-    navigate(trimmed ? `/movies?query=${encodeURIComponent(trimmed)}` : "/movies");
+    navigate(trimmed ? `/library?query=${encodeURIComponent(trimmed)}` : "/library");
   }
 
   return (
@@ -72,10 +72,10 @@ export default function HomePage() {
               <Input
                 icon={<SearchIcon size={18} />}
                 className={styles.heroSearchField}
-                aria-label="Search projects"
+                aria-label="Search films"
                 autoComplete="off"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search projects by title…"
+                placeholder="Search films by title…"
                 type="search"
                 value={query}
               />
@@ -83,8 +83,8 @@ export default function HomePage() {
                 Search
               </Button>
             </form>
-            <Button as={Link} to="/movies" variant="ghost" size="sm" className={styles.browseLink}>
-              Browse all projects
+            <Button as={Link} to="/library" variant="ghost" size="sm" className={styles.browseLink}>
+              Browse the library
               <ChevronRightIcon size={14} />
             </Button>
           </div>
@@ -98,9 +98,9 @@ export default function HomePage() {
       <section className={styles.recent} aria-labelledby="home-recent-heading">
         <SectionHeading
           id="home-recent-heading"
-          title="Recent projects"
+          title="Recently added"
           actions={
-            <Button as={Link} to="/movies" variant="link" size="sm">
+            <Button as={Link} to="/library" variant="link" size="sm">
               View all
               <ChevronRightIcon size={14} />
             </Button>
@@ -114,40 +114,40 @@ export default function HomePage() {
         )}
 
         {loading ? (
-          <div aria-busy="true" aria-label="Loading recent projects">
-            <MovieCardGrid className={styles.recentGrid}>
-              {Array.from({ length: RECENT_PROJECT_LIMIT }, (_, index) => (
+          <div aria-busy="true" aria-label="Loading recently added films">
+            <FilmCardGrid className={styles.recentGrid}>
+              {Array.from({ length: RECENT_FILM_LIMIT }, (_, index) => (
                 <li key={index}>
-                  <MovieCardSkeleton />
+                  <FilmCardSkeleton />
                 </li>
               ))}
-            </MovieCardGrid>
+            </FilmCardGrid>
           </div>
-        ) : recentProjects.length === 0 ? (
+        ) : recentFilms.length === 0 ? (
           !err && (
             <EmptyState
-              title="No projects yet"
+              title="No films yet"
               action={
                 isAdmin && (
-                  <Button as={Link} to="/movies/new" variant="primary" size="sm">
-                    Start your first project
+                  <Button as={Link} to="/films/new" variant="primary" size="sm">
+                    Add your first film
                   </Button>
                 )
               }
             >
               {isAdmin
-                ? "Create a project to upload a script and start annotating scenes."
-                : "Projects will appear here once they're added."}
+                ? "Add a film to upload its script and start capturing scenes."
+                : "Films will appear here once they're added."}
             </EmptyState>
           )
         ) : (
-          <MovieCardGrid className={styles.recentGrid}>
-            {recentProjects.map((movie) => (
-              <li key={movie.id}>
-                <MovieCard movie={movie} />
+          <FilmCardGrid className={styles.recentGrid}>
+            {recentFilms.map((film) => (
+              <li key={film.id}>
+                <FilmCard film={film} />
               </li>
             ))}
-          </MovieCardGrid>
+          </FilmCardGrid>
         )}
       </section>
     </div>

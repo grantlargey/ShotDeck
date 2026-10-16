@@ -19,12 +19,13 @@ const CONTENT_TYPE_EXTENSIONS = {
 
 /** Validates an upload, chooses its stable object key, and signs a PUT for it. */
 export async function createUploadPresign(body) {
-    const { movieId, type, contentType, uploadId } = body ?? {};
+    // The body still names the film movieId.
+    const { movieId: filmId, type, contentType, uploadId } = body ?? {};
     const isImageUpload = type === "cover" || type === "annotation";
     const isScriptUpload = type === "script";
 
     if (
-        typeof movieId !== "string" ||
+        typeof filmId !== "string" ||
         (!isImageUpload && !isScriptUpload) ||
         typeof contentType !== "string" ||
         (isImageUpload && !contentType.startsWith("image/")) ||
@@ -45,15 +46,15 @@ export async function createUploadPresign(body) {
     // Other image/* types are accepted and keep the existing jpg fallback.
     const extension = CONTENT_TYPE_EXTENSIONS[contentType] ?? "jpg";
 
-    if (!movieId) throw new Error("movieId is required");
-    const movieSegment = movieId
+    if (!filmId) throw new Error("filmId is required");
+    const filmSegment = filmId
         .trim()
         .replace(/[^A-Za-z0-9._-]+/g, "_")
         .replace(/^_+|_+$/g, "");
-    if (!movieSegment) throw new Error("movieId is invalid");
+    if (!filmSegment) throw new Error("filmId is invalid");
 
     // The filename consists only of a generated or validated UUID and a known extension.
-    const key = `${UPLOAD_FOLDERS[type]}/${movieSegment}/${id}.${extension}`;
+    const key = `${UPLOAD_FOLDERS[type]}/${filmSegment}/${id}.${extension}`;
 
     const { uploadUrl } = await createPresignedPutUrl({ key, contentType });
     return { uploadUrl, key };

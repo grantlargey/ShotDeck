@@ -7,9 +7,9 @@ export function getStillThumbnail(still) {
   return { key: still?.image_key || null, url: still?.image_url || null };
 }
 
-/** Project page path that opens a still in the scene viewer. */
-export function getStillProjectPath(movieId, stillId) {
+/** Film page path that opens a still in the scene viewer. */
+export function getStillFilmPath(filmId, stillId) {
   const params = new URLSearchParams();
   params.set("annotationId", stillId);
-  return `/movies/${movieId}?${params.toString()}`;
+  return `/films/${filmId}?${params.toString()}`;
 }

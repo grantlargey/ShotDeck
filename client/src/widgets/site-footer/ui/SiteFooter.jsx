@@ -7,10 +7,10 @@ export default function SiteFooter() {
   const { isAdmin } = useSession();
   const links = [
     { to: "/", label: "Explore" },
-    { to: "/movies", label: isAdmin ? "My Projects" : "Projects" },
+    { to: "/library", label: "Library" },
     { to: "/script-search", label: "Script Search" },
     // Visitors get a discreet way in; admins already have the header controls.
-    isAdmin ? { to: "/movies/new", label: "New Project" } : { to: "/login", label: "Admin" },
+    isAdmin ? { to: "/films/new", label: "Add Film" } : { to: "/login", label: "Admin" },
   ];
 
   return (

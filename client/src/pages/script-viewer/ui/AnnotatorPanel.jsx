@@ -124,7 +124,7 @@ function CaptureTab({
   onEditOverlapScene,
   onJumpToAnchor,
   runtimeSeconds,
-  movieTitle,
+  filmTitle,
   onRecapture,
   onExpandDraft,
   onRequestAi,
@@ -225,7 +225,7 @@ function CaptureTab({
         {hasText ? (
           <SceneCard
             scene={draft.previewScene}
-            title={movieTitle}
+            title={filmTitle}
             tooltip="Double-click to expand and edit"
             onDoubleClick={onExpandDraft}
             onKeyActivate={onExpandDraft}
@@ -330,7 +330,7 @@ export function AnnotatorPanel({
   draftActions,
   activeTab,
   onTabChange,
-  movieTitle,
+  filmTitle,
   runtimeSeconds,
   indexStatus,
   overlapScene,
@@ -421,7 +421,7 @@ export function AnnotatorPanel({
             onEditOverlapScene={onEditOverlapScene}
             onJumpToAnchor={onJumpToAnchor}
             runtimeSeconds={runtimeSeconds}
-            movieTitle={movieTitle}
+            filmTitle={filmTitle}
             onRecapture={onRecapture}
             onExpandDraft={onExpandDraft}
             onRequestAi={onRequestAi}

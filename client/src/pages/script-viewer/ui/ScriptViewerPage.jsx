@@ -4,7 +4,7 @@ import { Document, pdfjs } from "react-pdf";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
-import { getStillProjectPath } from "@/entities/still/model/still.js";
+import { getStillFilmPath } from "@/entities/still/model/still.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import {
   findOverlappingScriptLocation,
@@ -13,7 +13,7 @@ import {
   projectScriptLocation,
 } from "@/entities/script-scene/model/scriptLocation.js";
 import { useSession } from "@/entities/session/model/useSession.js";
-import { getMovie } from "@/shared/api/movies.js";
+import { getFilm } from "@/shared/api/films.js";
 import { getScript } from "@/shared/api/scripts.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
@@ -87,13 +87,13 @@ export default function ScriptViewerRoute() {
 
 function ScriptViewerPage() {
   const nav = useNavigate();
-  const { movieId, scriptId } = useParams();
+  const { filmId, scriptId } = useParams();
   const [searchParams] = useSearchParams();
   const sceneIdFromQuery = searchParams.get("sceneId") || searchParams.get("annotationId") || "";
   // Visitors read the script and open scenes; only admins capture and edit.
   const { ready: sessionReady, isAdmin: canEdit } = useSession();
 
-  const [loadedMovie, setLoadedMovie] = useState(null);
+  const [loadedFilm, setLoadedFilm] = useState(null);
   const [loadedScript, setLoadedScript] = useState(null);
   // The captured scenes are part of the page's load, so their failure fails it.
   const [sceneLoadFailed, setSceneLoadFailed] = useState(false);
@@ -124,7 +124,7 @@ function ScriptViewerPage() {
   const { wrapRef, sentinelRef } = windowing;
   // The captured scenes load in their own request, but they are still part of
   // loading the page: a failure reports the same notice and leaves the page
-  // without a project or a script, so the viewer never shows a script whose
+  // without a film or a script, so the viewer never shows a script whose
   // scenes are missing. This stands for the life of the page, which is safe
   // because ScriptViewerRoute keys it by scriptId.
   const reportSceneLoadError = useCallback((error) => {
@@ -132,7 +132,7 @@ function ScriptViewerPage() {
     setNotice({ tone: "error", text: getErrorMessage(error, "Failed to load the script viewer.") });
   }, []);
   // The script's captured scenes, their order and their requests live in useSceneCollection.
-  const scenes = useSceneCollection({ movieId, scriptId, onLoadError: reportSceneLoadError });
+  const scenes = useSceneCollection({ filmId, scriptId, onLoadError: reportSceneLoadError });
   // What the draft's text and script location are, and what saving stores, lives in useSceneDraft.
   const [draft, draftActions] = useSceneDraft(textIndex);
   const draftSceneId = draft.savedScene?.id ?? "";
@@ -144,10 +144,10 @@ function ScriptViewerPage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getMovie(movieId), getScript(movieId, scriptId)])
-      .then(([movieData, scriptData]) => {
+    Promise.all([getFilm(filmId), getScript(filmId, scriptId)])
+      .then(([filmData, scriptData]) => {
         if (cancelled) return;
-        setLoadedMovie(movieData);
+        setLoadedFilm(filmData);
         setLoadedScript(scriptData);
       })
       .catch((error) => {
@@ -159,12 +159,12 @@ function ScriptViewerPage() {
     return () => {
       cancelled = true;
     };
-  }, [movieId, scriptId]);
+  }, [filmId, scriptId]);
 
   // Any part of the load failing leaves the whole page unloaded, whichever
   // request it was: the title falls back, no PDF is offered, and no scenes are
   // listed. A response that arrives after another request failed doesn't undo it.
-  const movie = sceneLoadFailed ? null : loadedMovie;
+  const film = sceneLoadFailed ? null : loadedFilm;
   const script = sceneLoadFailed ? null : loadedScript;
 
   // ---------- Page views of the draft ----------
@@ -177,9 +177,9 @@ function ScriptViewerPage() {
     () => findOverlappingScriptLocation(scenes.list, draft.anchors, draftSceneId),
     [scenes.list, draft.anchors, draftSceneId]
   );
-  const title = movie?.title || "Script";
-  const runtimeSeconds = movie?.runtime_minutes ? Number(movie.runtime_minutes) * 60 : 0;
-  useDocumentTitle(movie ? `${movie.title} script` : "Script");
+  const title = film?.title || "Script";
+  const runtimeSeconds = film?.runtime_minutes ? Number(film.runtime_minutes) * 60 : 0;
+  useDocumentTitle(film ? `${film.title} script` : "Script");
 
   // ---------- Navigation and scrolling ----------
 
@@ -291,9 +291,9 @@ function ScriptViewerPage() {
     if (target) scrollToPoint(target.page, target.offsetPt);
   }
 
-  function openStillInProject(still) {
+  function openStillInFilm(still) {
     if (!still?.id || !confirmDiscardChanges()) return;
-    nav(getStillProjectPath(movieId, still.id));
+    nav(getStillFilmPath(filmId, still.id));
   }
 
   function showScenesWithTag(tag) {
@@ -457,7 +457,7 @@ function ScriptViewerPage() {
         canEdit={canEdit}
         anchorMarkersVisible={showAnchorMarkers}
         onToggleAnchorMarkers={() => setShowAnchorMarkers((visible) => !visible)}
-        onBackToMovie={() => nav(`/movies/${movieId}`)}
+        onBackToFilm={() => nav(`/films/${filmId}`)}
         onSearchScripts={() => nav("/script-search")}
         onJumpToScenes={jumpToScenes}
       />
@@ -508,7 +508,7 @@ function ScriptViewerPage() {
             draftActions={draftActions}
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            movieTitle={title}
+            filmTitle={title}
             runtimeSeconds={runtimeSeconds}
             indexStatus={{ complete: textIndex.complete, loaded: textIndex.pages.size, total: numPages }}
             overlapScene={overlapScene}
@@ -575,10 +575,10 @@ function ScriptViewerPage() {
         <SceneViewerModal
           key={modal.sceneId}
           initial={{ sceneId: modal.sceneId }}
-          source={{ film: { id: movieId, title, scriptId, scriptScenes: scenes.list } }}
+          source={{ film: { id: filmId, title, scriptId, scriptScenes: scenes.list } }}
           onClose={closeModal}
           onSelectTag={showScenesWithTag}
-          onOpenStill={openStillInProject}
+          onOpenStill={openStillInFilm}
           onOpenScene={(scene) => {
             setModal(null);
             if (canEdit) selectScene(scene);

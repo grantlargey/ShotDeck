@@ -12,7 +12,7 @@ function anchor(page, line) {
 function scene(id, page, text) {
   return {
     id,
-    movie_id: "movie-1",
+    movie_id: "film-1",
     script_id: "script-1",
     script_location: { start: anchor(page, 0), end: anchor(page, 1) },
     scene_text: text,
@@ -29,7 +29,7 @@ describe("SceneViewerModal", () => {
     render(
       <SceneViewerModal
         initial={{ sceneId: "scene-1" }}
-        source={{ film: { id: "movie-1", title: "Example film", scriptId: "script-1", scriptScenes: scenes, stills: [] } }}
+        source={{ film: { id: "film-1", title: "Example film", scriptId: "script-1", scriptScenes: scenes, stills: [] } }}
         onClose={() => {}}
       />
     );

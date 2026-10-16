@@ -10,7 +10,7 @@ import {
     startApi,
     uniqueEmail,
 } from "./helpers/api.js";
-import { movieBody } from "./helpers/fixtures.js";
+import { filmBody } from "./helpers/fixtures.js";
 import { pool } from "../src/db.js";
 
 /*
@@ -185,7 +185,7 @@ describe("sessions", () => {
             "sd_admin=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax",
         ]);
         assert.equal(await currentUser(owner.cookie), null);
-        assert.deepEqual((await api.post("/movies", { cookie: owner.cookie, body: movieBody() })).body, SIGN_IN_REQUIRED);
+        assert.deepEqual((await api.post("/movies", { cookie: owner.cookie, body: filmBody() })).body, SIGN_IN_REQUIRED);
     });
 
     test("signing out without a session is also a 204", async () => {
@@ -197,7 +197,7 @@ describe("sessions", () => {
         const owner = await signInOwner(api);
         await pool.query("UPDATE admin_sessions SET expires_at = NOW() - INTERVAL '1 second' WHERE user_id = $1", [owner.user.id]);
         assert.equal(await currentUser(owner.cookie), null);
-        await expectError(api.post("/movies", { cookie: owner.cookie, body: movieBody() }), 401, SIGN_IN_REQUIRED.error);
+        await expectError(api.post("/movies", { cookie: owner.cookie, body: filmBody() }), 401, SIGN_IN_REQUIRED.error);
     });
 });
 
@@ -237,14 +237,14 @@ describe("data-changing routes", () => {
         const refused = "This request came from a site that isn't allowed to change data.";
         const origin = "https://elsewhere.example";
 
-        await expectError(api.post("/movies", { origin, body: movieBody() }), 403, refused);
-        await expectError(api.post("/movies", { origin, cookie: owner.cookie, body: movieBody() }), 403, refused);
+        await expectError(api.post("/movies", { origin, body: filmBody() }), 403, refused);
+        await expectError(api.post("/movies", { origin, cookie: owner.cookie, body: filmBody() }), 403, refused);
         await expectError(api.delete(`/movies/${randomUUID()}`, { origin, cookie: owner.cookie }), 403, refused);
         await expectError(api.post("/auth/login", { origin, body: { email: owner.email, password: owner.password } }), 403, refused);
 
         assert.equal((await api.get("/movies", { origin })).status, 200);
-        await expectError(api.post("/movies", { origin: ALLOWED_ORIGIN, body: movieBody() }), 401, SIGN_IN_REQUIRED.error);
-        assert.equal((await api.post("/movies", { origin: ALLOWED_ORIGIN, cookie: owner.cookie, body: movieBody() })).status, 201);
+        await expectError(api.post("/movies", { origin: ALLOWED_ORIGIN, body: filmBody() }), 401, SIGN_IN_REQUIRED.error);
+        assert.equal((await api.post("/movies", { origin: ALLOWED_ORIGIN, cookie: owner.cookie, body: filmBody() })).status, 201);
     });
 });
 
@@ -297,7 +297,7 @@ describe("managing admin accounts", () => {
             await expectError(api.post(`/auth/admins/${owner.user.id}/${action}`, { cookie: adminCookie }), 403, ownerOnly);
         }
         // An admin can still change data.
-        assert.equal((await api.post("/movies", { cookie: adminCookie, body: movieBody() })).status, 201);
+        assert.equal((await api.post("/movies", { cookie: adminCookie, body: filmBody() })).status, 201);
     });
 
     test("GET /auth/admins lists owners first, then admins oldest first, without password details", async () => {
@@ -396,7 +396,7 @@ describe("managing admin accounts", () => {
         await pool.query("UPDATE admin_users SET disabled_at = NOW() WHERE id = $1", [admin.user.id]);
 
         assert.equal(await currentUser(adminCookie), null);
-        await expectError(api.post("/movies", { cookie: adminCookie, body: movieBody() }), 401, SIGN_IN_REQUIRED.error);
+        await expectError(api.post("/movies", { cookie: adminCookie, body: filmBody() }), 401, SIGN_IN_REQUIRED.error);
     });
 
     test("answers 404 for a missing account and 403 for the owner's own account", async () => {

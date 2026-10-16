@@ -69,7 +69,7 @@ function deferred() {
 async function renderCollection(rows = []) {
   listScriptScenes.mockResolvedValue(rows);
   const onLoadError = vi.fn();
-  const view = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1", onLoadError }));
+  const view = renderHook(() => useSceneCollection({ filmId: "m1", scriptId: "s1", onLoadError }));
   await waitFor(() => expect(view.result.current.loading).toBe(false));
   return { ...view, onLoadError };
 }
@@ -87,7 +87,7 @@ describe("useSceneCollection", () => {
         sceneRow("p1", at(1)),
       ]);
       const onLoadError = vi.fn();
-      const { result } = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1", onLoadError }));
+      const { result } = renderHook(() => useSceneCollection({ filmId: "m1", scriptId: "s1", onLoadError }));
 
       expect(result.current.loading).toBe(true);
       expect(result.current.list).toEqual([]);
@@ -104,7 +104,7 @@ describe("useSceneCollection", () => {
       const error = new Error("GET scene-annotations failed: 500");
       listScriptScenes.mockRejectedValue(error);
       const onLoadError = vi.fn();
-      const { result } = renderHook(() => useSceneCollection({ movieId: "m1", scriptId: "s1", onLoadError }));
+      const { result } = renderHook(() => useSceneCollection({ filmId: "m1", scriptId: "s1", onLoadError }));
 
       await waitFor(() => expect(result.current.loading).toBe(false));
       expect(onLoadError).toHaveBeenCalledWith(error);

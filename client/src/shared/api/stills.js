@@ -1,7 +1,7 @@
 import { req } from "./request.js";
 
-export function listStills(movieId) {
-  return req(`/movies/${encodeURIComponent(movieId)}/annotations`);
+export function listStills(filmId) {
+  return req(`/movies/${encodeURIComponent(filmId)}/annotations`);
 }
 
 /** A random handful of stills with images from across the films, each with its film's title. */
@@ -10,8 +10,8 @@ export function sampleStills() {
 }
 
 /** Attaches an uploaded image. The still-save module owns upload progress. */
-export function createStill({ movieId, id, timeSeconds, imageKey }) {
-  return req(`/movies/${encodeURIComponent(movieId)}/annotations`, {
+export function createStill({ filmId, id, timeSeconds, imageKey }) {
+  return req(`/movies/${encodeURIComponent(filmId)}/annotations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -22,9 +22,9 @@ export function createStill({ movieId, id, timeSeconds, imageKey }) {
   });
 }
 
-export function updateStill({ movieId, stillId, timeSeconds, imageKey }) {
+export function updateStill({ filmId, stillId, timeSeconds, imageKey }) {
   return req(
-    `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(stillId)}`,
+    `/movies/${encodeURIComponent(filmId)}/annotations/${encodeURIComponent(stillId)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -36,9 +36,9 @@ export function updateStill({ movieId, stillId, timeSeconds, imageKey }) {
   );
 }
 
-export function deleteStill(movieId, stillId) {
+export function deleteStill(filmId, stillId) {
   return req(
-    `/movies/${encodeURIComponent(movieId)}/annotations/${encodeURIComponent(stillId)}`,
+    `/movies/${encodeURIComponent(filmId)}/annotations/${encodeURIComponent(stillId)}`,
     { method: "DELETE" }
   );
 }

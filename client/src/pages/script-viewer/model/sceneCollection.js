@@ -25,7 +25,7 @@ import {
  * Loads and keeps the captured scenes of one script.
  *
  * ```js
- * const scenes = useSceneCollection({ movieId, scriptId });
+ * const scenes = useSceneCollection({ filmId, scriptId });
  * ```
  *
  * | Field | Meaning |
@@ -42,7 +42,7 @@ import {
  * `scene`) or `{ ok: false, error }`. A failed request leaves the list as it
  * was and calls neither draft callback.
  */
-export function useSceneCollection({ movieId, scriptId, onLoadError }) {
+export function useSceneCollection({ filmId, scriptId, onLoadError }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,7 +51,7 @@ export function useSceneCollection({ movieId, scriptId, onLoadError }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    listScriptScenes(movieId, scriptId)
+    listScriptScenes(filmId, scriptId)
       .then((rows) => {
         if (!cancelled) setList(sortScriptScenes(Array.isArray(rows) ? rows : []));
       })
@@ -66,11 +66,11 @@ export function useSceneCollection({ movieId, scriptId, onLoadError }) {
     return () => {
       cancelled = true;
     };
-  }, [movieId, scriptId, onLoadError]);
+  }, [filmId, scriptId, onLoadError]);
 
   // The requests below need no cancellation guard, unlike the load above:
   // `ScriptViewerRoute` keys the page by `scriptId`, so another script is another
-  // page with its own collection, and `movieId` can't change without the script
+  // page with its own collection, and `filmId` can't change without the script
   // changing. A route that dropped that key would have to add one, or a late
   // response could land in a collection that has moved to another script.
   return {
@@ -88,8 +88,8 @@ export function useSceneCollection({ movieId, scriptId, onLoadError }) {
       setSaving(true);
       try {
         const scene = sceneId
-          ? await updateScriptScene(movieId, scriptId, sceneId, payload)
-          : await createScriptScene(movieId, scriptId, payload);
+          ? await updateScriptScene(filmId, scriptId, sceneId, payload)
+          : await createScriptScene(filmId, scriptId, payload);
         setList((rows) => sortScriptScenes([...rows.filter((row) => row.id !== scene.id), scene]));
         applySaved(scene);
         return { ok: true, scene };
@@ -109,7 +109,7 @@ export function useSceneCollection({ movieId, scriptId, onLoadError }) {
       const completeDelete = prepareDelete(sceneId);
       setDeletingSceneId(sceneId);
       try {
-        await deleteScriptScene(movieId, scriptId, sceneId);
+        await deleteScriptScene(filmId, scriptId, sceneId);
         setList((rows) => rows.filter((row) => row.id !== sceneId));
         completeDelete();
         return { ok: true };

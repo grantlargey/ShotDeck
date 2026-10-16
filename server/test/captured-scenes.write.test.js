@@ -4,7 +4,7 @@ import { describe, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { pool } from "../src/db.js";
 import { signInOwner, startApi } from "./helpers/api.js";
-import { anchorPair, createMovieWithScript, createScene, sceneBody, scenesPath, TAGS } from "./helpers/fixtures.js";
+import { anchorPair, createFilmWithScript, createScene, sceneBody, scenesPath, TAGS } from "./helpers/fixtures.js";
 
 const api = await startApi();
 const { cookie } = await signInOwner(api);
@@ -42,7 +42,7 @@ function without(body, ...fields) {
 }
 
 async function newPlace() {
-    return createMovieWithScript(api, cookie);
+    return createFilmWithScript(api, cookie);
 }
 
 function postScene(place, body) {
@@ -87,7 +87,7 @@ describe("creating a captured scene", () => {
         const response = await postScene(place, body);
         assert.equal(response.status, 201, response.text);
         assert.deepEqual(Object.keys(response.body).sort(), SCENE_FIELDS);
-        assert.equal(response.body.movie_id, place.movie.id);
+        assert.equal(response.body.movie_id, place.film.id);
         assert.equal(response.body.script_id, place.script.id);
         assert.deepEqual(response.body.script_location, body.script_location);
         assert.equal(response.body.scene_text, body.scene_text);
@@ -196,7 +196,7 @@ describe("creating a captured scene", () => {
 
     test("checks script ownership only after body validation", async () => {
         const place = await newPlace();
-        const missing = { movie: place.movie, script: { id: randomUUID() } };
+        const missing = { film: place.film, script: { id: randomUUID() } };
         await expectError(postScene(missing, sceneBody()), 404, MESSAGES.scriptNotFound);
         await expectError(postScene(missing, {}), 400, MESSAGES.filmTiming);
     });
@@ -305,7 +305,7 @@ describe("updating and deleting a captured scene", () => {
         assert.deepEqual(response.body.script_location, body.script_location);
     });
 
-    test("update and delete are scoped through the script's movie", async () => {
+    test("update and delete are scoped through the script's film", async () => {
         const place = await newPlace();
         const other = await newPlace();
         const saved = await createScene(api, cookie, place);
@@ -432,11 +432,11 @@ describe("concurrent zero-length saves", () => {
 describe("the captured PDF precondition", () => {
     test("a replaced PDF refuses a stale tab, while a same-key retry keeps the draft valid", async () => {
         const place = await newPlace();
-        const savePdf = (key) => api.post(`/movies/${place.movie.id}/scripts`, { cookie, body: { s3_key: key } });
+        const savePdf = (key) => api.post(`/movies/${place.film.id}/scripts`, { cookie, body: { s3_key: key } });
         await savePdf(place.script.s3_key);
         const saved = await postScene(place, sceneBody());
         assert.equal(saved.status, 201, saved.text);
-        const replacement = await savePdf(`scripts/${place.movie.id}/replacement.pdf`);
+        const replacement = await savePdf(`scripts/${place.film.id}/replacement.pdf`);
         assert.equal(replacement.status, 201, replacement.text);
         await expectError(postScene(place, sceneBody()), 409,
             "The script PDF has changed. Reload it before saving a scene.");
@@ -457,11 +457,11 @@ describe("the captured PDF precondition", () => {
         let request;
         try {
             await holder.query("BEGIN");
-            await holder.query("SELECT id FROM movies WHERE id = $1 FOR NO KEY UPDATE", [place.movie.id]);
+            await holder.query("SELECT id FROM movies WHERE id = $1 FOR NO KEY UPDATE", [place.film.id]);
             request = postScene(place, sceneBody());
             await waitForLockWaiters(1);
             await holder.query("UPDATE scripts SET s3_key = $2 WHERE id = $1",
-                [place.script.id, `scripts/${place.movie.id}/replacement.pdf`]);
+                [place.script.id, `scripts/${place.film.id}/replacement.pdf`]);
             await holder.query("COMMIT");
             await expectError(request, 409, "The script PDF has changed. Reload it before saving a scene.");
             assert.deepEqual((await api.get(scenesPath(place))).body, []);

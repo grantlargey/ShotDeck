@@ -73,7 +73,7 @@ export const TAGS = {
     selfConflict: "conflict-type:character-vs-self",
 };
 
-export function movieBody(overrides = {}) {
+export function filmBody(overrides = {}) {
     return {
         title: "Night Diner",
         director: "Ada Park",
@@ -85,25 +85,25 @@ export function movieBody(overrides = {}) {
     };
 }
 
-export async function createMovie(api, cookie, overrides = {}) {
-    const response = await api.post("/movies", { cookie, body: movieBody(overrides) });
+export async function createFilm(api, cookie, overrides = {}) {
+    const response = await api.post("/movies", { cookie, body: filmBody(overrides) });
     assert.equal(response.status, 201, response.text);
     return response.body;
 }
 
-export async function saveScript(api, cookie, movie, overrides = {}) {
-    const response = await api.post(`/movies/${movie.id}/scripts`, {
+export async function saveScript(api, cookie, film, overrides = {}) {
+    const response = await api.post(`/movies/${film.id}/scripts`, {
         cookie,
-        body: { s3_key: `scripts/${movie.id}/script.pdf`, ...overrides },
+        body: { s3_key: `scripts/${film.id}/script.pdf`, ...overrides },
     });
     assert.equal(response.status, 201, response.text);
     return response.body;
 }
 
-/** A movie with its script, ready for captured scenes. */
-export async function createMovieWithScript(api, cookie, overrides = {}) {
-    const movie = await createMovie(api, cookie, overrides);
-    return { movie, script: await saveScript(api, cookie, movie) };
+/** A film with its script, ready for captured scenes. */
+export async function createFilmWithScript(api, cookie, overrides = {}) {
+    const film = await createFilm(api, cookie, overrides);
+    return { film, script: await saveScript(api, cookie, film) };
 }
 
 /**
@@ -139,8 +139,8 @@ export function sceneBody(overrides = {}) {
     };
 }
 
-export function scenesPath({ movie, script }) {
-    return `/movies/${movie.id}/scripts/${script.id}/scene-annotations`;
+export function scenesPath({ film, script }) {
+    return `/movies/${film.id}/scripts/${script.id}/scene-annotations`;
 }
 
 export async function createScene(api, cookie, place, overrides = {}) {

@@ -54,5 +54,5 @@ export function getSceneScriptPath(scene) {
   params.set("sceneId", scene.id);
   const range = scenePageRange(scene);
   if (range) params.set("page", String(range.pageStart));
-  return `/movies/${scene.movie_id}/scripts/${scene.script_id}?${params.toString()}`;
+  return `/films/${scene.movie_id}/scripts/${scene.script_id}?${params.toString()}`;
 }

@@ -17,24 +17,24 @@ import { HttpError } from "../src/utils/http-error.js";
 // through it; closing it keeps the test process from holding a pool open.
 after(() => pool.end());
 
-const MOVIE_ID = "11111111-1111-4111-8111-111111111111";
+const FILM_ID = "11111111-1111-4111-8111-111111111111";
 const SCRIPT_ID = "22222222-2222-4222-8222-222222222222";
 const CAPTURED_KEY = "scripts/night-diner/script.pdf";
 const REPLACEMENT_KEY = "scripts/night-diner/replacement.pdf";
 
-const MOVIE_ROW = { id: MOVIE_ID, title: "Night Diner" };
+const FILM_ROW = { id: FILM_ID, title: "Night Diner" };
 
 /**
  * A Pool that answers the two lock queries from the rows given and keeps every
  * statement it was asked for. withFilmWrite reaches a database only through
  * pool.connect(), which is the whole seam this stands in.
  */
-function recordingPool({ movie = MOVIE_ROW, script = { s3_key: CAPTURED_KEY } } = {}) {
+function recordingPool({ film = FILM_ROW, script = { s3_key: CAPTURED_KEY } } = {}) {
     const statements = [];
     const client = {
         async query(text) {
             statements.push(text);
-            if (text.includes("FROM movies")) return { rows: movie ? [movie] : [] };
+            if (text.includes("FROM movies")) return { rows: film ? [film] : [] };
             if (text.includes("FROM scripts")) return { rows: script ? [script] : [] };
             return { rows: [] };
         },
@@ -53,8 +53,8 @@ function spyWork(result = "written") {
     const calls = [];
     return {
         calls,
-        work: (client, movie) => {
-            calls.push({ client, movie });
+        work: (client, film) => {
+            calls.push({ client, film });
             return result;
         },
     };
@@ -80,14 +80,14 @@ function thrownBy(call) {
 }
 
 describe("withFilmWrite and the key of the captured PDF", () => {
-    test("runs the work when the key still matches the script, locking movie then script", async () => {
+    test("runs the work when the key still matches the script, locking film then script", async () => {
         const { pool: recorder, statements } = recordingPool();
         const { calls, work } = spyWork();
 
-        const result = await withFilmWrite(recorder, { movieId: MOVIE_ID, scriptId: SCRIPT_ID, scriptKey: CAPTURED_KEY }, work);
+        const result = await withFilmWrite(recorder, { filmId: FILM_ID, scriptId: SCRIPT_ID, scriptKey: CAPTURED_KEY }, work);
 
         assert.equal(result, "written");
-        assert.deepEqual(calls.map(({ movie }) => movie), [MOVIE_ROW]);
+        assert.deepEqual(calls.map(({ film }) => film), [FILM_ROW]);
         assert.deepEqual(
             locks(statements).map((text) => (text.includes("FROM movies") ? "movies" : "scripts")),
             ["movies", "scripts"]
@@ -100,7 +100,7 @@ describe("withFilmWrite and the key of the captured PDF", () => {
         const { calls, work } = spyWork();
 
         const error = await refusal(
-            withFilmWrite(recorder, { movieId: MOVIE_ID, scriptId: SCRIPT_ID, scriptKey: CAPTURED_KEY }, work)
+            withFilmWrite(recorder, { filmId: FILM_ID, scriptId: SCRIPT_ID, scriptKey: CAPTURED_KEY }, work)
         );
 
         assert.ok(error instanceof HttpError, error.stack);
@@ -115,7 +115,7 @@ describe("withFilmWrite and the key of the captured PDF", () => {
         const { calls, work } = spyWork();
 
         const error = await refusal(
-            withFilmWrite(recorder, { movieId: MOVIE_ID, scriptId: SCRIPT_ID, scriptKey: null }, work)
+            withFilmWrite(recorder, { filmId: FILM_ID, scriptId: SCRIPT_ID, scriptKey: null }, work)
         );
 
         assert.ok(error instanceof HttpError, error.stack);
@@ -128,15 +128,15 @@ describe("withFilmWrite and the key of the captured PDF", () => {
     // missing key would skip both of them. It is a mistake in the calling code,
     // so it fails at the call and never becomes an HttpError a user could be
     // told to act on.
-    for (const [name, film] of [
-        ["left off", { movieId: MOVIE_ID, scriptId: SCRIPT_ID }],
-        ["undefined, as `body?.script_key` gives with no key in the body", { movieId: MOVIE_ID, scriptId: SCRIPT_ID, scriptKey: undefined }],
+    for (const [name, target] of [
+        ["left off", { filmId: FILM_ID, scriptId: SCRIPT_ID }],
+        ["undefined, as `body?.script_key` gives with no key in the body", { filmId: FILM_ID, scriptId: SCRIPT_ID, scriptKey: undefined }],
     ]) {
         test(`throws at the call when the key is ${name}`, () => {
             const { pool: recorder, statements } = recordingPool();
             const { calls, work } = spyWork();
 
-            const error = thrownBy(() => withFilmWrite(recorder, film, work));
+            const error = thrownBy(() => withFilmWrite(recorder, target, work));
 
             assert.ok(!(error instanceof HttpError), error.stack);
             assert.match(error.message, /needs the scriptKey that goes with scriptId/);
@@ -149,24 +149,24 @@ describe("withFilmWrite and the key of the captured PDF", () => {
         const { pool: recorder, statements } = recordingPool({ script: null });
         const { calls, work } = spyWork();
 
-        const result = await withFilmWrite(recorder, { movieId: MOVIE_ID }, work);
+        const result = await withFilmWrite(recorder, { filmId: FILM_ID }, work);
 
         assert.equal(result, "written");
-        assert.deepEqual(calls.map(({ movie }) => movie), [MOVIE_ROW]);
+        assert.deepEqual(calls.map(({ film }) => film), [FILM_ROW]);
         assert.deepEqual(locks(statements), ["SELECT * FROM movies WHERE id = $1 FOR NO KEY UPDATE"]);
         assert.ok(!statements.some((text) => text.includes("FROM scripts")), statements.join(" | "));
     });
 
-    test("still answers 404 for a missing movie before it looks at any key", async () => {
-        const { pool: recorder } = recordingPool({ movie: null });
+    test("still answers 404 for a missing film before it looks at any key", async () => {
+        const { pool: recorder } = recordingPool({ film: null });
         const { calls, work } = spyWork();
 
         const error = await refusal(
-            withFilmWrite(recorder, { movieId: MOVIE_ID, scriptId: SCRIPT_ID, scriptKey: null }, work)
+            withFilmWrite(recorder, { filmId: FILM_ID, scriptId: SCRIPT_ID, scriptKey: null }, work)
         );
 
         assert.equal(error.status, 404);
-        assert.equal(error.message, "Movie not found");
+        assert.equal(error.message, "Film not found");
         assert.deepEqual(calls, []);
     });
 });

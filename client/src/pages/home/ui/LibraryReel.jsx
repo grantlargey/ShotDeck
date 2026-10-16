@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getStillProjectPath, getStillThumbnail } from "@/entities/still/model/still.js";
+import { getStillFilmPath, getStillThumbnail } from "@/entities/still/model/still.js";
 import { displayScriptSceneText, getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { sampleStills } from "@/shared/api/stills.js";
@@ -85,7 +85,7 @@ function fillRow(items) {
   return row;
 }
 
-/** A still in the reel. It opens the still on its project page. */
+/** A still in the reel. It opens the still on its film page. */
 function StillFrame({ still, copy }) {
   const thumbnail = getStillThumbnail(still);
   const url = useSignedMediaUrl(thumbnail.key, thumbnail.url);
@@ -103,7 +103,7 @@ function StillFrame({ still, copy }) {
   return (
     <Link
       className={styles.frame}
-      to={getStillProjectPath(still.movie_id, still.id)}
+      to={getStillFilmPath(still.movie_id, still.id)}
       tabIndex={copy ? -1 : undefined}
       aria-label={`${still.movie_title}, still at ${time}`}
     >

@@ -6,7 +6,7 @@ import { queueThumbnailsForRows } from "./thumbnails.service.js";
 
 /*
  * Stills: images from a film, each placed at one moment of it. They are stored
- * in the `annotations` table and served under /movies/:movieId/annotations.
+ * in the `annotations` table and served under /movies/:filmId/annotations.
  * This module owns still validation, the still SQL and the still response shape.
  *
  * A moment is held to a tenth of a second, and no two shots of a film share
@@ -60,13 +60,13 @@ function formatMoment(seconds) {
  * the next moment themselves: which tenth of that second is free, or that none
  * is.
  */
-async function duplicateTimeError(db, { movieId, seconds, stillId }) {
+async function duplicateTimeError(db, { filmId, seconds, stillId }) {
     const second = Math.floor(seconds);
     const taken = await db.query(
         `SELECT time_seconds::float8 AS time_seconds
          FROM annotations
          WHERE movie_id = $1 AND id IS DISTINCT FROM $2 AND time_seconds >= $3 AND time_seconds < $4`,
-        [movieId, stillId, second, second + 1]
+        [filmId, stillId, second, second + 1]
     );
     const held = new Set(taken.rows.map((row) => toTenths(row.time_seconds)));
     const moments = Array.from({ length: TENTHS_PER_SECOND }, (_, tenth) => second + tenth / TENTHS_PER_SECOND);
@@ -89,15 +89,15 @@ async function duplicateTimeError(db, { movieId, seconds, stillId }) {
     return new HttpError(409, `${start} Every tenth of ${formatMoment(second)} is taken, so choose another second.`);
 }
 
-async function validateStillTime(db, movie, seconds, stillId) {
-    if (seconds > (movie.runtime_minutes + 1) * 60) {
-        throw new HttpError(400, "The timestamp cannot exceed the movie's stored runtime plus one minute.");
+async function validateStillTime(db, film, seconds, stillId) {
+    if (seconds > (film.runtime_minutes + 1) * 60) {
+        throw new HttpError(400, "The timestamp cannot exceed the film's stored runtime plus one minute.");
     }
     const duplicate = await db.query(
         "SELECT 1 FROM annotations WHERE movie_id = $1 AND time_seconds = $2 AND id <> $3 LIMIT 1",
-        [movie.id, seconds, stillId]
+        [film.id, seconds, stillId]
     );
-    if (duplicate.rowCount > 0) throw await duplicateTimeError(db, { movieId: movie.id, seconds, stillId });
+    if (duplicate.rowCount > 0) throw await duplicateTimeError(db, { filmId: film.id, seconds, stillId });
 }
 
 /** The same conflict, reached through the constraint when two writes race. */
@@ -129,19 +129,19 @@ async function toStillResponse(row) {
     };
 }
 
-export async function createStill(pool, movieId, body) {
+export async function createStill(pool, filmId, body) {
     const fields = body ?? {};
     if (!isValidStillBody(fields)) throw new HttpError(400, INVALID_BODY_MESSAGE);
     if (fields.id !== undefined && !isUuid(fields.id)) throw new HttpError(400, "Invalid still id. Expected a UUID.");
     const id = fields.id ?? uuidv4();
-    const row = await withFilmWrite(pool, { movieId }, async (client, movie) => {
+    const row = await withFilmWrite(pool, { filmId }, async (client, film) => {
         // Replaying creation keeps subsequent edits, even if the original time is now occupied.
         const existing = await client.query(
             `SELECT ${STILL_COLUMNS_SQL} FROM annotations WHERE id = $1 AND movie_id = $2`,
-            [id, movieId]
+            [id, filmId]
         );
         if (existing.rows[0]) return existing.rows[0];
-        await validateStillTime(client, movie, fields.time_seconds, id);
+        await validateStillTime(client, film, fields.time_seconds, id);
         const result = await client.query(
             `
             INSERT INTO annotations (id, movie_id, time_seconds, image_key)
@@ -149,7 +149,7 @@ export async function createStill(pool, movieId, body) {
             ON CONFLICT (id) DO NOTHING
             RETURNING ${STILL_COLUMNS_SQL}
           `,
-            [id, movieId, fields.time_seconds, fields.image_key ?? null]
+            [id, filmId, fields.time_seconds, fields.image_key ?? null]
         );
 
         // A separate read sees a concurrent insert after the unique constraint
@@ -159,17 +159,17 @@ export async function createStill(pool, movieId, body) {
             (
                 await client.query(`SELECT ${STILL_COLUMNS_SQL} FROM annotations WHERE id = $1 AND movie_id = $2`, [
                     id,
-                    movieId,
+                    filmId,
                 ])
             ).rows[0];
         if (!saved) throw new HttpError(409, "Still identity is already in use.");
         return saved;
-    }).catch((error) => stillWriteError(pool, { movieId, seconds: fields.time_seconds, stillId: id }, error));
+    }).catch((error) => stillWriteError(pool, { filmId, seconds: fields.time_seconds, stillId: id }, error));
     queueThumbnailsForRows(pool, [row]);
     return toStillResponse(row);
 }
 
-export async function listStills(db, movieId) {
+export async function listStills(db, filmId) {
     const result = await db.query(
         `
         SELECT ${STILL_COLUMNS_SQL}
@@ -177,7 +177,7 @@ export async function listStills(db, movieId) {
         WHERE movie_id = $1
         ORDER BY time_seconds ASC
       `,
-        [movieId]
+        [filmId]
     );
 
     queueThumbnailsForRows(db, result.rows);
@@ -217,14 +217,14 @@ export async function sampleStills(db) {
 }
 
 /** Replaces the time. The image is kept when the body leaves image_key out, and null removes it. */
-export async function updateStill(pool, { movieId, stillId, body }) {
+export async function updateStill(pool, { filmId, stillId, body }) {
     const fields = body ?? {};
     if (!isValidStillBody(fields)) throw new HttpError(400, INVALID_BODY_MESSAGE);
 
-    const row = await withFilmWrite(pool, { movieId }, async (client, movie) => {
-        const saved = await client.query(`SELECT image_key FROM annotations WHERE id = $1 AND movie_id = $2`, [stillId, movieId]);
+    const row = await withFilmWrite(pool, { filmId }, async (client, film) => {
+        const saved = await client.query(`SELECT image_key FROM annotations WHERE id = $1 AND movie_id = $2`, [stillId, filmId]);
         if (!saved.rows[0]) throw new HttpError(404, "Annotation not found");
-        await validateStillTime(client, movie, fields.time_seconds, stillId);
+        await validateStillTime(client, film, fields.time_seconds, stillId);
 
         const imageKey = fields.image_key === undefined ? saved.rows[0].image_key : fields.image_key;
         const result = await client.query(
@@ -237,17 +237,17 @@ export async function updateStill(pool, { movieId, stillId, body }) {
             WHERE id = $3 AND movie_id = $4
             RETURNING ${STILL_COLUMNS_SQL}
           `,
-            [fields.time_seconds, imageKey, stillId, movieId]
+            [fields.time_seconds, imageKey, stillId, filmId]
         );
         if (!result.rows[0]) throw new HttpError(404, "Annotation not found");
         return result.rows[0];
-    }).catch((error) => stillWriteError(pool, { movieId, seconds: fields.time_seconds, stillId }, error));
+    }).catch((error) => stillWriteError(pool, { filmId, seconds: fields.time_seconds, stillId }, error));
 
     queueThumbnailsForRows(pool, [row]);
     return toStillResponse(row);
 }
 
-export async function deleteStill(db, { movieId, stillId }) {
-    const result = await db.query(`DELETE FROM annotations WHERE id = $1 AND movie_id = $2`, [stillId, movieId]);
+export async function deleteStill(db, { filmId, stillId }) {
+    const result = await db.query(`DELETE FROM annotations WHERE id = $1 AND movie_id = $2`, [stillId, filmId]);
     if (result.rowCount === 0) throw new HttpError(404, "Annotation not found");
 }

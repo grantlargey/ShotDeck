@@ -94,9 +94,9 @@ describe("the library reel", () => {
     await act(async () => scenes.resolve([SCENE]));
     expect(section().getAttribute("aria-busy")).toBe("false");
     const stillLink = within(section()).getAllByRole("link", { name: "Night Diner, still at 00:01:00" })[0];
-    expect(stillLink.getAttribute("href")).toBe("/movies/m1?annotationId=a1");
+    expect(stillLink.getAttribute("href")).toBe("/films/m1?annotationId=a1");
     const sceneLink = within(section()).getAllByRole("link", { name: /^Harbor Lights, scene at / })[0];
-    expect(sceneLink.getAttribute("href")).toBe("/movies/m2/scripts/s1?sceneId=c1&page=3");
+    expect(sceneLink.getAttribute("href")).toBe("/films/m2/scripts/s1?sceneId=c1&page=3");
   });
 
   it("keeps each strip's loop copy away from screen readers and the Tab key, but clickable", async () => {

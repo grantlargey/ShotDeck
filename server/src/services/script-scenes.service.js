@@ -39,18 +39,18 @@ const CONFLICT_MESSAGES = {
  * body.script_key must identify the PDF the caller captured, not a key fetched
  * just before saving. A replaced PDF is a 409; an omitted key is a 400.
  */
-export async function saveScriptScene(pool, { movieId, scriptId, sceneId = null, body }) {
+export async function saveScriptScene(pool, { filmId, scriptId, sceneId = null, body }) {
     const input = readSceneBody(body);
     try {
-        return await withFilmWrite(pool, { movieId, scriptId, scriptKey: body?.script_key ?? null }, async (client) => {
-            const saved = sceneId ? await findSavedScene(client, { movieId, scriptId, sceneId }) : null;
+        return await withFilmWrite(pool, { filmId, scriptId, scriptKey: body?.script_key ?? null }, async (client) => {
+            const saved = sceneId ? await findSavedScene(client, { filmId, scriptId, sceneId }) : null;
             if (sceneId && !saved) throw new HttpError(404, SCENE_NOT_FOUND);
 
             const conflict = await findConflict(client, { scriptId, sceneId, input });
             if (conflict) throw conflict;
 
             const savedId = await writeScene(client, { scriptId, sceneId: saved?.id, input });
-            return sceneFromRow(await fetchSceneRow(client, { movieId, scriptId, sceneId: savedId }));
+            return sceneFromRow(await fetchSceneRow(client, { filmId, scriptId, sceneId: savedId }));
         });
     } catch (error) {
         if (error?.code !== "23P01") throw error;
@@ -60,23 +60,23 @@ export async function saveScriptScene(pool, { movieId, scriptId, sceneId = null,
     }
 }
 
-export async function listScriptScenes(db, { movieId, scriptId }) {
+export async function listScriptScenes(db, { filmId, scriptId }) {
     const result = await db.query(
         `${SCENE_SELECT_SQL}
          WHERE s.movie_id = $1 AND sc.script_id = $2
          ORDER BY sc.start_page, sc.start_y, sc.id`,
-        [movieId, scriptId]
+        [filmId, scriptId]
     );
     return result.rows.map(sceneFromRow);
 }
 
-export async function deleteScriptScene(pool, { movieId, scriptId, sceneId }) {
-    await withFilmWrite(pool, { movieId }, async (client) => {
+export async function deleteScriptScene(pool, { filmId, scriptId, sceneId }) {
+    await withFilmWrite(pool, { filmId }, async (client) => {
         const result = await client.query(
             `DELETE FROM captured_scenes sc
              USING scripts s
              WHERE sc.script_id = s.id AND sc.id = $1 AND s.movie_id = $2 AND sc.script_id = $3`,
-            [sceneId, movieId, scriptId]
+            [sceneId, filmId, scriptId]
         );
         if (result.rowCount === 0) throw new HttpError(404, SCENE_NOT_FOUND);
     });
@@ -275,21 +275,21 @@ function titledSceneFromRow(row) {
     return { ...sceneFromRow(row), movie_title: row.movie_title };
 }
 
-async function fetchSceneRow(db, { movieId, scriptId, sceneId }) {
+async function fetchSceneRow(db, { filmId, scriptId, sceneId }) {
     const result = await db.query(
         `${SCENE_SELECT_SQL} WHERE sc.id = $1 AND s.movie_id = $2 AND sc.script_id = $3`,
-        [sceneId, movieId, scriptId]
+        [sceneId, filmId, scriptId]
     );
     return result.rows[0];
 }
 
-async function findSavedScene(db, { movieId, scriptId, sceneId }) {
+async function findSavedScene(db, { filmId, scriptId, sceneId }) {
     const result = await db.query(
         `SELECT sc.id
          FROM captured_scenes sc
          JOIN scripts s ON s.id = sc.script_id
          WHERE sc.id = $1 AND s.movie_id = $2 AND sc.script_id = $3`,
-        [sceneId, movieId, scriptId]
+        [sceneId, filmId, scriptId]
     );
     return result.rows[0] ?? null;
 }
