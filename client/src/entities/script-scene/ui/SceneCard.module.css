@@ -152,6 +152,177 @@
   gap: 5px;
 }
 
+/* ---------- Still motion (Script Search's card switch) ---------- */
+
+/*
+ * While a still plays in or away, the card is its own size container, so the
+ * still and paper can be sized as 16:9 of its width (56.25cqi) and those sizes
+ * can animate. The still keeps its full height inside a frame that opens or
+ * closes around it. Timings match stillMotion.js.
+ */
+.stillIn,
+.stillOut {
+  container-type: inline-size;
+}
+
+:is(.stillIn, .stillOut) :is(.stillImage, .stillEmpty) {
+  height: 56.25cqi;
+}
+
+/* In: every frame opens at once, then each still arrives as its own negative and turns positive. */
+.stillIn .still {
+  animation: still-open 340ms cubic-bezier(0.3, 0.7, 0.25, 1) both;
+}
+
+.stillIn .paper {
+  animation: paper-open 340ms cubic-bezier(0.3, 0.7, 0.25, 1) both;
+}
+
+.stillIn .meta {
+  animation: meta-open 340ms cubic-bezier(0.3, 0.7, 0.25, 1) both;
+}
+
+.stillIn :is(.stillImage, .stillEmpty) {
+  animation: negative-in 1060ms linear calc(var(--still-delay, 0ms) + 120ms) both;
+}
+
+/* Away: each still turns back into a negative and fades, then the frames close together. */
+.stillOut :is(.stillImage, .stillEmpty) {
+  animation: negative-out 600ms linear var(--still-delay, 0ms) both;
+}
+
+.stillOut .still {
+  animation: still-close 320ms cubic-bezier(0.65, 0, 0.35, 1) var(--frame-delay, 0ms) both;
+}
+
+.stillOut .paper {
+  animation: paper-close 320ms cubic-bezier(0.65, 0, 0.35, 1) var(--frame-delay, 0ms) both;
+}
+
+.stillOut .meta {
+  animation: meta-close 320ms cubic-bezier(0.65, 0, 0.35, 1) var(--frame-delay, 0ms) both;
+}
+
+@keyframes still-open {
+  from {
+    height: 0;
+  }
+
+  to {
+    height: 56.25cqi;
+  }
+}
+
+@keyframes still-close {
+  from {
+    height: 56.25cqi;
+  }
+
+  to {
+    height: 0;
+  }
+}
+
+/*
+ * In a row with a taller card, the paper takes up the slack in the script
+ * layout and the metadata takes it in the split one. They hand it over evenly
+ * as the frame moves, so neither jumps: the metadata grows from its content
+ * here, which ends at the same size as the split layout's flex: 1.
+ */
+@keyframes paper-open {
+  from {
+    flex: 1 0 196px;
+  }
+
+  to {
+    flex: 0 0 56.25cqi;
+  }
+}
+
+@keyframes paper-close {
+  from {
+    flex: 0 0 56.25cqi;
+  }
+
+  to {
+    flex: 1 0 196px;
+  }
+}
+
+@keyframes meta-open {
+  from {
+    flex: 0 1 auto;
+  }
+
+  to {
+    flex: 1 1 auto;
+  }
+}
+
+@keyframes meta-close {
+  from {
+    flex: 1 1 auto;
+  }
+
+  to {
+    flex: 0 1 auto;
+  }
+}
+
+/*
+ * The negative is the still inverted on film's orange base. Each turn is eased
+ * as a whole (ease-in-out), so every step below carries its own piece of that
+ * one curve.
+ */
+@keyframes negative-in {
+  0% {
+    opacity: 0;
+    filter: invert(1) sepia(0.5) saturate(2.6) hue-rotate(-14deg) brightness(0.95) contrast(1.05);
+    animation-timing-function: cubic-bezier(0.383, 0, 0.706, 0.401);
+  }
+
+  27.76% {
+    opacity: 1;
+    filter: invert(1) sepia(0.5) saturate(2.6) hue-rotate(-14deg) brightness(0.95) contrast(1.05);
+  }
+
+  44.15% {
+    opacity: 1;
+    filter: invert(1) sepia(0.5) saturate(2.6) hue-rotate(-14deg) brightness(0.95) contrast(1.05);
+    animation-timing-function: cubic-bezier(0.297, 0.464, 0.574, 1);
+  }
+
+  100% {
+    opacity: 1;
+    filter: invert(0) sepia(0) saturate(1) hue-rotate(0deg) brightness(1) contrast(1);
+  }
+}
+
+@keyframes negative-out {
+  0% {
+    opacity: 1;
+    filter: invert(0) sepia(0) saturate(1) hue-rotate(0deg) brightness(1) contrast(1);
+    animation-timing-function: cubic-bezier(0.428, 0, 0.701, 0.544);
+  }
+
+  57.05% {
+    opacity: 1;
+    filter: invert(1) sepia(0.5) saturate(2.6) hue-rotate(-14deg) brightness(0.95) contrast(1.05);
+    animation-timing-function: cubic-bezier(0.286, 0.537, 0.59, 1);
+  }
+
+  100% {
+    opacity: 0;
+    filter: invert(1) sepia(0.5) saturate(2.6) hue-rotate(-14deg) brightness(0.95) contrast(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.stillIn, .stillOut) :is(.still, .paper, .meta, .stillImage, .stillEmpty) {
+    animation: none;
+  }
+}
+
 /* ---------- Loading placeholder ---------- */
 
 .skeletonCard {

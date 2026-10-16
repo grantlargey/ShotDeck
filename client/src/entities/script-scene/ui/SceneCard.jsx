@@ -24,6 +24,10 @@ const MAX_PREVIEW_ELEMENTS = 14;
  *
  * layout: "script" (paper only) | "split" (the scene's first film still over
  * an equal slice of paper, with a placeholder when no still falls in the scene)
+ * stillMotion: plays the still in as the layout turns to split, or away before
+ * it turns back (stillMotion.js): { phase: "in" | "out", delay, frameDelay },
+ * where `delay` holds this card's still back and `frameDelay` is when the
+ * frames close, both in ms.
  */
 export function SceneCard({
   scene,
@@ -36,6 +40,7 @@ export function SceneCard({
   onClick,
   onDoubleClick,
   onKeyActivate,
+  stillMotion,
 }) {
   const split = layout === "split";
   const text = displayScriptSceneText(scene);
@@ -57,7 +62,17 @@ export function SceneCard({
     <div
       role="button"
       tabIndex={0}
-      className={cx(styles.card, split && styles.split, selected && styles.selected)}
+      className={cx(
+        styles.card,
+        split && styles.split,
+        selected && styles.selected,
+        stillMotion && (stillMotion.phase === "in" ? styles.stillIn : styles.stillOut)
+      )}
+      style={
+        stillMotion
+          ? { "--still-delay": `${stillMotion.delay}ms`, "--frame-delay": `${stillMotion.frameDelay}ms` }
+          : undefined
+      }
       aria-pressed={onKeyActivate ? selected : undefined}
       aria-haspopup={hasPopup ? "dialog" : undefined}
       aria-label={[cardTitle, heading].filter(Boolean).join(", ")}

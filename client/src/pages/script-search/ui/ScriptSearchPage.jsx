@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getStillFilmPath, getStillThumbnail } from "@/entities/still/model/still.js";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
+import { planStillMotion } from "@/entities/script-scene/model/stillMotion.js";
 import { getScriptTagLabel } from "@server/domain/script-tags.js";
 import { SceneCard, SceneCardSkeleton } from "@/entities/script-scene/ui/SceneCard.jsx";
 import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
@@ -9,6 +10,7 @@ import { searchScriptScenes } from "@/shared/api/scriptScenes.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
@@ -16,6 +18,7 @@ import { EmptyState } from "@/shared/ui/EmptyState.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { buildFilterGroups, countSceneTags } from "../model/sceneBrowse.js";
+import { sweepDelays } from "../model/stillSweep.js";
 import { CardLayoutSwitch } from "./CardLayoutSwitch.jsx";
 import FilterSidebar from "./FilterSidebar.jsx";
 import styles from "./ScriptSearchPage.module.css";
@@ -31,7 +34,15 @@ export default function ScriptSearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tagKey = searchParams.getAll("tag").join(TAG_SEPARATOR);
   const selectedTags = useMemo(() => (tagKey ? tagKey.split(TAG_SEPARATOR) : []), [tagKey]);
-  const cardLayout = searchParams.get("preview") === "stills" ? "split" : "script";
+  const chosenLayout = searchParams.get("preview") === "stills" ? "split" : "script";
+  // The stills sweeping in or away while the layout changes. The cards show
+  // stills for the whole motion: going in, from its first frame, a moment before
+  // the URL catches up; going away, until they've gone, though the switch
+  // already shows the new choice.
+  const [stillMotion, setStillMotion] = useState(null);
+  const cardLayout = stillMotion ? "split" : chosenLayout;
+  const reducedMotion = usePrefersReducedMotion();
+  const gridRef = useRef(null);
   const [match, setMatch] = useState("all");
   const [response, setResponse] = useState({ key: null, rows: [], error: "" });
   // Unfiltered result set, used for the per-tag counts in the sidebar.
@@ -79,6 +90,12 @@ export default function ScriptSearchPage() {
   // A real still from the results for the card switch's little split card.
   const sampleStill = getStillThumbnail(results.find((scene) => scene.first_image_annotation)?.first_image_annotation);
   const sampleStillUrl = useSignedMediaUrl(sampleStill.key, sampleStill.url);
+
+  useEffect(() => {
+    if (!stillMotion) return undefined;
+    const timer = setTimeout(() => setStillMotion(null), stillMotion.duration);
+    return () => clearTimeout(timer);
+  }, [stillMotion]);
   const tagCounts = useMemo(() => countSceneTags(catalog), [catalog]);
   const filterGroups = buildFilterGroups();
   const titleCount = useMemo(() => new Set(results.map((row) => row.movie_id)).size, [results]);
@@ -102,6 +119,12 @@ export default function ScriptSearchPage() {
   }
 
   function setCardLayout(nextLayout) {
+    if (nextLayout === chosenLayout) return;
+    if (!reducedMotion && gridRef.current) {
+      const phase = nextLayout === "split" ? "in" : "out";
+      const edges = [...gridRef.current.children].map((item) => item.getBoundingClientRect());
+      setStillMotion(planStillMotion(phase, sweepDelays(phase, edges)));
+    }
     updateParams((params) => {
       if (nextLayout === "split") params.set("preview", "stills");
       else params.delete("preview");
@@ -157,7 +180,7 @@ export default function ScriptSearchPage() {
               <Button size="sm" className={styles.filtersButton} onClick={() => setFiltersOpen(true)}>
                 Filters{selectedTags.length ? ` (${selectedTags.length})` : ""}
               </Button>
-              <CardLayoutSwitch value={cardLayout} onChange={setCardLayout} stillUrl={sampleStillUrl} />
+              <CardLayoutSwitch value={chosenLayout} onChange={setCardLayout} stillUrl={sampleStillUrl} />
               <SceneTextStyleToggle look="toolbar" />
             </>
           }
@@ -205,10 +228,22 @@ export default function ScriptSearchPage() {
             )
           )
         ) : (
-          <ul className={`${styles.grid} ${loading ? styles.gridLoading : ""}`}>
-            {results.map((scene) => (
+          <ul ref={gridRef} className={`${styles.grid} ${loading ? styles.gridLoading : ""}`}>
+            {results.map((scene, index) => (
               <li key={scene.id}>
-                <SceneCard scene={scene} layout={cardLayout} hasPopup onClick={() => setOpenSceneId(scene.id)} />
+                <SceneCard
+                  scene={scene}
+                  layout={cardLayout}
+                  stillMotion={
+                    stillMotion && {
+                      phase: stillMotion.phase,
+                      delay: stillMotion.delays[index] ?? 0,
+                      frameDelay: stillMotion.frameDelay,
+                    }
+                  }
+                  hasPopup
+                  onClick={() => setOpenSceneId(scene.id)}
+                />
               </li>
             ))}
           </ul>
