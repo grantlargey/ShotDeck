@@ -1,11 +1,13 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createFilmEditForm } from "@/entities/film/model/filmForms.js";
 import { FilmHeader } from "./FilmHeader.jsx";
 
 /*
  * The film hero's backdrop: a few of the film's stills, picked at random,
- * take turns behind the hero. Timers are faked; the turn order, the caption
- * and reloads are real.
+ * take turns behind the hero in film order. Timers are faked; the turn order,
+ * the caption and its timeline, and reloads are real.
  */
 
 const FILM = { id: "m1", title: "Night Diner", runtime_minutes: 120 };
@@ -33,6 +35,11 @@ function header(props) {
 
 function caption() {
   return screen.queryByRole("button", { name: /^Open the still at / });
+}
+
+/** Where the caption's timeline marks the still on screen, or null without one. */
+function timelineSpot() {
+  return caption().querySelector('[style*="--spot"]')?.style.getPropertyValue("--spot") ?? null;
 }
 
 /** The number of the still on screen, read from its caption. */
@@ -83,6 +90,29 @@ describe("the film hero's backdrop", () => {
     expect(onScreen()).toBe(order[0]);
   });
 
+  it("plays the stills it picks in film order", () => {
+    render(header({ stills: stills(5, 1, 4, 2, 3) }));
+
+    expect(watchRotation(5)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("marks where the still on screen falls in the film on the caption's timeline", () => {
+    render(header({ stills: stills(30, 60, 90) }));
+    const spots = [];
+    for (let turn = 0; turn < 3; turn += 1) {
+      spots.push(timelineSpot());
+      nextTurn();
+    }
+
+    expect(spots).toEqual(["25%", "50%", "75%"]);
+  });
+
+  it("shows no timeline when the film has no runtime to place the still on", () => {
+    render(header({ film: { ...FILM, runtime_minutes: null }, stills: stills(1, 2) }));
+
+    expect(caption()).toBeNull();
+  });
+
   it("keeps the still on screen when a reload deletes one earlier in the order", () => {
     const { rerender } = render(header({ stills: stills(1, 2, 3) }));
     const [first, second, third] = watchRotation(3);
@@ -125,5 +155,52 @@ describe("the film hero's backdrop", () => {
 
     fireEvent.click(caption());
     expect(onOpenStill).toHaveBeenCalledWith(`a${onScreen()}`);
+  });
+});
+
+/** The hero as an admin's page holds it: the draft starts from the film when the cover opens. */
+function EditableHeader({ film }) {
+  const [values, setValues] = useState(null);
+  return (
+    <FilmHeader
+      film={film}
+      coverUrl={COVER_URL}
+      edit={{
+        values,
+        saving: false,
+        onStart: () => setValues(createFilmEditForm(film)),
+        onChange: (field, value) => setValues((draft) => ({ ...draft, [field]: value })),
+        onSave: () => setValues(null),
+        onDiscard: () => setValues(null),
+      }}
+    />
+  );
+}
+
+describe("the film hero's editor", () => {
+  it("shows visitors the cover as a picture they can't open", () => {
+    render(header());
+
+    expect(screen.getByRole("img", { name: "Night Diner cover" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit details" })).toBeNull();
+  });
+
+  it("puts the caret at the end of the last detail shown", () => {
+    render(<EditableHeader film={{ ...FILM, director: "Ada Lane", writer: "Ada Lane, Sam Ford" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+
+    const writer = screen.getByRole("textbox", { name: "Writer" });
+    expect(document.activeElement).toBe(writer);
+    expect(writer.selectionStart).toBe("Ada Lane, Sam Ford".length);
+  });
+
+  it("puts the caret at the end of the title when no other detail is filled in", () => {
+    render(<EditableHeader film={{ id: "m1", title: "Night Diner" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Title" }));
+    expect(screen.getAllByRole("textbox")).toHaveLength(6);
   });
 });

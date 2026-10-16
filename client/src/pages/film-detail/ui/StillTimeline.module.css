@@ -47,23 +47,30 @@
   background: var(--color-line);
 }
 
+/* A registered percentage, so the glance can glide the band from one still to the next. */
+@property --spot {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+
 /* The same bars in full white, masked to a soft band around --spot. */
 .barsLit {
   opacity: 0;
   transition: opacity var(--transition-fast);
   -webkit-mask-image: linear-gradient(
     90deg,
-    transparent calc(var(--spot, 0%) - 84px),
-    #000 calc(var(--spot, 0%) - 10px),
-    #000 calc(var(--spot, 0%) + 10px),
-    transparent calc(var(--spot, 0%) + 84px)
+    transparent calc(var(--spot, 0%) - var(--band-reach, 84px)),
+    #000 calc(var(--spot, 0%) - var(--band-core, 10px)),
+    #000 calc(var(--spot, 0%) + var(--band-core, 10px)),
+    transparent calc(var(--spot, 0%) + var(--band-reach, 84px))
   );
   mask-image: linear-gradient(
     90deg,
-    transparent calc(var(--spot, 0%) - 84px),
-    #000 calc(var(--spot, 0%) - 10px),
-    #000 calc(var(--spot, 0%) + 10px),
-    transparent calc(var(--spot, 0%) + 84px)
+    transparent calc(var(--spot, 0%) - var(--band-reach, 84px)),
+    #000 calc(var(--spot, 0%) - var(--band-core, 10px)),
+    #000 calc(var(--spot, 0%) + var(--band-core, 10px)),
+    transparent calc(var(--spot, 0%) + var(--band-reach, 84px))
   );
 }
 
@@ -224,6 +231,36 @@
   transform: none;
 }
 
+/*
+ * The glance: the strip at the same scale over a shorter width, to look at
+ * rather than use. Its bars stay lit around --spot, which glides when the
+ * still changes.
+ */
+.glance {
+  --band-core: 8px;
+  --band-reach: 56px;
+  display: block;
+  cursor: inherit;
+  transition: --spot 1.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.glance .barsLit {
+  opacity: 1;
+}
+
+.glance .playhead {
+  left: var(--spot);
+}
+
+.glance .bar {
+  transition: background-color var(--transition-fast);
+}
+
+/* Pointed at, the resting bars brighten a step. */
+.glance:hover .bars:not(.barsLit) .bar:not(.barEmpty) {
+  background: var(--color-text-muted);
+}
+
 @media (max-width: 560px) {
   .timeline {
     --preview-width: 168px;
@@ -235,7 +272,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .barsLit {
+  .barsLit,
+  .glance {
     transition: none;
   }
 

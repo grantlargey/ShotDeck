@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { StillTimeline } from "./StillTimeline.jsx";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StillTimeline, StillTimelineGlance } from "./StillTimeline.jsx";
 import styles from "./StillTimeline.module.css";
 
 function stillsAt(...times) {
@@ -319,5 +319,57 @@ describe("still timeline when its still list changes", () => {
     rerender({ stills: STILLS });
     fireEvent.keyDown(strip, { key: "ArrowRight" });
     expect(screen.getByText("2 of 4")).toBeTruthy();
+  });
+});
+
+describe("still timeline glance", () => {
+  // The glance counts its bars from its width, so this observer reports 360px at once.
+  beforeEach(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback) {
+          this.callback = callback;
+        }
+
+        observe(element) {
+          Object.defineProperty(element, "clientWidth", { configurable: true, value: 360 });
+          this.callback([]);
+        }
+
+        disconnect() {}
+      }
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function renderGlance(stillId) {
+    const view = render(<StillTimelineGlance stills={STILLS} runtimeSeconds={100} stillId={stillId} />);
+    return {
+      glance: view.container.firstChild,
+      rerender: (nextId) => view.rerender(<StillTimelineGlance stills={STILLS} runtimeSeconds={100} stillId={nextId} />),
+    };
+  }
+
+  it("draws only the bars, lit around one still, and its playhead, for looking at", () => {
+    const { glance } = renderGlance("still-2");
+
+    expect(glance.getAttribute("aria-hidden")).toBe("true");
+    expect(glance.style.getPropertyValue("--spot")).toBe("60%");
+    expect(glance.querySelectorAll(`.${styles.barsLit} .${styles.bar}`)).toHaveLength(60);
+    expect(glance.querySelector(`.${styles.playhead}`)).not.toBeNull();
+    expect(glance.textContent).toBe("");
+    expect(screen.queryByRole("slider")).toBeNull();
+  });
+
+  it("moves its light and playhead to the still it is given", () => {
+    const { glance, rerender } = renderGlance("still-1");
+    expect(glance.style.getPropertyValue("--spot")).toBe("20%");
+
+    rerender("still-3");
+    expect(glance.style.getPropertyValue("--spot")).toBe("100%");
   });
 });

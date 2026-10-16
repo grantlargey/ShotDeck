@@ -5,11 +5,12 @@ import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import styles from "./FilmDetailPage.module.css";
 
 /**
- * Script status and, for admins, upload. Upload controls only appear once a
- * PDF has been chosen. Visitors see the status alone.
+ * Script status and, once there is a script, the way into it; admins can also
+ * upload one. Upload controls only appear once a PDF has been chosen.
  */
 export function FilmScriptPanel({
   currentScript,
+  onOpenScript,
   canEdit,
   scriptFile,
   savingScript,
@@ -33,6 +34,13 @@ export function FilmScriptPanel({
         id="film-script-heading"
         title="Script"
         badge={currentScript ? <Badge tone="success">Uploaded</Badge> : <Badge>Not uploaded</Badge>}
+        actions={
+          currentScript && (
+            <Button size="sm" variant="primary" onClick={onOpenScript}>
+              Open script
+            </Button>
+          )
+        }
       />
 
       <div className={styles.scriptRow}>

@@ -28,12 +28,39 @@ const KEY_STEPS = new Map([
 
 const clampIndex = (index, count) => Math.min(count - 1, Math.max(0, index));
 
-/** One bar per slice of the runtime. Drawn twice (resting and lit), so memoized. */
+/**
+ * The stills counted into one bar per PX_PER_BAR pixels of the strip's width
+ * (at least MIN_BARS), counted again whenever the strip resizes. Empty until
+ * the strip has been measured.
+ */
+function useStripBins(stripRef, stills, runtimeSeconds) {
+  const [binCount, setBinCount] = useState(0);
+
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return undefined;
+    const observer = new ResizeObserver(() => {
+      setBinCount(Math.max(MIN_BARS, Math.floor(strip.clientWidth / PX_PER_BAR)));
+    });
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [stripRef]);
+
+  return useMemo(
+    () => (binCount ? getTimelineBins(stills, runtimeSeconds, binCount) : []),
+    [stills, runtimeSeconds, binCount]
+  );
+}
+
+/**
+ * One bar per slice of the runtime. Drawn twice (resting and lit), so
+ * memoized. Spans only, so the glance can sit inside a button.
+ */
 const DensityBars = memo(function DensityBars({ bins, className }) {
   const max = Math.max(1, ...bins);
 
   return (
-    <div className={className} aria-hidden="true">
+    <span className={className} aria-hidden="true">
       {bins.map((count, i) => (
         <span
           key={i}
@@ -46,7 +73,7 @@ const DensityBars = memo(function DensityBars({ bins, className }) {
           }}
         />
       ))}
-    </div>
+    </span>
   );
 });
 
@@ -82,25 +109,11 @@ export function StillTimeline({
 }) {
   const stripRef = useRef(null);
   const draggingRef = useRef(false);
-  const [binCount, setBinCount] = useState(0);
   // The index survives hiding the preview so keyboard navigation can pick up there.
   // A null previewPercent hides the preview; otherwise it centres the lit band.
   const [cursor, setCursor] = useState({ index: 0, previewPercent: null });
 
-  useEffect(() => {
-    const strip = stripRef.current;
-    if (!strip) return undefined;
-    const observer = new ResizeObserver(() => {
-      setBinCount(Math.max(MIN_BARS, Math.floor(strip.clientWidth / PX_PER_BAR)));
-    });
-    observer.observe(strip);
-    return () => observer.disconnect();
-  }, []);
-
-  const bins = useMemo(
-    () => (binCount ? getTimelineBins(stills, runtimeSeconds, binCount) : []),
-    [stills, runtimeSeconds, binCount]
-  );
+  const bins = useStripBins(stripRef, stills, runtimeSeconds);
   const scale = useMemo(() => getTimelineScale(runtimeSeconds), [runtimeSeconds]);
 
   const count = stills.length;
@@ -258,5 +271,33 @@ export function StillTimeline({
         <span className={cx(styles.label, styles.labelEnd)}>{formatSecondsToHms(runtimeSeconds)}</span>
       </div>
     </div>
+  );
+}
+
+/**
+ * The timeline's strip in miniature, to look at rather than use: the same
+ * density bars, lit around one still with the playhead on it. When `stillId`
+ * changes, the light and the playhead glide to the new still. The film hero
+ * shows it along its bottom line.
+ */
+export function StillTimelineGlance({ stills, runtimeSeconds, stillId, className }) {
+  const stripRef = useRef(null);
+  const bins = useStripBins(stripRef, stills, runtimeSeconds);
+  const spot = getTimelinePositionPercent(
+    stills.find((row) => row.id === stillId),
+    runtimeSeconds
+  );
+
+  return (
+    <span
+      ref={stripRef}
+      className={cx(styles.strip, styles.glance, className)}
+      style={{ "--spot": `${spot}%` }}
+      aria-hidden="true"
+    >
+      <DensityBars bins={bins} className={styles.bars} />
+      <DensityBars bins={bins} className={cx(styles.bars, styles.barsLit)} />
+      <span className={cx(styles.mark, styles.playhead)} />
+    </span>
   );
 }

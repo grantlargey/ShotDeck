@@ -47,72 +47,6 @@
   transform: scale(1.12);
 }
 
-/* Names the still on screen and opens it; a thin line counts down to the next. */
-.backdropCaption {
-  position: absolute;
-  z-index: 2;
-  right: max(var(--page-gutter), calc((100% - var(--page-max-width)) / 2 + var(--page-gutter)));
-  bottom: 40px;
-  padding: 7px 10px 9px;
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: baseline;
-  gap: 2px 8px;
-  border: 1px solid var(--color-line-control);
-  border-radius: var(--radius-sm);
-  background: var(--color-glass);
-  color: var(--color-text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: border-color var(--transition-fast);
-}
-
-.backdropCaption:hover {
-  border-color: var(--color-line-strong);
-}
-
-.backdropLabel {
-  color: var(--color-text-muted);
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.backdropTime {
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
-
-.backdropProgress {
-  grid-column: 1 / -1;
-  height: 2px;
-  margin-top: 5px;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: var(--color-fill);
-}
-
-.backdropProgress > span {
-  height: 100%;
-  display: block;
-  background: var(--color-accent);
-  transform-origin: left;
-  animation: backdrop-countdown var(--backdrop-hold) linear both;
-}
-
-@keyframes backdrop-countdown {
-  from {
-    transform: scaleX(0);
-  }
-
-  to {
-    transform: scaleX(1);
-  }
-}
-
 /* Darkens the side the text sits on and fades the bottom into the page. */
 .hero::after {
   content: "";
@@ -128,20 +62,23 @@
     linear-gradient(180deg, transparent 55%, var(--color-bg) 100%);
 }
 
+/* Tall enough that a good slice of the backdrop shows above the poster. */
 .heroInner {
   position: relative;
   z-index: 1;
   max-width: var(--page-max-width);
+  min-height: 494px;
   margin: 0 auto;
   padding: 56px var(--page-gutter) 40px;
   display: flex;
   align-items: flex-end;
-  gap: 32px;
+  gap: 36px;
 }
 
 .poster {
   flex: none;
-  width: 180px;
+  display: block;
+  width: 240px;
   aspect-ratio: 2 / 3;
   border: 1px solid var(--color-line-strong);
   border-radius: var(--radius-md);
@@ -167,14 +104,19 @@
 }
 
 .heroTitle {
-  margin: -8px 0 0;
+  margin: -0.16em 0 0;
   font-family: var(--font-display);
-  font-size: clamp(2rem, 4vw, 3rem);
+  font-size: clamp(2rem, 5vw, 4rem);
   font-weight: 400;
   line-height: 1.05;
   letter-spacing: -0.01em;
   text-shadow: var(--shadow-text);
   overflow-wrap: anywhere;
+}
+
+/* Focus waits here after the details close (see FilmHeader); it shows nothing. */
+.heroTitle:focus {
+  outline: none;
 }
 
 .facts {
@@ -203,11 +145,297 @@
   font-variant-numeric: tabular-nums;
 }
 
-.heroActions {
+/* The stills timeline in miniature, standing on the hero's bottom line. Save
+   and Discard take its place while the details are open, so an admin's row
+   keeps its height even without a timeline. */
+.heroFoot {
+  position: relative;
+  min-height: 28px;
   margin-top: 6px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+}
+
+.backdropTimeline {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition:
+    opacity 0.3s ease 0.2s,
+    visibility 0s;
+}
+
+.backdropTimeline:focus-visible {
+  outline-offset: 8px;
+}
+
+.heroEditing .backdropTimeline {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.2s ease,
+    visibility 0s 0.2s;
+}
+
+.editActions {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  animation: edit-actions-in 0.3s ease 0.3s both;
+}
+
+@keyframes edit-actions-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Small capitals like the labels above them, so the row reads as part of the credits. */
+.editAction {
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.editAction:hover {
+  color: var(--color-text);
+}
+
+.editAction:focus-visible {
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.editAction:disabled {
+  cursor: progress;
+}
+
+.editSave {
+  color: var(--color-accent);
+}
+
+.editSave:hover {
+  color: var(--color-info);
+}
+
+/* ---------- Editing the details in place ---------- */
+
+/* The cover is bound like a script, over its title page. */
+.cover {
+  position: relative;
+  flex: none;
+}
+
+/* The title page under the cover, with the script's pages behind it at the edge. */
+.coverPage {
+  position: absolute;
+  inset: 3px 3px 3px 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #e4e3de, #f3f2ee 70%, #e9e8e3);
+  box-shadow:
+    1px 0 0 #b9b8b2,
+    2px 0 0 #dcdbd5,
+    3px 0 0 #a9a8a2,
+    4px 0 0 #cfcec8;
+}
+
+/* The button itself never turns, so the whole cover answers the pointer while it lifts. */
+.coverButton {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  perspective: 1100px;
+  cursor: pointer;
+}
+
+.coverButton:focus-visible {
+  outline-offset: 6px;
+}
+
+.coverButton:disabled {
+  cursor: progress;
+}
+
+.coverFlap {
+  display: block;
+  transform-origin: left center;
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.coverButton:hover .coverFlap,
+.coverButton:focus-visible .coverFlap {
+  transform: rotateY(-16deg);
+}
+
+.heroEditing .coverFlap,
+.heroEditing .coverButton:hover .coverFlap,
+.heroEditing .coverButton:focus-visible .coverFlap {
+  transform: rotateY(-34deg);
+}
+
+.field {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+}
+
+.heroEditing .field {
+  min-width: 2ch;
+}
+
+/* Behind the input, the text still sizes the box, spaces and all. */
+.heroEditing .fieldText {
+  visibility: hidden;
+  white-space: pre;
+}
+
+.heroEditing .fieldTitle .fieldText {
+  white-space: pre-wrap;
+}
+
+/* A fact's input runs on past its text, so the caret has room before the box catches up. */
+.fieldInput {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% + 1em);
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  caret-color: var(--color-accent);
+  outline: none;
+}
+
+.fieldInput::placeholder {
+  color: var(--color-text-subtle);
+  opacity: 1;
+}
+
+/* The title's wraps at the same width as its text and keeps 2px past it for
+   the caret. It runs a little below the text too, since Gloock's descenders
+   reach past the tight line height and would otherwise scroll it. */
+.fieldTitle .fieldInput {
+  width: calc(100% + 2px);
+  height: calc(100% + 0.1em);
+  padding-right: 2px;
+  overflow: hidden;
+  resize: none;
+  text-shadow: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Under each detail: a dotted line that sweeps in while the cover is pointed
+   at, then a solid one once the details are open. */
+.field::before,
+.field::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -6px;
+  left: 0;
+  height: 1px;
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 0.3s cubic-bezier(0.3, 0.7, 0.2, 1);
+  pointer-events: none;
+}
+
+.field::before {
+  background: linear-gradient(90deg, var(--color-text-muted) 1px, transparent 1px) 0 0 / 3px 1px repeat-x;
+}
+
+.field::after {
+  background: color-mix(in srgb, var(--color-accent) 82%, #000);
+}
+
+/* Clear of the title's descenders. */
+.fieldTitle::before,
+.fieldTitle::after {
+  bottom: -0.06em;
+  height: 2px;
+}
+
+.fieldTitle::before {
+  background-image: linear-gradient(90deg, var(--color-text-muted) 2px, transparent 2px);
+  background-size: 6px 2px;
+}
+
+.heroInner:has(.coverButton:hover) .field::before,
+.heroInner:has(.coverButton:focus-visible) .field::before,
+.heroEditing .field::before,
+.heroEditing .field::after {
+  clip-path: inset(0);
+  transition-delay: var(--sweep-delay, 0ms);
+}
+
+.heroEditing .field:focus-within::after {
+  height: 2px;
+  background: var(--color-accent);
+}
+
+.heroEditing .fieldTitle:focus-within::after {
+  height: 3px;
+}
+
+/* Zero-width, so it sits after the last letter without moving anything. */
+.fieldCaret {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: -0.12em;
+}
+
+.fieldCaret::after {
+  content: "";
+  position: absolute;
+  top: -0.08em;
+  left: 3px;
+  width: 2px;
+  height: 1.15em;
+  background: var(--color-accent);
+  opacity: 0;
+}
+
+/* It starts blinking as the last line finishes sweeping in. */
+.heroInner:not(.heroEditing):has(.coverButton:hover) .fieldCaret::after,
+.heroInner:not(.heroEditing):has(.coverButton:focus-visible) .fieldCaret::after {
+  animation: caret-blink 1.06s steps(1, end) 0.52s infinite;
+}
+
+@keyframes caret-blink {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
 }
 
 .skeletonEyebrow {
@@ -217,7 +445,7 @@
 
 .skeletonTitle {
   width: min(420px, 80%);
-  height: 40px;
+  height: 52px;
 }
 
 .skeletonFacts {
@@ -233,13 +461,6 @@
   padding: 32px var(--page-gutter) 0;
   display: grid;
   gap: 44px;
-}
-
-.panelActions {
-  margin-top: 20px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
 }
 
 .scriptRow {
@@ -383,12 +604,8 @@
 /* ---------- Narrow screens: stacked hero, two-column stills ---------- */
 
 @media (max-width: 600px) {
-  .backdropCaption {
-    top: 16px;
-    bottom: auto;
-  }
-
   .heroInner {
+    min-height: 0;
     padding: 28px var(--page-gutter);
     flex-direction: column;
     align-items: flex-start;
@@ -419,6 +636,25 @@
   .backdropStill.backdropLoaded {
     transform: none;
     transition: opacity 0.4s ease;
+  }
+
+  /* The cover still opens and the lines still show, without the motion; the caret holds still. */
+  .coverFlap,
+  .field::before,
+  .field::after,
+  .backdropTimeline,
+  .heroEditing .backdropTimeline {
+    transition: none;
+  }
+
+  .editActions {
+    animation: none;
+  }
+
+  .heroInner:not(.heroEditing):has(.coverButton:hover) .fieldCaret::after,
+  .heroInner:not(.heroEditing):has(.coverButton:focus-visible) .fieldCaret::after {
+    animation: none;
+    opacity: 1;
   }
 
   .stillGrid > li {

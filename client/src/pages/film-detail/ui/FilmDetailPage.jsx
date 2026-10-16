@@ -6,7 +6,6 @@ import { getStillThumbnail } from "@/entities/still/model/still.js";
 import { createFilmEditForm } from "@/entities/film/model/filmForms.js";
 import { getHandedOverPosterUrl } from "@/entities/film/model/posterTransition.js";
 import { useFilmSave } from "@/entities/film/model/filmSave.js";
-import { FilmDetailsFields } from "@/entities/film/ui/FilmDetailsFields.jsx";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { listStills } from "@/shared/api/stills.js";
@@ -131,16 +130,8 @@ export default function FilmDetailPage() {
 
   const [scriptFile, setScriptFile] = useState(null);
 
-  // Inline edit mode (FILM)
-  const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({
-    title: "",
-    director: "",
-    writer: "",
-    cinematographer: "",
-    year: "",
-    runtime_hms: "",
-  });
+  // The details being typed in the hero while its cover is open; null while it's closed.
+  const [detailsDraft, setDetailsDraft] = useState(null);
 
   const lastDeepLinkedStillRef = useRef("");
   const loadIdRef = useRef(0);
@@ -167,8 +158,6 @@ export default function FilmDetailPage() {
       if (!isLatest()) return;
       setFilm(m);
       setScript(loadedScript);
-      // Keep edit form in sync with loaded film
-      setEditForm(createFilmEditForm(m));
     });
 
     const stills = listStills(id).then((loadedStills) => {
@@ -238,12 +227,16 @@ export default function FilmDetailPage() {
     }
   }
 
+  function startFilmEdits() {
+    setDetailsDraft(createFilmEditForm(film));
+  }
+
   async function submitFilmEdits() {
     setErr("");
     try {
-      await filmSave.save({ form: editForm });
+      await filmSave.save({ form: detailsDraft });
       await load();
-      setEditMode(false);
+      setDetailsDraft(null);
     } catch (e) {
       setErr(getErrorMessage(e, "Failed to save film details."));
     }
@@ -265,8 +258,7 @@ export default function FilmDetailPage() {
 
   function cancelFilmEdits() {
     if (!leaveFilmSave()) return;
-    setEditForm(createFilmEditForm(film));
-    setEditMode(false);
+    setDetailsDraft(null);
   }
 
   const coverUrl = useSignedMediaUrl(film?.cover_image_key, film?.cover_image_url);
@@ -295,19 +287,17 @@ export default function FilmDetailPage() {
         coverUrl={coverUrl}
         stills={stills}
         onOpenStill={setViewerStillId}
-        actions={
-          <>
-            {script && (
-              <Button variant="primary" onClick={openScript}>
-                Open script
-              </Button>
-            )}
-            {canEdit && (
-              <Button disabled={filmSave.saving} onClick={() => (editMode ? cancelFilmEdits() : setEditMode(true))}>
-                {editMode ? "Close editor" : "Edit details"}
-              </Button>
-            )}
-          </>
+        edit={
+          canEdit
+            ? {
+                values: detailsDraft,
+                saving: filmSave.saving,
+                onStart: startFilmEdits,
+                onChange: (field, value) => setDetailsDraft((draft) => ({ ...draft, [field]: value })),
+                onSave: submitFilmEdits,
+                onDiscard: cancelFilmEdits,
+              }
+            : null
         }
       />
 
@@ -320,27 +310,9 @@ export default function FilmDetailPage() {
           </Callout>
         )}
 
-        {editMode && canEdit && (
-          <section aria-labelledby="film-edit-heading">
-            <SectionHeading id="film-edit-heading" title="Edit details" />
-            <fieldset disabled={filmSave.saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-              <FilmDetailsFields
-                values={editForm}
-                onChange={(field, value) => setEditForm((f) => ({ ...f, [field]: value }))}
-              />
-
-              <div className={styles.panelActions}>
-                <Button onClick={cancelFilmEdits}>Cancel</Button>
-                <Button variant="primary" onClick={submitFilmEdits}>
-                  {filmSave.saving ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </fieldset>
-          </section>
-        )}
-
         <FilmScriptPanel
           currentScript={script}
+          onOpenScript={openScript}
           canEdit={canEdit}
           scriptFile={scriptFile}
           savingScript={filmSave.saving}

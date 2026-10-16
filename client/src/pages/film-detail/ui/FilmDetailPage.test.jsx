@@ -228,7 +228,7 @@ describe("loading the film's script", () => {
     await waitFor(() => expect(screen.queryByRole("link", { name: "Resume film save" })).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
     fireEvent.change(screen.getByRole("textbox", { name: /^Title/ }), { target: { value: "Updated title" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateFilm).toHaveBeenCalledTimes(1));
     expect(api.saveScript).toHaveBeenCalledTimes(1);
     expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
@@ -239,10 +239,10 @@ describe("loading the film's script", () => {
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
     fireEvent.change(screen.getByRole("textbox", { name: /^Title/ }), { target: { value: "Canceled title" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("Failed to save film details.");
     window.confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     api.uploadMediaFile.mockResolvedValue("scripts/m1/replacement.pdf");
     api.saveScript.mockResolvedValue(SCRIPT);
     const section = screen.getByRole("region", { name: /^Script/ });
@@ -269,14 +269,15 @@ describe("loading the film's script", () => {
     expect(api.saveScript).toHaveBeenLastCalledWith({ filmId: "m1", key: "scripts/m1/upload.pdf" });
   });
 
-  it("consumes the one script object and opens it", async () => {
+  it("consumes the one script object and opens it from the script section", async () => {
     api.getFilmScript.mockResolvedValueOnce({ ...SCRIPT });
 
     await renderPage();
 
     expect(api.getFilmScript).toHaveBeenCalledWith("m1");
     expect(screen.getByText("Uploaded")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Open script" }));
+    const section = screen.getByRole("region", { name: /^Script/ });
+    fireEvent.click(within(section).getByRole("button", { name: "Open script" }));
     expect(await screen.findByText("Opened script")).toBeTruthy();
   });
 
@@ -289,47 +290,156 @@ describe("loading the film's script", () => {
   });
 });
 
-describe("editing film details inline", () => {
-  it("shows the shared runtime validation message without sending a request", async () => {
-    await renderPage();
+describe("editing film details in the hero", () => {
+  function detail(name) {
+    return screen.getByRole("textbox", { name });
+  }
+
+  function openCover() {
     fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
-    fireEvent.change(screen.getByPlaceholderText("00:00:00"), { target: { value: "not a runtime" } });
+  }
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  /** The film as the API holds it; saving details changes what the next load returns. */
+  function storeFilmEdits() {
+    let stored = { ...FILM };
+    api.getFilm.mockImplementation(async () => ({ ...stored }));
+    api.updateFilm.mockImplementation(async (filmId, details) => {
+      stored = { ...stored, ...details };
+      return { ...stored };
+    });
+  }
 
-    expect(await screen.findByText(BAD_RUNTIME)).toBeTruthy();
+  it("opens from the cover with every detail as an input and the caret at the end of the last one shown", async () => {
+    await renderPage();
+
+    openCover();
+
+    expect(detail("Title").value).toBe("Night Diner");
+    expect(detail("Runtime").value).toBe("02:00:00");
+    for (const name of ["Year", "Director", "Cinematographer", "Writer"]) expect(detail(name).value).toBe("");
+    expect(document.activeElement).toBe(detail("Runtime"));
+    expect(detail("Runtime").selectionStart).toBe("02:00:00".length);
+    expect(screen.getByRole("button", { name: "Save details" })).toBeTruthy();
+  });
+
+  it("saves the typed details with Enter, shows them, and leaves focus on the title", async () => {
+    storeFilmEdits();
+    await renderPage();
+    openCover();
+
+    fireEvent.change(detail("Title"), { target: { value: "Night Diner Redux" } });
+    fireEvent.change(detail("Year"), { target: { value: "1999" } });
+    fireEvent.change(detail("Director"), { target: { value: "Ada Lane" } });
+    fireEvent.keyDown(detail("Director"), { key: "Enter" });
+
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
+    expect(api.updateFilm).toHaveBeenCalledWith("m1", {
+      title: "Night Diner Redux",
+      director: "Ada Lane",
+      writer: null,
+      cinematographer: null,
+      year: 1999,
+      runtime_minutes: 120,
+    });
+    expect(screen.getByRole("heading", { name: "Night Diner Redux", level: 1 })).toBeTruthy();
+    expect(screen.getByText("Ada Lane")).toBeTruthy();
+    expect(screen.getByText("1999")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+  });
+
+  it("saves when the open cover or Save is clicked", async () => {
+    storeFilmEdits();
+    await renderPage();
+
+    openCover();
+    fireEvent.change(detail("Title"), { target: { value: "First cut" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save details" }));
+    expect(await screen.findByRole("heading", { name: "First cut", level: 1 })).toBeTruthy();
+
+    openCover();
+    fireEvent.change(detail("Title"), { target: { value: "Final cut" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("heading", { name: "Final cut", level: 1 })).toBeTruthy();
+    expect(api.updateFilm).toHaveBeenCalledTimes(2);
+  });
+
+  it("discards with Esc or Discard, sends nothing, and opens next time on the saved details", async () => {
+    await renderPage();
+
+    openCover();
+    fireEvent.change(detail("Title"), { target: { value: "Thrown away" } });
+    fireEvent.keyDown(detail("Title"), { key: "Escape" });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Night Diner", level: 1 })).toBeTruthy();
+
+    openCover();
+    expect(detail("Title").value).toBe("Night Diner");
+    fireEvent.change(detail("Writer"), { target: { value: "Thrown away" } });
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByText("Thrown away")).toBeNull();
     expect(api.updateFilm).not.toHaveBeenCalled();
   });
 
-  it("saves through the shared film-edit implementation and closes the editor", async () => {
-    api.updateFilm.mockResolvedValueOnce({ ...FILM });
+  it("keeps a title on one line, even pasted", async () => {
     await renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+    openCover();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.change(detail("Title"), { target: { value: "Night\nDiner\r\nTwo" } });
 
-    await waitFor(() =>
-      expect(api.updateFilm).toHaveBeenCalledWith("m1", {
-        title: "Night Diner",
-        director: "",
-        writer: null,
-        cinematographer: null,
-        year: null,
-        runtime_minutes: 120,
-      })
-    );
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Edit details" })).toBeNull());
+    expect(detail("Title").value).toBe("Night Diner Two");
+  });
+
+  it("tidies a typed runtime when its field loses focus", async () => {
+    await renderPage();
+    openCover();
+
+    fireEvent.change(detail("Runtime"), { target: { value: "2:5:0" } });
+    fireEvent.blur(detail("Runtime"));
+
+    expect(detail("Runtime").value).toBe("02:05:00");
+  });
+
+  it("shows the shared runtime validation message without sending a request", async () => {
+    await renderPage();
+    openCover();
+    fireEvent.change(detail("Runtime"), { target: { value: "not a runtime" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(BAD_RUNTIME)).toBeTruthy();
+    expect(api.updateFilm).not.toHaveBeenCalled();
+    expect(detail("Runtime").value).toBe("not a runtime");
   });
 
   it("shows its entry-point failure message and keeps the editor open", async () => {
     api.updateFilm.mockRejectedValueOnce(new Error("save failed"));
     await renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+    openCover();
+    fireEvent.change(detail("Title"), { target: { value: "Kept" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Failed to save film details.")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Edit details" })).toBeTruthy();
+    expect(detail("Title").value).toBe("Kept");
+  });
+
+  it("holds the details while they save, so a second Enter sends nothing more", async () => {
+    const request = deferred();
+    api.updateFilm.mockReturnValueOnce(request.promise);
+    await renderPage();
+    openCover();
+
+    fireEvent.keyDown(detail("Runtime"), { key: "Enter" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Saving…" }).disabled).toBe(true));
+    expect(detail("Runtime").readOnly).toBe(true);
+    expect(screen.getByRole("button", { name: "Discard" }).disabled).toBe(true);
+    fireEvent.keyDown(detail("Runtime"), { key: "Enter" });
+    fireEvent.keyDown(detail("Runtime"), { key: "Escape" });
+
+    await settle(() => request.resolve({ ...FILM }));
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
+    expect(api.updateFilm).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -836,6 +946,14 @@ describe("closing the viewer", () => {
 });
 
 describe("visitors", () => {
+  it("see the film's details with no way to edit them", async () => {
+    await renderPage({ admin: false });
+
+    expect(screen.queryByRole("button", { name: "Edit details" })).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByText("Runtime").nextElementSibling.textContent).toBe("02:00:00");
+  });
+
   it("get no still editing controls", async () => {
     await renderPage({ admin: false });
 
