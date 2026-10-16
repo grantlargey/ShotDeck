@@ -5,7 +5,9 @@ import styles from "./ScreenplayView.module.css";
 /**
  * Renders screenplay markdown with screenplay page layout: bold scene
  * headings, indented character cues, dialogue and parentheticals, and
- * right-aligned transitions.
+ * right-aligned transitions. Its type follows the visitor's scene text style
+ * (features/scene-text-style), and the paper it sits on should use the same
+ * style's --color-paper and --color-ink.
  *
  * - `page` scales the type to the container so a full 60-character action
  *   line fits, like a real script page.
