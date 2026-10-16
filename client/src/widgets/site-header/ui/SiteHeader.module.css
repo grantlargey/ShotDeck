@@ -53,6 +53,13 @@
 }
 
 .brand {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home {
   display: inline-flex;
   align-items: center;
   min-width: 0;

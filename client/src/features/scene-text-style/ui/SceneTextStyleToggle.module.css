@@ -1,0 +1,149 @@
+.toggle {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.toggle:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* In the logo: the page alone, where the brand mark stood. */
+.logo {
+  border-radius: var(--radius-xs);
+}
+
+/* In a tool bar: a tile the size and color of the switches beside it. */
+.toolbar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition: background var(--transition-fast);
+}
+
+.toolbar:hover:not(:disabled) {
+  background: var(--color-surface-raised);
+}
+
+.toolbar:focus-visible {
+  outline-offset: 2px;
+}
+
+/* The pages, stacked; the component sizes it and sets --u, a pixel at the logo's 26px. */
+.stack {
+  position: relative;
+  display: block;
+  transition: transform 0.1s ease;
+}
+
+.toggle:active:not(:disabled) .stack {
+  transform: scale(0.94);
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-origin: 50% 70%;
+  transition:
+    transform var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+/* Hover: the other two pages fan out behind, one each side, so every style shows at once. */
+.next,
+.after {
+  opacity: 0;
+}
+
+.toggle:is(:hover, :focus-visible):not(:disabled) .next {
+  opacity: 1;
+  transform: translate(calc(4 * var(--u)), calc(-2 * var(--u))) rotate(9deg);
+}
+
+.toggle:is(:hover, :focus-visible):not(:disabled) .after {
+  opacity: 1;
+  transform: translate(calc(-4 * var(--u)), calc(-2 * var(--u))) rotate(-9deg);
+}
+
+/*
+ * Click: this page slips back as the next comes forward from where it fanned.
+ * Then its scene is typed line by line, and the carriage returns. TURN_MS in
+ * the component covers all of it.
+ */
+.leaving {
+  animation: slip-back 340ms ease-in both;
+}
+
+/* The arriving page is typed (ScenePage) once it has come forward. */
+.arriving {
+  --type-start: 300ms;
+  animation: come-forward 340ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.arriving svg {
+  animation: carriage-return 240ms ease-out 860ms both;
+}
+
+@keyframes slip-back {
+  from {
+    transform: none;
+    opacity: 1;
+  }
+
+  to {
+    transform: translate(calc(5 * var(--u)), calc(-2 * var(--u))) rotate(10deg) scale(0.9);
+    opacity: 0;
+  }
+}
+
+@keyframes come-forward {
+  from {
+    transform: translate(calc(4 * var(--u)), calc(-2 * var(--u))) rotate(9deg) scale(0.94);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@keyframes carriage-return {
+  0% {
+    transform: none;
+  }
+
+  35% {
+    transform: translateX(calc(1.4 * var(--u))) rotate(2deg);
+  }
+
+  100% {
+    transform: none;
+  }
+}
+
+/* No motion: the fan still shows, without moving, and a click just changes the page. */
+@media (prefers-reduced-motion: reduce) {
+  .toolbar,
+  .stack,
+  .layer {
+    transition: none;
+  }
+
+  .leaving,
+  .arriving,
+  .arriving svg {
+    animation: none;
+  }
+}

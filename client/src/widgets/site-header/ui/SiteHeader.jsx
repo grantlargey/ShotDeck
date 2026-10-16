@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { ChangePasswordDialog } from "@/features/auth/ui/ChangePasswordDialog.jsx";
+import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
 import { cx } from "@/shared/lib/cx.js";
 import { BrandLogo } from "@/shared/ui/BrandLogo.jsx";
 import { Button } from "@/shared/ui/Button.jsx";
@@ -67,9 +68,13 @@ export default function SiteHeader({ pinned = true }) {
       )}
     >
       <div className={styles.navbarInner}>
-        <Link className={styles.brand} to="/">
-          <BrandLogo />
-        </Link>
+        {/* The logo's page turns the scene text style; the wordmark is the way home. */}
+        <div className={styles.brand}>
+          <SceneTextStyleToggle />
+          <Link className={styles.home} to="/">
+            <BrandLogo showMark={false} />
+          </Link>
+        </div>
 
         <nav className={styles.primaryNav} aria-label="Primary">
           {navLinks.map((link) => (

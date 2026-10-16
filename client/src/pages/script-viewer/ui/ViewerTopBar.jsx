@@ -1,6 +1,4 @@
-import { Link } from "react-router-dom";
 import { Badge } from "@/shared/ui/Badge.jsx";
-import { BrandLogo } from "@/shared/ui/BrandLogo.jsx";
 import { Button } from "@/shared/ui/Button.jsx";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { ChevronLeftIcon, EyeIcon, EyeOffIcon, SearchIcon } from "@/shared/ui/icons.jsx";
@@ -8,8 +6,8 @@ import styles from "./ScriptViewerPage.module.css";
 
 /**
  * The viewer's tool bar, under the site header. It stays pinned when the site
- * header scrolls away, so the script keeps the height: home link, back to the
- * film, the title, and viewer actions, in one row at every width. The
+ * header scrolls away, so the script keeps the height: back to the film,
+ * the title, and viewer actions, in one row at every width. The
  * anchor-marker toggle only matters while capturing, so visitors don't get it.
  */
 export function ViewerTopBar({
@@ -27,10 +25,6 @@ export function ViewerTopBar({
 
   return (
     <header className={styles.topBar}>
-      <Link to="/" className={styles.homeLink} aria-label="ScriptDeck home">
-        <BrandLogo showWordmark={false} />
-      </Link>
-
       <Button size="sm" className={styles.backButton} onClick={onBackToFilm} title="Back to film">
         <ChevronLeftIcon size={14} />
         <span className={styles.collapsibleLabel}>Film</span>

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useSession } from "@/entities/session/model/useSession.js";
+import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
 import { BrandLogo } from "@/shared/ui/BrandLogo.jsx";
 import styles from "./SiteFooter.module.css";
 
@@ -16,9 +17,12 @@ export default function SiteFooter() {
   return (
     <footer className={styles.footer}>
       <div className={styles.inner}>
-        <Link className={styles.brand} to="/">
-          <BrandLogo size="sm" />
-        </Link>
+        <div className={styles.brand}>
+          <SceneTextStyleToggle size="sm" />
+          <Link className={styles.home} to="/">
+            <BrandLogo size="sm" showMark={false} />
+          </Link>
+        </div>
 
         <nav className={styles.nav} aria-label="Footer">
           {links.map((link) => (

@@ -2,6 +2,7 @@ import {
   displayScriptSceneText,
 } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
+import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
 import { groupScriptTagsByCategory } from "@server/domain/script-tags.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatMomentToHms } from "@/shared/lib/time.js";
@@ -73,27 +74,31 @@ export function SceneViewerModal({
       meta={meta}
       counter={current.counter}
       toolbar={
-        <SegmentedControl
-          label="Scene view"
-          value={current.view}
-          onChange={current.setView}
-          options={[
-            {
-              value: "script",
-              label: "Script",
-              icon: <ScriptIcon size={14} />,
-              disabled: !scene,
-              title: scene ? undefined : SCRIPT_UNAVAILABLE[current.sceneStatus],
-            },
-            {
-              value: "still",
-              label: "Film still",
-              icon: <ImageIcon size={14} />,
-              disabled: !still,
-              title: still ? undefined : STILL_UNAVAILABLE[current.stillStatus],
-            },
-          ]}
-        />
+        <>
+          <SegmentedControl
+            label="Scene view"
+            value={current.view}
+            onChange={current.setView}
+            options={[
+              {
+                value: "script",
+                label: "Script",
+                icon: <ScriptIcon size={14} />,
+                disabled: !scene,
+                title: scene ? undefined : SCRIPT_UNAVAILABLE[current.sceneStatus],
+              },
+              {
+                value: "still",
+                label: "Film still",
+                icon: <ImageIcon size={14} />,
+                disabled: !still,
+                title: still ? undefined : STILL_UNAVAILABLE[current.stillStatus],
+              },
+            ]}
+          />
+          {/* The page style only shows on the script, so it rests while a still is up. */}
+          <SceneTextStyleToggle look="toolbar" disabled={current.view !== "script"} />
+        </>
       }
       hasPrev={current.hasPrev}
       hasNext={current.hasNext}

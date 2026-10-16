@@ -4,6 +4,7 @@ import { getStillFilmPath } from "@/entities/still/model/still.js";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { getScriptTagLabel } from "@server/domain/script-tags.js";
 import { SceneCard, SceneCardSkeleton } from "@/entities/script-scene/ui/SceneCard.jsx";
+import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
 import { searchScriptScenes } from "@/shared/api/scriptScenes.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
@@ -170,6 +171,7 @@ export default function ScriptSearchPage() {
                 value={cardLayout}
                 onChange={setCardLayout}
               />
+              <SceneTextStyleToggle look="toolbar" />
             </>
           }
         />

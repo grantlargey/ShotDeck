@@ -5,6 +5,9 @@ import { BrowserRouter } from "react-router-dom";
 import "@/app/styles/index.css";
 import App from "@/app/App.jsx";
 import { SessionProvider } from "@/entities/session/model/SessionProvider.jsx";
+import { showSavedSceneTextStyle } from "@/features/scene-text-style/model/sceneTextStyle.js";
+
+showSavedSceneTextStyle();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

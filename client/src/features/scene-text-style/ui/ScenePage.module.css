@@ -1,0 +1,81 @@
+.page {
+  flex: none;
+  display: block;
+  overflow: visible;
+}
+
+.paper {
+  fill: var(--color-paper);
+  stroke: var(--scene-mark-outline);
+  stroke-width: 1.2;
+}
+
+.heading,
+.line,
+.cue {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.heading {
+  stroke: var(--scene-heading-color);
+  stroke-width: 2.2;
+}
+
+.line {
+  stroke: var(--color-ink);
+  stroke-opacity: 0.55;
+  stroke-width: 1.3;
+}
+
+.cue {
+  stroke: var(--color-ink);
+  stroke-opacity: 0.85;
+  stroke-width: 1.3;
+}
+
+/* Typing: each line draws in turn, heading first, after --type-start. */
+.typing path {
+  stroke-dasharray: 1;
+  animation: type-line 130ms ease-out both;
+}
+
+.typing path:nth-of-type(1) {
+  animation-delay: calc(var(--type-start, 0ms) + 60ms);
+}
+
+.typing path:nth-of-type(2) {
+  animation-delay: calc(var(--type-start, 0ms) + 150ms);
+}
+
+.typing path:nth-of-type(3) {
+  animation-delay: calc(var(--type-start, 0ms) + 220ms);
+}
+
+.typing path:nth-of-type(4) {
+  animation-delay: calc(var(--type-start, 0ms) + 300ms);
+}
+
+.typing path:nth-of-type(5) {
+  animation-delay: calc(var(--type-start, 0ms) + 370ms);
+}
+
+.typing path:nth-of-type(6) {
+  animation-delay: calc(var(--type-start, 0ms) + 430ms);
+}
+
+@keyframes type-line {
+  from {
+    stroke-dashoffset: 1;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing path {
+    animation: none;
+  }
+}

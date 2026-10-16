@@ -13,6 +13,12 @@
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home {
   border-radius: var(--radius-sm);
   color: var(--color-text);
   text-decoration: none;
