@@ -52,17 +52,6 @@ export function ImageIcon(props) {
   );
 }
 
-/** A card split between a picture and lines of text. */
-export function SplitViewIcon(props) {
-  return (
-    <StrokeIcon {...props}>
-      <rect x="2.75" y="1.75" width="10.5" height="12.5" rx="1.5" />
-      <path d="M2.75 8h10.5M5.25 10.5h5.5M5.25 12.25h3.5" />
-      <path d="M4.75 6.25l2-1.75 1.5 1.25 1.25-1 1.75 1.5" />
-    </StrokeIcon>
-  );
-}
-
 export function UploadIcon(props) {
   return (
     <StrokeIcon {...props}>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { getStillFilmPath } from "@/entities/still/model/still.js";
+import { getStillFilmPath, getStillThumbnail } from "@/entities/still/model/still.js";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { getScriptTagLabel } from "@server/domain/script-tags.js";
 import { SceneCard, SceneCardSkeleton } from "@/entities/script-scene/ui/SceneCard.jsx";
@@ -8,32 +8,21 @@ import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextSt
 import { searchScriptScenes } from "@/shared/api/scriptScenes.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
+import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
-import { ScriptIcon, SplitViewIcon } from "@/shared/ui/icons.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
-import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { buildFilterGroups, countSceneTags } from "../model/sceneBrowse.js";
+import { CardLayoutSwitch } from "./CardLayoutSwitch.jsx";
 import FilterSidebar from "./FilterSidebar.jsx";
 import styles from "./ScriptSearchPage.module.css";
 
 const SKELETON_CARDS = 6;
 // Joins tag values into one stable string for memo dependencies.
 const TAG_SEPARATOR = " ";
-
-const CARD_LAYOUT_OPTIONS = [
-  { value: "script", label: "Script only", title: "Script only", icon: <ScriptIcon size={16} />, hideLabel: true },
-  {
-    value: "split",
-    label: "Film still and script",
-    title: "Film still and script",
-    icon: <SplitViewIcon size={16} />,
-    hideLabel: true,
-  },
-];
 
 export default function ScriptSearchPage() {
   useDocumentTitle("Script Search");
@@ -87,6 +76,9 @@ export default function ScriptSearchPage() {
 
   // The API returns scenes in film title then film time order.
   const results = response.rows;
+  // A real still from the results for the card switch's little split card.
+  const sampleStill = getStillThumbnail(results.find((scene) => scene.first_image_annotation)?.first_image_annotation);
+  const sampleStillUrl = useSignedMediaUrl(sampleStill.key, sampleStill.url);
   const tagCounts = useMemo(() => countSceneTags(catalog), [catalog]);
   const filterGroups = buildFilterGroups();
   const titleCount = useMemo(() => new Set(results.map((row) => row.movie_id)).size, [results]);
@@ -165,12 +157,7 @@ export default function ScriptSearchPage() {
               <Button size="sm" className={styles.filtersButton} onClick={() => setFiltersOpen(true)}>
                 Filters{selectedTags.length ? ` (${selectedTags.length})` : ""}
               </Button>
-              <SegmentedControl
-                label="Card preview"
-                options={CARD_LAYOUT_OPTIONS}
-                value={cardLayout}
-                onChange={setCardLayout}
-              />
+              <CardLayoutSwitch value={cardLayout} onChange={setCardLayout} stillUrl={sampleStillUrl} />
               <SceneTextStyleToggle look="toolbar" />
             </>
           }
