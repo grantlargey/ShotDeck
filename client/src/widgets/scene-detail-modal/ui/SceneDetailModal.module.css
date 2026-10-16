@@ -325,3 +325,35 @@
     flex: 1;
   }
 }
+
+/* ---------- View switch: the film still icon is the scene's own still ---------- */
+
+.stillIcon {
+  flex: none;
+  width: 18px;
+  height: 12px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  background: var(--color-bg-deep) center / cover no-repeat;
+}
+
+/* Picked: the still comes up out of white, like a print in the developer. */
+.developing {
+  animation: develop 620ms ease-out both;
+}
+
+@keyframes develop {
+  from {
+    filter: brightness(2.6) saturate(0) contrast(0.6);
+  }
+
+  to {
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .developing {
+    animation: none;
+  }
+}

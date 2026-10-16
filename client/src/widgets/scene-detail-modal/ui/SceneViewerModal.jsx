@@ -1,13 +1,16 @@
+import { useState } from "react";
 import {
   displayScriptSceneText,
 } from "@/entities/script-scene/model/capturedScene.js";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
+import { getStillThumbnail } from "@/entities/still/model/still.js";
+import { ScenePage } from "@/features/scene-text-style/ui/ScenePage.jsx";
 import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
 import { groupScriptTagsByCategory } from "@server/domain/script-tags.js";
+import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatMomentToHms } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
-import { ImageIcon, ScriptIcon } from "@/shared/ui/icons.jsx";
 import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { useSceneViewer } from "../model/useSceneViewer.js";
@@ -60,6 +63,13 @@ export function SceneViewerModal({
   const current = useSceneViewer({ initial, source });
   const { scene, still } = current;
   const showStill = current.view === "still";
+  // Counts picks of a view, so the chosen view's icon comes alive each time it's picked.
+  const [viewPicks, setViewPicks] = useState(0);
+
+  function pickView(view) {
+    setViewPicks((count) => count + 1);
+    current.setView(view);
+  }
 
   let meta = "Script";
   if (showStill) {
@@ -78,19 +88,22 @@ export function SceneViewerModal({
           <SegmentedControl
             label="Scene view"
             value={current.view}
-            onChange={current.setView}
+            onChange={pickView}
+            sliding
             options={[
               {
                 value: "script",
                 label: "Script",
-                icon: <ScriptIcon size={14} />,
+                // The page in the visitor's style; picking the script types its lines.
+                icon: <ScenePage key={`script-${viewPicks}`} height={14} typing={viewPicks > 0 && !showStill} />,
                 disabled: !scene,
                 title: scene ? undefined : SCRIPT_UNAVAILABLE[current.sceneStatus],
               },
               {
                 value: "still",
                 label: "Film still",
-                icon: <ImageIcon size={14} />,
+                // The scene's own still in a tiny frame; picking it develops like a print.
+                icon: <StillFrameIcon key={`still-${viewPicks}`} still={still} developing={viewPicks > 0 && showStill} />,
                 disabled: !still,
                 title: still ? undefined : STILL_UNAVAILABLE[current.stillStatus],
               },
@@ -149,6 +162,19 @@ export function SceneViewerModal({
         <p className={styles.stageMessage}>{SCRIPT_UNAVAILABLE[current.sceneStatus]}</p>
       )}
     </SceneDetailModal>
+  );
+}
+
+/** The current still in a tiny frame, for the view switch. `developing` plays it in like a print. */
+function StillFrameIcon({ still, developing }) {
+  const thumbnail = getStillThumbnail(still);
+  const url = useSignedMediaUrl(thumbnail.key, thumbnail.url);
+  return (
+    <span
+      className={cx(styles.stillIcon, developing && styles.developing)}
+      style={url ? { backgroundImage: `url("${url}")` } : undefined}
+      aria-hidden="true"
+    />
   );
 }
 

@@ -1,4 +1,5 @@
 .group {
+  position: relative;
   padding: 3px;
   display: inline-grid;
   grid-auto-flow: column;
@@ -63,4 +64,31 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* One highlight that glides to the chosen option; the options sit above it. */
+.sliding .option {
+  z-index: 1;
+}
+
+.sliding .active {
+  background: transparent;
+}
+
+.highlight {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  transition:
+    transform 0.26s cubic-bezier(0.3, 1.25, 0.5, 1),
+    width 0.26s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .highlight {
+    transition: none;
+  }
 }

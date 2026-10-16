@@ -31,16 +31,6 @@ export function SearchIcon(props) {
   );
 }
 
-/** A script page with a folded corner. */
-export function ScriptIcon(props) {
-  return (
-    <StrokeIcon {...props}>
-      <path d="M4 1.75h5.5l2.75 2.75v9.75H4z" />
-      <path d="M9.5 1.75V4.5h2.75M6.25 8h3.5M6.25 10.75h3.5" />
-    </StrokeIcon>
-  );
-}
-
 /** A framed picture. */
 export function ImageIcon(props) {
   return (
