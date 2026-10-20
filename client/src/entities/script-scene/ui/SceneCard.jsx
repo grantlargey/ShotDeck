@@ -9,6 +9,7 @@ import { Skeleton } from "@/shared/ui/Skeleton.jsx";
 import {
   displayScriptSceneText,
   safeScriptSceneTags,
+  semanticMatchPercent,
 } from "../model/capturedScene.js";
 import { formatFilmTiming } from "../model/filmTiming.js";
 import { getScriptTagLabel } from "@server/domain/script-tags.js";
@@ -28,12 +29,14 @@ const MAX_PREVIEW_ELEMENTS = 14;
  * it turns back (stillMotion.js): { phase: "in" | "out", delay, frameDelay },
  * where `delay` holds this card's still back and `frameDelay` is when the
  * frames close, both in ms.
+ * similarity: 0–1 semantic search score; shown as a percentage when present
  */
 export function SceneCard({
   scene,
   title,
   layout = "script",
   status,
+  similarity,
   selected = false,
   tooltip,
   hasPopup = false,
@@ -50,6 +53,7 @@ export function SceneCard({
   const thumbnail = getStillThumbnail(split ? scene?.first_image_annotation : null);
   const imageUrl = useSignedMediaUrl(thumbnail.key, thumbnail.url);
   const cardTitle = title ?? (scene?.movie_title || "Unknown title");
+  const matchPercent = semanticMatchPercent(similarity);
 
   function handleKeyDown(event) {
     if (event.target !== event.currentTarget) return;
@@ -108,6 +112,7 @@ export function SceneCard({
         </div>
         <div className={styles.subRow}>
           <span>{formatFilmTiming(scene)}</span>
+          {matchPercent !== null && <Badge tone="ai">{matchPercent}% match</Badge>}
           {status && <Badge tone="success">{status}</Badge>}
         </div>
         {tags.length > 0 && (

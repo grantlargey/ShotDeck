@@ -144,7 +144,7 @@ function dropCommand(url, name) {
  * The child processes' environment. Values are set explicitly, even when empty,
  * because dotenv never overrides a variable that already exists: a `server/.env`
  * next to the tests (as in the main checkout) must not supply a database, AWS
- * credentials, an OpenAI key or extra CORS origins.
+ * credentials, an AI provider key or extra CORS origins.
  */
 function testEnvironment(databaseUrl) {
     return {
@@ -164,8 +164,10 @@ function testEnvironment(databaseUrl) {
         AWS_IGNORE_CONFIGURED_ENDPOINT_URLS: "false",
         AWS_MAX_ATTEMPTS: "1",
         AWS_EC2_METADATA_DISABLED: "true",
-        // Empty counts as unset for the formatter, which then answers 503.
+        // Empty counts as unset for the formatter and semantic search, which
+        // then answer 503.
         OPENAI_API_KEY: "",
+        GEMINI_API_KEY: "",
         ALLOWED_ORIGINS: "",
     };
 }

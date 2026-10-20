@@ -33,10 +33,22 @@ describe("the numbered migration runner", () => {
             );
             assert.deepEqual(
                 tables.rows.map((row) => row.tablename),
-                ["admin_sessions", "admin_users", "annotations", "captured_scenes", "movies", "schema_migrations", "scripts"]
+                [
+                    "admin_sessions",
+                    "admin_users",
+                    "annotations",
+                    "captured_scenes",
+                    "movies",
+                    "scene_embeddings",
+                    "schema_migrations",
+                    "scripts",
+                ]
             );
             const ledger = await db.query("SELECT version, name FROM schema_migrations ORDER BY version");
-            assert.deepEqual(ledger.rows, [{ version: 1, name: "0001_canonical_schema" }]);
+            assert.deepEqual(ledger.rows, [
+                { version: 1, name: "0001_canonical_schema" },
+                { version: 2, name: "0002_scene_embeddings" },
+            ]);
             const columns = await db.query(
                 `SELECT table_name, column_name, is_nullable, column_default
                  FROM information_schema.columns
@@ -100,6 +112,21 @@ describe("the numbered migration runner", () => {
             for (const name of ["captured_scenes_start_page_check", "captured_scenes_end_page_check"]) {
                 assert.match(named(name).def, /<= 300\)/, name);
             }
+            // The semantic index lives beside captured scenes, not on them, and
+            // disappears with the scene it describes.
+            const embeddingColumns = await db.query(
+                `SELECT column_name FROM information_schema.columns
+                 WHERE table_name = 'scene_embeddings' ORDER BY column_name`
+            );
+            assert.deepEqual(
+                embeddingColumns.rows.map((row) => row.column_name),
+                ["embedding", "model", "scene_id", "source_hash", "updated_at"]
+            );
+            const embeddingForeignKey = await db.query(
+                `SELECT confdeltype FROM pg_constraint
+                 WHERE conrelid = 'scene_embeddings'::regclass AND contype = 'f'`
+            );
+            assert.deepEqual(embeddingForeignKey.rows, [{ confdeltype: "c" }]);
         } finally {
             await db.end();
         }

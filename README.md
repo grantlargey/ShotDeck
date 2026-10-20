@@ -74,6 +74,7 @@ Sign in through the Admin link or `/login`, then create a project and upload a s
 | `npm run services:stop` | Stop containers while keeping their data. |
 | `npm run services:logs` | Follow PostgreSQL and S3 logs. |
 | `npm run db:migrate` | Apply pending database migrations. |
+| `npm run semantic:index` | Embed scenes for semantic search; requires `GEMINI_API_KEY`. |
 
 Migrations do not run automatically. Run `npm run db:migrate` after pulling changes that add migrations.
 
@@ -100,8 +101,10 @@ The server reads `server/.env`, with shell environment variables taking preceden
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Change storage credentials. Local values are supplied in the example file. |
 | `S3_PUBLIC_ENDPOINT` | Give the browser a different storage address from the API. |
 | `ALLOWED_ORIGINS` | Allow additional browser origins. |
-| `OPENAI_API_KEY` | Enable optional AI formatting. |
-| `OPENAI_SCREENPLAY_TIMEOUT_MS` | Change the AI request timeout from `90000` ms. |
+| `OPENAI_API_KEY` | Enable optional AI screenplay formatting. |
+| `OPENAI_SCREENPLAY_TIMEOUT_MS` | Change the AI formatting timeout from `90000` ms. |
+| `GEMINI_API_KEY` | Enable semantic scene search. |
+| `GEMINI_EMBEDDING_TIMEOUT_MS` | Change the semantic embedding timeout from `30000` ms. |
 | `ADMIN_PASSWORD` | Supply an admin CLI password without the interactive prompt. |
 
 The client defaults to `http://localhost:4000`. Override it with `VITE_API_BASE` in `client/.env`. Client variables are embedded in browser assets and must not contain secrets.
@@ -153,6 +156,52 @@ npm run admin -- reset-password --email you@example.com
 ```
 
 Password resets and account disabling invalidate existing sessions.
+
+## Semantic scene search
+
+Script Search accepts a natural-language description ("a tense standoff in a
+diner") and ranks captured scenes by how closely they match. The ranking uses
+each scene's captured text and the labels of its tags, so it complements the
+tag filters: selected tags narrow the candidates before the similarity ranking.
+
+Semantic search is optional and off by default. Without `GEMINI_API_KEY`, tag
+browsing keeps working, the search box explains that the feature is not enabled,
+and the semantic endpoints answer `503`.
+
+### How it works
+
+- `server/src/services/semantic-search.service.js` embeds a scene's tag labels
+  plus its scene text with Gemini's `gemini-embedding-001` model and stores the
+  768-dimension vector in the `scene_embeddings` table with the model name and a
+  hash of the input.
+- Documents are embedded with the `RETRIEVAL_DOCUMENT` task and searches with
+  `RETRIEVAL_QUERY`, which Gemini tunes for retrieval rather than generic
+  similarity.
+- A search embeds only the visitor's description, computes cosine similarity
+  against the indexed scenes, and returns the best `limit` matches with a
+  `similarity` score.
+- Indexing skips scenes whose text, tags and model already match, so rebuilding
+  is cheap and safe. Changing the embedding model re-embeds everything because
+  stored rows carry their model name.
+- Vectors live in a `REAL[]` column, so the stock `postgres:16` image works; no
+  `pgvector` extension is required.
+
+### Enabling it
+
+1. Set `GEMINI_API_KEY` in `server/.env` and restart the API. Get a key from
+   Google AI Studio (https://aistudio.google.com/apikey).
+2. Run `npm run db:migrate` once to create `scene_embeddings`.
+3. Run `npm run semantic:index` to embed the scenes that already exist. An
+   admin can also click **Build index** on Script Search when scenes are not
+   indexed yet.
+4. Re-run the index after adding or editing scenes so new text is searchable.
+   The status line next to the search box reports how many scenes are pending.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /script-scenes/semantic?q=…&tags=…&match=all\|any&limit=20` | Ranked scenes with `similarity`, plus index counts. |
+| `GET /script-scenes/semantic/status` | Whether semantic search is configured and how much of the library is indexed. |
+| `POST /script-scenes/semantic-index` | Admin-only: embed scenes that are missing or stale. |
 
 ## Architecture
 
@@ -210,5 +259,6 @@ docker compose --profile container-api stop api
 | Missing database tables | Run `npm run db:migrate`. |
 | PostgreSQL unreachable or uploads failing | Run `npm run services:up`, then inspect `npm run services:logs`. |
 | AI formatting unavailable | Set `OPENAI_API_KEY` if needed; manual editing still works without it. |
+| Semantic search says it isn't available | Set `GEMINI_API_KEY`, restart the API, then run `npm run db:migrate` and `npm run semantic:index`. |
 | App unavailable at `127.0.0.1:5173` | Use `http://localhost:5173`. |
 | Wrong Node version | Install Node.js 24.13.1, reopen the terminal, and check your PATH. |

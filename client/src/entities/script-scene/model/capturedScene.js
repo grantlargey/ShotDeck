@@ -13,6 +13,18 @@ export function displayScriptSceneText(item) {
   return typeof item?.scene_text === "string" ? item.scene_text : "";
 }
 
+/**
+ * A semantic search similarity as a whole percentage (0–100), or null when the
+ * record carries no usable score. Values are clamped so a rounding artifact
+ * cannot show a negative match or more than 100%.
+ */
+export function semanticMatchPercent(similarity) {
+  if (similarity === null || similarity === undefined || similarity === "") return null;
+  const value = Number(similarity);
+  if (!Number.isFinite(value)) return null;
+  return Math.round(Math.min(Math.max(value, 0), 1) * 100);
+}
+
 function compareText(left, right) {
   const a = String(left ?? "");
   const b = String(right ?? "");

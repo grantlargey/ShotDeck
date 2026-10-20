@@ -70,6 +70,22 @@ export async function listScriptScenes(db, { filmId, scriptId }) {
     return result.rows.map(sceneFromRow);
 }
 
+/**
+ * Full scene records for `ids`, each with its film title. The caller orders
+ * them; the database returns them in no particular order.
+ */
+export async function listScenesByIds(db, ids) {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const result = await db.query(
+        `SELECT ${SCENE_COLUMNS_SQL}, m.title AS movie_title
+         ${SCENE_FROM_SQL}
+         JOIN movies m ON m.id = s.movie_id
+         WHERE sc.id = ANY($1::uuid[])`,
+        [ids]
+    );
+    return result.rows.map((row) => ({ ...sceneFromRow(row), movie_title: row.movie_title }));
+}
+
 export async function deleteScriptScene(pool, { filmId, scriptId, sceneId }) {
     await withFilmWrite(pool, { filmId }, async (client) => {
         const result = await client.query(

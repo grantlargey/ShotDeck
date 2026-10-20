@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { displayScriptSceneText, getSceneScriptPath, sortScriptScenes, sortScriptScenesByTime } from "./capturedScene.js";
+import {
+  displayScriptSceneText,
+  getSceneScriptPath,
+  semanticMatchPercent,
+  sortScriptScenes,
+  sortScriptScenesByTime,
+} from "./capturedScene.js";
 
 function anchor(page, line) {
   return { page, y: 96 + line * 12 };
@@ -66,6 +72,23 @@ describe("sortScriptScenesByTime", () => {
     expect(sortScriptScenesByTime(rows)).not.toBe(rows);
     expect(rows.map(({ id }) => id)).toEqual(["b", "a"]);
     expect(sortScriptScenesByTime(null)).toEqual([]);
+  });
+});
+
+describe("semanticMatchPercent", () => {
+  it("rounds a similarity to a whole percentage and clamps it", () => {
+    expect(semanticMatchPercent(0.873)).toBe(87);
+    expect(semanticMatchPercent(1)).toBe(100);
+    expect(semanticMatchPercent(2)).toBe(100);
+    expect(semanticMatchPercent(-0.2)).toBe(0);
+    expect(semanticMatchPercent("0.5")).toBe(50);
+  });
+
+  it("has no percentage when a record carries no usable score", () => {
+    expect(semanticMatchPercent(undefined)).toBe(null);
+    expect(semanticMatchPercent(null)).toBe(null);
+    expect(semanticMatchPercent("")).toBe(null);
+    expect(semanticMatchPercent("strong")).toBe(null);
   });
 });
 

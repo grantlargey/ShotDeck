@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAdmin } from "../middleware/require-admin.js";
 import * as scriptScenes from "../services/script-scenes.service.js";
+import * as semanticSearch from "../services/semantic-search.service.js";
 
 /*
  * Captured-scene HTTP handlers. The module behind them owns the rules, the SQL
@@ -54,6 +55,29 @@ router.get("/script-scenes", async (req, res) => {
 
 router.get("/script-scenes/sample", async (req, res) => {
     res.json(await scriptScenes.sampleScriptScenes(pool));
+});
+
+/*
+ * Semantic search. Reads embed the visitor's description and rank the indexed
+ * scenes; rebuilding the index spends API credit, so that route is admin-only.
+ */
+router.get("/script-scenes/semantic/status", async (req, res) => {
+    res.json(await semanticSearch.getSemanticSearchStatus(pool));
+});
+
+router.get("/script-scenes/semantic", async (req, res) => {
+    res.json(
+        await semanticSearch.searchScenesSemantically(pool, {
+            query: req.query.q,
+            limit: req.query.limit,
+            tags: tagsFromQuery(req.query.tags),
+            match: req.query.match === "any" ? "any" : "all",
+        })
+    );
+});
+
+router.post("/script-scenes/semantic-index", requireAdmin, async (req, res) => {
+    res.json(await semanticSearch.indexScenes(pool));
 });
 
 export default router;

@@ -13,11 +13,12 @@
     "services:logs": "docker compose logs -f db s3",
     "services:reset": "node scripts/services-reset.mjs",
     "db:migrate": "node server/src/migrate.js",
+    "semantic:index": "node server/src/semantic-index.js",
     "dev": "npm run services:up && concurrently --kill-others --names api,web \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "admin": "npm run admin --prefix server --"
   },
   "devDependencies": {
-    "concurrently": "10.0.5",
+    "concurrently": "^10.0.6",
     "knip": "6.37.0",
     "playwright": "1.63.0"
   }

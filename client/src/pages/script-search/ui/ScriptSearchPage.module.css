@@ -66,6 +66,28 @@
 }
 
 /* The results heading (a SectionHeading); the Filters button only shows on narrow screens. */
+/* Natural-language search sits above the tag-filtered browsing controls. */
+.semanticSearch {
+  margin-bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.semanticSearchInput {
+  flex: 1 1 320px;
+}
+
+.toolbar {
+  min-height: 40px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
 .toolbar .filtersButton {
   display: none;
 }
