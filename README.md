@@ -103,7 +103,7 @@ The server reads `server/.env`, with shell environment variables taking preceden
 | `OPENAI_API_KEY` | Enable optional AI screenplay formatting. |
 | `OPENAI_SCREENPLAY_TIMEOUT_MS` | Change the AI formatting timeout from `90000` ms. |
 | `GEMINI_API_KEY` | Enable semantic scene search. |
-| `GEMINI_EMBEDDING_TIMEOUT_MS` | Change the semantic embedding timeout from `30000` ms. |
+| `GEMINI_TIMEOUT_MS` | Change the timeout for each semantic search request to Gemini from `30000` ms. |
 | `ADMIN_PASSWORD` | Supply an admin CLI password without the interactive prompt. |
 
 The client defaults to `http://localhost:4000`. Override it with `VITE_API_BASE` in `client/.env`. Client variables are embedded in browser assets and must not contain secrets.
@@ -159,9 +159,10 @@ Password resets and account disabling invalidate existing sessions.
 ## Semantic scene search
 
 Script Search accepts a natural-language description ("a tense standoff in a
-diner") and ranks captured scenes by how closely they match. The ranking uses
-each scene's captured text and the labels of its tags, so it complements the
-tag filters: selected tags narrow the candidates before the similarity ranking.
+diner") and returns the captured scenes that match it, best match first. A
+description that matches no scene finds nothing. Matching reads each scene's
+captured text and the labels of its tags, and selected tag filters narrow the
+scenes it considers.
 
 Semantic search is optional and off by default. Without `GEMINI_API_KEY`, tag
 browsing keeps working, the search box explains that the feature is not enabled,
@@ -169,17 +170,37 @@ and the semantic search endpoint answers `503`.
 
 ### How it works
 
-- `server/src/services/semantic-search.service.js` embeds a scene's tag labels
-  plus its scene text with Gemini's `gemini-embedding-001` model and stores the
-  768-dimension vector in the `scene_embeddings` table with the model name and a
-  hash of the input.
-- Documents are embedded with the `RETRIEVAL_DOCUMENT` task and searches with
-  `RETRIEVAL_QUERY`, which Gemini tunes for retrieval rather than generic
-  similarity.
-- A search embeds only the visitor's description, computes cosine similarity
-  against the indexed scenes, and returns the best `limit` matches with a
-  `similarity` score. Scenes scoring below `0.55` are left out, so an unrelated
-  description finds no scenes.
+`server/src/services/semantic-search.service.js` answers a search in three
+steps:
+
+1. **Candidates.** Two retrievers run under the same tag filters. One embeds the
+   description with Gemini's `gemini-embedding-001` model and ranks scenes by
+   cosine similarity. The other ranks them by the description's words with
+   PostgreSQL full-text search (`english` stemming; any word may match). The
+   two rankings are merged by reciprocal rank fusion, and the best 30 go on.
+2. **Grading.** One `gemini-3.5-flash-lite` call reads the description and
+   every candidate's text and tags, and grades each scene: 3 shows what was
+   described, 2 mostly does, 1 is only related, 0 is unrelated. The grader
+   sees the candidates in story order (film, then film time), not best first:
+   shown best first, it accepted about six times as many unrelated scenes and
+   missed exact matches, at the same speed.
+3. **Acceptance.** Only scenes graded 2 or 3 come back, grade 3 first, then by
+   how well they matched in step 1. A scene that contains the whole
+   description as a phrase, such as a name, title or quote, counts as grade 3.
+   If grading fails or times out, the search fails rather than return ungraded
+   scenes.
+
+Indexing:
+
+- A scene is embedded from its tag labels plus its scene text, with the
+  `RETRIEVAL_DOCUMENT` task; searches use `RETRIEVAL_QUERY`. A scene too long
+  for one embedding (about 5,000 characters with its tag line) is split into
+  overlapping chunks at paragraph breaks, and it ranks by its closest chunk.
+- Vectors are stored in `scene_chunk_embeddings`, one 768-dimension `REAL[]`
+  per chunk, with the model name and a hash of the scene's input. The stock
+  `postgres:16` image works; no `pgvector` extension is required.
+- Word search uses an expression index on `to_tsvector('english', scene_text)`,
+  so nothing derived is stored on the scene row.
 - Indexing is automatic. Saving a scene embeds it in the background, so the save
   never waits on Gemini, and the API checks every scene when it starts. That
   start-up pass catches scenes saved before the key was set and saves whose
@@ -187,19 +208,25 @@ and the semantic search endpoint answers `503`.
 - Indexing skips scenes whose text, tags and model already match, so the
   start-up pass is cheap. Changing the embedding model re-embeds everything
   because stored rows carry their model name.
-- Vectors live in a `REAL[]` column, so the stock `postgres:16` image works; no
-  `pgvector` extension is required.
+
+Each search makes two Gemini calls: one small embedding and one grading call
+that reads up to 30 scenes (about 15,000 tokens for 20 scenes, about two
+seconds). Grading needs a key with billing enabled for anything beyond light
+use; the free tier allows about 15 grading calls a minute. To bound that cost,
+each client address can search 20 times a minute; further searches answer
+`429` with `retry_after_seconds` until its minute passes. The count is kept in
+memory, which suits the single API task.
 
 ### Enabling it
 
-1. Run `npm run db:migrate` once to create `scene_embeddings`.
+1. Run `npm run db:migrate` to create the search tables and indexes.
 2. Set `GEMINI_API_KEY` in `server/.env` and restart the API. Get a key from
    Google AI Studio (https://aistudio.google.com/apikey). The API embeds the
    existing scenes in the background and logs how many it embedded.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /script-scenes/semantic?q=…&tags=…&match=all\|any&limit=20` | Ranked scenes with `similarity`. |
+| `GET /script-scenes/semantic?q=…&tags=…&match=all\|any&limit=20` | The matching scenes, best first; empty when nothing matches. |
 | `GET /script-scenes/semantic/status` | Whether semantic search is configured and how much of the library is indexed. |
 
 ## Architecture

@@ -39,6 +39,7 @@ describe("the numbered migration runner", () => {
                     "annotations",
                     "captured_scenes",
                     "movies",
+                    "scene_chunk_embeddings",
                     "scene_embeddings",
                     "schema_migrations",
                     "scripts",
@@ -49,6 +50,8 @@ describe("the numbered migration runner", () => {
             assert.deepEqual(ledger.rows, [
                 { version: 1, name: "0001_canonical_schema" },
                 { version: 3, name: "0003_scene_embeddings" },
+                { version: 4, name: "0004_scene_text_search" },
+                { version: 5, name: "0005_scene_chunk_embeddings" },
             ]);
             const columns = await db.query(
                 `SELECT table_name, column_name, is_nullable, column_default
@@ -128,6 +131,38 @@ describe("the numbered migration runner", () => {
                  WHERE conrelid = 'scene_embeddings'::regclass AND contype = 'f'`
             );
             assert.deepEqual(embeddingForeignKey.rows, [{ confdeltype: "c" }]);
+            // Its successor holds one vector per chunk of a scene.
+            const chunkColumns = await db.query(
+                `SELECT column_name FROM information_schema.columns
+                 WHERE table_name = 'scene_chunk_embeddings' ORDER BY column_name`
+            );
+            assert.deepEqual(
+                chunkColumns.rows.map((row) => row.column_name),
+                ["chunk", "embedding", "model", "scene_id", "source_hash", "updated_at"]
+            );
+            const chunkConstraints = await db.query(
+                `SELECT contype, confdeltype, pg_get_constraintdef(oid) AS def FROM pg_constraint
+                 WHERE conrelid = 'scene_chunk_embeddings'::regclass AND contype IN ('f', 'p')
+                 ORDER BY contype`
+            );
+            assert.deepEqual(
+                chunkConstraints.rows.map(({ contype, confdeltype, def }) => ({ contype, confdeltype, def })),
+                [
+                    { contype: "f", confdeltype: "c", def: "FOREIGN KEY (scene_id) REFERENCES captured_scenes(id) ON DELETE CASCADE" },
+                    { contype: "p", confdeltype: " ", def: "PRIMARY KEY (scene_id, chunk)" },
+                ]
+            );
+            // Word search indexes an expression over scene_text; nothing derived
+            // is stored on the scene row (the column list above).
+            const textIndex = await db.query(
+                `SELECT indexdef FROM pg_indexes WHERE indexname = 'captured_scenes_text_search_idx'`
+            );
+            assert.deepEqual(textIndex.rows, [
+                {
+                    indexdef:
+                        "CREATE INDEX captured_scenes_text_search_idx ON public.captured_scenes USING gin (to_tsvector('english'::regconfig, scene_text))",
+                },
+            ]);
         } finally {
             await db.end();
         }

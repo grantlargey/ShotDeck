@@ -201,7 +201,7 @@ export default function ScriptSearchPage() {
 
   const summary = response.key
     ? query
-      ? `${results.length} scene${results.length === 1 ? "" : "s"} closest to your description`
+      ? `${results.length} scene${results.length === 1 ? "" : "s"} matching your description`
       : `Showing ${results.length} scene${results.length === 1 ? "" : "s"} from ${titleCount} title${
           titleCount === 1 ? "" : "s"
         }`
@@ -338,7 +338,6 @@ export default function ScriptSearchPage() {
                       frameDelay: stillMotion.frameDelay,
                     }
                   }
-                  similarity={query ? scene.similarity : undefined}
                   hasPopup
                   onClick={() => setOpenSceneId(scene.id)}
                 />

@@ -63,8 +63,9 @@ router.get("/script-scenes/sample", async (req, res) => {
 });
 
 /*
- * Semantic search. A search embeds the visitor's description and ranks the
- * indexed scenes; the index itself keeps up with saves on its own.
+ * Semantic search. A search finds candidates by the description's meaning and
+ * words, has Gemini grade them, and returns only the scenes it accepts; the
+ * index itself keeps up with saves on its own.
  */
 router.get("/script-scenes/semantic/status", async (req, res) => {
     res.json(await semanticSearch.getSemanticSearchStatus(pool));
@@ -77,6 +78,7 @@ router.get("/script-scenes/semantic", async (req, res) => {
             limit: req.query.limit,
             tags: tagsFromQuery(req.query.tags),
             match: req.query.match === "any" ? "any" : "all",
+            ip: req.ip,
         })
     );
 });
