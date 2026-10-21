@@ -1,6 +1,7 @@
 import "./env.js";
 import { app } from "./app.js";
 import { pool } from "./db.js";
+import { queueAllSceneEmbeddings } from "./services/semantic-search.service.js";
 import { queueMissingThumbnails } from "./services/thumbnails.service.js";
 
 const port = process.env.PORT || 4000;
@@ -9,5 +10,8 @@ app.listen(port, () => {
     console.log("ScriptDeck API running on port", port);
     queueMissingThumbnails(pool).catch((err) => {
         console.error("Failed to queue missing still thumbnails:", err.message);
+    });
+    queueAllSceneEmbeddings(pool).catch((err) => {
+        console.error("Failed to queue scene embeddings:", err.message);
     });
 });

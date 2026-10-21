@@ -74,7 +74,6 @@ Sign in through the Admin link or `/login`, then create a project and upload a s
 | `npm run services:stop` | Stop containers while keeping their data. |
 | `npm run services:logs` | Follow PostgreSQL and S3 logs. |
 | `npm run db:migrate` | Apply pending database migrations. |
-| `npm run semantic:index` | Embed scenes for semantic search; requires `GEMINI_API_KEY`. |
 
 Migrations do not run automatically. Run `npm run db:migrate` after pulling changes that add migrations.
 
@@ -166,7 +165,7 @@ tag filters: selected tags narrow the candidates before the similarity ranking.
 
 Semantic search is optional and off by default. Without `GEMINI_API_KEY`, tag
 browsing keeps working, the search box explains that the feature is not enabled,
-and the semantic endpoints answer `503`.
+and the semantic search endpoint answers `503`.
 
 ### How it works
 
@@ -179,29 +178,29 @@ and the semantic endpoints answer `503`.
   similarity.
 - A search embeds only the visitor's description, computes cosine similarity
   against the indexed scenes, and returns the best `limit` matches with a
-  `similarity` score.
-- Indexing skips scenes whose text, tags and model already match, so rebuilding
-  is cheap and safe. Changing the embedding model re-embeds everything because
-  stored rows carry their model name.
+  `similarity` score. Scenes scoring below `0.55` are left out, so an unrelated
+  description finds no scenes.
+- Indexing is automatic. Saving a scene embeds it in the background, so the save
+  never waits on Gemini, and the API checks every scene when it starts. That
+  start-up pass catches scenes saved before the key was set and saves whose
+  embedding failed.
+- Indexing skips scenes whose text, tags and model already match, so the
+  start-up pass is cheap. Changing the embedding model re-embeds everything
+  because stored rows carry their model name.
 - Vectors live in a `REAL[]` column, so the stock `postgres:16` image works; no
   `pgvector` extension is required.
 
 ### Enabling it
 
-1. Set `GEMINI_API_KEY` in `server/.env` and restart the API. Get a key from
-   Google AI Studio (https://aistudio.google.com/apikey).
-2. Run `npm run db:migrate` once to create `scene_embeddings`.
-3. Run `npm run semantic:index` to embed the scenes that already exist. An
-   admin can also click **Build index** on Script Search when scenes are not
-   indexed yet.
-4. Re-run the index after adding or editing scenes so new text is searchable.
-   The status line next to the search box reports how many scenes are pending.
+1. Run `npm run db:migrate` once to create `scene_embeddings`.
+2. Set `GEMINI_API_KEY` in `server/.env` and restart the API. Get a key from
+   Google AI Studio (https://aistudio.google.com/apikey). The API embeds the
+   existing scenes in the background and logs how many it embedded.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /script-scenes/semantic?q=…&tags=…&match=all\|any&limit=20` | Ranked scenes with `similarity`, plus index counts. |
+| `GET /script-scenes/semantic?q=…&tags=…&match=all\|any&limit=20` | Ranked scenes with `similarity`. |
 | `GET /script-scenes/semantic/status` | Whether semantic search is configured and how much of the library is indexed. |
-| `POST /script-scenes/semantic-index` | Admin-only: embed scenes that are missing or stale. |
 
 ## Architecture
 
@@ -259,6 +258,6 @@ docker compose --profile container-api stop api
 | Missing database tables | Run `npm run db:migrate`. |
 | PostgreSQL unreachable or uploads failing | Run `npm run services:up`, then inspect `npm run services:logs`. |
 | AI formatting unavailable | Set `OPENAI_API_KEY` if needed; manual editing still works without it. |
-| Semantic search says it isn't available | Set `GEMINI_API_KEY`, restart the API, then run `npm run db:migrate` and `npm run semantic:index`. |
+| Semantic search says it isn't available | Run `npm run db:migrate`, set `GEMINI_API_KEY`, then restart the API. |
 | App unavailable at `127.0.0.1:5173` | Use `http://localhost:5173`. |
 | Wrong Node version | Install Node.js 24.13.1, reopen the terminal, and check your PATH. |

@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { before, describe, test } from "node:test";
 import { pool } from "../src/db.js";
-import { batchEmbeddingWork, cosineSimilarity, indexScenes, sceneEmbeddingInput } from "../src/services/semantic-search.service.js";
+import {
+    batchEmbeddingWork,
+    cosineSimilarity,
+    indexScenes,
+    queueAllSceneEmbeddings,
+    sceneEmbeddingInput,
+    sceneEmbeddingsSettled,
+} from "../src/services/semantic-search.service.js";
 import { signInOwner, startApi } from "./helpers/api.js";
 import { createFilmWithScript, createScene, scenesPath, TAGS } from "./helpers/fixtures.js";
 
@@ -36,18 +43,21 @@ function useKey(t) {
 
 /**
  * Replaces fetch for Gemini calls only; the API client's own requests still go
- * to the real server. Returns the parsed request bodies that were sent.
+ * to the real server. Returns the parsed request bodies that were sent. Also
+ * quiets the background indexer's progress lines.
  */
 function mockEmbeddings(t, reply = (inputs) => inputs.map(vectorFor)) {
     const requests = [];
     const requestFetch = globalThis.fetch;
+    t.mock.method(console, "log", () => {});
     t.mock.method(globalThis, "fetch", async (url, init) => {
         if (!String(url).includes("generativelanguage.googleapis.com")) return requestFetch(url, init);
         const body = JSON.parse(init.body);
         requests.push({ url: String(url), method: init.method, headers: init.headers, body });
         const inputs = body.requests.map((request) => request.content.parts[0].text);
+        const vectors = await reply(inputs);
         return new Response(
-            JSON.stringify({ embeddings: reply(inputs).map((values) => ({ values })) }),
+            JSON.stringify({ embeddings: vectors.map((values) => ({ values })) }),
             { status: 200, headers: { "content-type": "application/json" } }
         );
     });
@@ -58,9 +68,16 @@ function search(params) {
     return api.get(`${SEARCH_PATH}?${new URLSearchParams(params).toString()}`);
 }
 
+async function hasEmbedding(sceneId) {
+    const result = await pool.query("SELECT 1 FROM scene_embeddings WHERE scene_id = $1", [sceneId]);
+    return result.rowCount === 1;
+}
+
 let place;
 let diner;
 let alley;
+// Saved while no key was set, so only the start-up pass embeds it.
+let unembedded;
 
 before(async () => {
     place = await createFilmWithScript(api, cookie, { title: "Semantic Diner" });
@@ -117,15 +134,14 @@ describe("semantic search request contract", () => {
         assert.ok(response.body.pending_count >= 2);
     });
 
-    test("requires an admin session to rebuild the index", async (t) => {
-        t.mock.method(console, "error", () => {});
-        const response = await api.post("/script-scenes/semantic-index");
-        assert.equal(response.status, 401, response.text);
-        assert.deepEqual(response.body, { error: "Sign in to make changes." });
-
-        const signedIn = await api.post("/script-scenes/semantic-index", { cookie });
-        assert.equal(signedIn.status, 503, signedIn.text);
-        assert.deepEqual(signedIn.body, { error: DISABLED });
+    test("saves a scene without embedding it when no Gemini key is set", async () => {
+        unembedded = await createScene(api, cookie, place, {
+            start_time_seconds: 60,
+            end_time_seconds: 70,
+            scene_text: "## INT. STAIRWELL - NIGHT\n\nFootsteps echo below.",
+        });
+        await sceneEmbeddingsSettled();
+        assert.equal(await hasEmbedding(unembedded.id), false);
     });
 });
 
@@ -209,10 +225,6 @@ describe("semantic search with a Gemini key", () => {
         assert.equal(dinerResponse.body.scenes[0].id, diner.id);
         assert.equal(dinerResponse.body.scenes[0].similarity, 1);
         assert.equal(dinerResponse.body.scenes[0].movie_title, "Semantic Diner");
-        assert.equal(
-            dinerResponse.body.index.indexed_count + dinerResponse.body.index.pending_count,
-            dinerResponse.body.index.total_count
-        );
         // The query uses the retrieval-query task, unlike the indexed documents.
         const queryRequest = requests[1].body.requests[0];
         assert.equal(queryRequest.taskType, "RETRIEVAL_QUERY");
@@ -232,7 +244,7 @@ describe("semantic search with a Gemini key", () => {
         useKey(t);
         mockEmbeddings(t);
         const onlyRevelation = await search({
-            q: "a tense conversation in a diner",
+            q: "from the diner out into the alley",
             tags: TAGS.revelation,
             limit: "50",
         });
@@ -243,7 +255,7 @@ describe("semantic search with a Gemini key", () => {
         );
 
         const eitherTag = await search({
-            q: "a tense conversation in a diner",
+            q: "from the diner out into the alley",
             tags: `${TAGS.protagonist},${TAGS.revelation}`,
             match: "any",
             limit: "50",
@@ -257,66 +269,130 @@ describe("semantic search with a Gemini key", () => {
     test("respects the requested result limit", async (t) => {
         useKey(t);
         mockEmbeddings(t);
-        const one = await search({ q: "a tense conversation in a diner", limit: "1" });
+        const one = await search({ q: "from the diner out into the alley", limit: "1" });
         assert.equal(one.body.scenes.length, 1);
-        const many = await search({ q: "night", limit: "50" });
+        const many = await search({ q: "from the diner out into the alley", limit: "50" });
         assert.deepEqual(
             new Set(many.body.scenes.map((row) => row.id)),
             new Set([diner.id, alley.id])
         );
     });
 
-    test("re-embeds a scene only when its text changes", async (t) => {
+    test("leaves out scenes scoring below 0.55", async (t) => {
+        useKey(t);
+        // "Somewhere between" scores 0.56 against the diner scene and 0.54 against
+        // the alley; the banana bread recipe is unlike every scene.
+        mockEmbeddings(t, (inputs) =>
+            inputs.map((input) =>
+                input.includes("banana") ? [0, 0, 1, 0] : [0.56, 0.54, Math.sqrt(1 - 0.56 ** 2 - 0.54 ** 2), 0]
+            )
+        );
+        const response = await search({ q: "somewhere between", limit: "50" });
+        assert.equal(response.status, 200, response.text);
+        assert.deepEqual(
+            response.body.scenes.map((row) => row.id),
+            [diner.id]
+        );
+        assert.ok(Math.abs(response.body.scenes[0].similarity - 0.56) < 1e-6);
+
+        const unrelated = await search({ q: "a recipe for banana bread", limit: "50" });
+        assert.equal(unrelated.status, 200, unrelated.text);
+        assert.deepEqual(unrelated.body.scenes, []);
+    });
+
+    test("re-embeds a saved scene in the background only when its text changes", async (t) => {
         useKey(t);
         const requests = mockEmbeddings(t);
+        const save = (sceneText) =>
+            api.put(`${scenesPath(place)}/${diner.id}`, {
+                cookie,
+                body: {
+                    script_key: place.script.s3_key,
+                    start_time_seconds: diner.start_time_seconds,
+                    end_time_seconds: diner.end_time_seconds,
+                    script_location: diner.script_location,
+                    scene_text: sceneText,
+                    tags: diner.tags,
+                },
+            });
 
-        const current = await indexScenes(pool, { sceneIds: [diner.id] });
-        assert.equal(current.indexed_count, 0);
+        const unchanged = await save(diner.scene_text);
+        assert.equal(unchanged.status, 200, unchanged.text);
+        await sceneEmbeddingsSettled();
         assert.equal(requests.length, 0);
 
         const changedText = "## INT. NIGHT DINER - NIGHT\n\nMara wipes down an empty counter.";
-        const updated = await api.put(`${scenesPath(place)}/${diner.id}`, {
-            cookie,
-            body: {
-                script_key: place.script.s3_key,
-                start_time_seconds: diner.start_time_seconds,
-                end_time_seconds: diner.end_time_seconds,
-                script_location: diner.script_location,
-                scene_text: changedText,
-                tags: diner.tags,
-            },
-        });
+        const updated = await save(changedText);
         assert.equal(updated.status, 200, updated.text);
-
-        const reindexed = await indexScenes(pool, { sceneIds: [diner.id] });
-        assert.equal(reindexed.indexed_count, 1);
-        assert.equal(reindexed.current_count, 0);
+        await sceneEmbeddingsSettled();
         assert.equal(requests.length, 1);
+        assert.equal(requests[0].body.requests.length, 1);
+        assert.equal(requests[0].body.requests[0].taskType, "RETRIEVAL_DOCUMENT");
         assert.ok(requests[0].body.requests[0].content.parts[0].text.includes(changedText));
 
-        const again = await indexScenes(pool, { sceneIds: [diner.id] });
-        assert.equal(again.indexed_count, 0);
-        assert.equal(requests.length, 1);
+        const current = await indexScenes(pool, { sceneIds: [diner.id] });
+        assert.equal(current.indexed_count, 0);
     });
 
-    test("the admin index endpoint embeds the whole library once", async (t) => {
+    test("embeds a newly captured scene without holding up the save", async (t) => {
         useKey(t);
-        const requests = mockEmbeddings(t);
-        // A scene captured since the last index is what a rebuild picks up.
-        await createScene(api, cookie, place, {
+        let release;
+        const gate = new Promise((resolve) => {
+            release = resolve;
+        });
+        const requests = mockEmbeddings(t, async (inputs) => {
+            await gate;
+            return inputs.map(vectorFor);
+        });
+
+        // Gemini hasn't answered, yet the save is already done.
+        const quiet = await createScene(api, cookie, place, {
             start_time_seconds: 40,
             end_time_seconds: 50,
             scene_text: "## INT. QUIET SPACE - DAY\n\nThe room is empty.",
             tags: [TAGS.selfConflict],
         });
+        assert.equal(await hasEmbedding(quiet.id), false);
 
-        const first = await api.post("/script-scenes/semantic-index", { cookie });
-        assert.equal(first.status, 200, first.text);
-        assert.equal(first.body.model, "gemini-embedding-001");
-        assert.ok(first.body.total_count >= 2);
-        assert.ok(first.body.indexed_count > 0);
-        assert.equal(first.body.indexed_count + first.body.current_count, first.body.total_count);
+        release();
+        await sceneEmbeddingsSettled();
+        assert.equal(await hasEmbedding(quiet.id), true);
+        assert.deepEqual(
+            requests.flatMap((request) => request.body.requests.map((item) => item.content.parts[0].text)),
+            [sceneEmbeddingInput(quiet)]
+        );
+
+        const response = await search({ q: "somewhere quiet", limit: "1" });
+        assert.equal(response.body.scenes[0].id, quiet.id);
+    });
+
+    test("keeps a scene saved when its embedding fails", async (t) => {
+        useKey(t);
+        const errors = t.mock.method(console, "error", () => {});
+        const requestFetch = globalThis.fetch;
+        t.mock.method(globalThis, "fetch", async (url, init) => {
+            if (!String(url).includes("generativelanguage.googleapis.com")) return requestFetch(url, init);
+            return new Response("upstream down", { status: 500 });
+        });
+
+        const scene = await createScene(api, cookie, place, {
+            start_time_seconds: 80,
+            end_time_seconds: 90,
+            scene_text: "## EXT. ROOFTOP - DAWN\n\nWind over the city.",
+        });
+        await sceneEmbeddingsSettled();
+        assert.equal(await hasEmbedding(scene.id), false);
+        assert.ok(errors.mock.calls.some((call) => String(call.arguments[0]).startsWith("Failed to embed")));
+    });
+
+    test("embeds every missing or stale scene when the API starts, once", async (t) => {
+        useKey(t);
+        const requests = mockEmbeddings(t);
+
+        await queueAllSceneEmbeddings(pool);
+        await sceneEmbeddingsSettled();
         assert.ok(requests.length >= 1);
+        assert.equal(await hasEmbedding(unembedded.id), true);
 
         const status = await api.get(`${SEARCH_PATH}/status`);
         assert.equal(status.status, 200, status.text);
@@ -324,10 +400,10 @@ describe("semantic search with a Gemini key", () => {
         assert.equal(status.body.pending_count, 0);
         assert.equal(status.body.indexed_count, status.body.total_count);
 
-        const second = await api.post("/script-scenes/semantic-index", { cookie });
-        assert.equal(second.status, 200, second.text);
-        assert.equal(second.body.indexed_count, 0);
-        assert.equal(second.body.current_count, second.body.total_count);
+        const sent = requests.length;
+        await queueAllSceneEmbeddings(pool);
+        await sceneEmbeddingsSettled();
+        assert.equal(requests.length, sent);
     });
 
     test("reports an upstream failure as a 502", async (t) => {

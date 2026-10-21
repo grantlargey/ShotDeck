@@ -54,7 +54,7 @@ export function sampleScriptScenes() {
 
 /**
  * Scenes ranked by how closely they match `query`, optionally narrowed to the
- * same tag filters. Answers `{ model, scenes, index }`; the API answers 503
+ * same tag filters. Answers `{ model, scenes }`; the API answers 503
  * until GEMINI_API_KEY is configured on the server.
  */
 export function searchScriptScenesSemantically({ query, tags, match, limit }) {
@@ -69,9 +69,4 @@ export function searchScriptScenesSemantically({ query, tags, match, limit }) {
 /** Whether semantic search is configured, and how much of the scene library is indexed. */
 export function getSemanticSearchStatus() {
   return req("/script-scenes/semantic/status");
-}
-
-/** Embeds scenes that are missing an embedding or whose text or tags changed. Admin only. */
-export function buildSceneEmbeddings() {
-  return req("/script-scenes/semantic-index", { method: "POST" });
 }

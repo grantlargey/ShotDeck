@@ -16,7 +16,6 @@ import {
   searchScriptScenes,
   searchScriptScenesSemantically,
   getSemanticSearchStatus,
-  buildSceneEmbeddings,
   updateScriptScene,
 } from "./scriptScenes.js";
 import { getFilmScript, getScript, saveScript } from "./scripts.js";
@@ -101,7 +100,7 @@ describe("captured-scene endpoints", () => {
     );
   });
 
-  it("encodes semantic queries, their tag filters, and the index actions", () => {
+  it("encodes semantic queries, their tag filters, and the status check", () => {
     searchScriptScenesSemantically({
       query: "a tense diner scene",
       tags: [" tone:dread "],
@@ -109,12 +108,10 @@ describe("captured-scene endpoints", () => {
       limit: 8,
     });
     getSemanticSearchStatus();
-    buildSceneEmbeddings();
 
     expect(dependencies.req.mock.calls).toEqual([
       ["/script-scenes/semantic?q=a+tense+diner+scene&tags=tone%3Adread&match=any&limit=8"],
       ["/script-scenes/semantic/status"],
-      ["/script-scenes/semantic-index", { method: "POST" }],
     ]);
   });
 });

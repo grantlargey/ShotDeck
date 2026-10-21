@@ -12,7 +12,7 @@ import {
 } from "./helpers/databases.js";
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SUFFIXES = ["migrate_fresh", "migrate_order"];
+const SUFFIXES = ["migrate_fresh", "migrate_order", "migrate_retired"];
 
 before(async () => {
     for (const suffix of SUFFIXES) await createTestDatabase(suffix);
@@ -44,10 +44,11 @@ describe("the numbered migration runner", () => {
                     "scripts",
                 ]
             );
+            // Version 2 is retired: every older database already recorded it.
             const ledger = await db.query("SELECT version, name FROM schema_migrations ORDER BY version");
             assert.deepEqual(ledger.rows, [
                 { version: 1, name: "0001_canonical_schema" },
-                { version: 2, name: "0002_scene_embeddings" },
+                { version: 3, name: "0003_scene_embeddings" },
             ]);
             const columns = await db.query(
                 `SELECT table_name, column_name, is_nullable, column_default
@@ -153,6 +154,30 @@ describe("the numbered migration runner", () => {
         const run = runServerNode("src/migrate.js", "migrate_order");
         assert.notEqual(run.status, 0);
         assert.match(run.stderr, /0001_canonical_schema\.sql is pending below already-applied version 2/);
+    });
+
+    test("upgrades a database that took the retired 0002 migration", async () => {
+        // Every database built before the migrations were collapsed records
+        // version 2, so a new migration numbered 2 would never run on them.
+        const db = await connectDatabase("migrate_retired");
+        try {
+            await db.query(await readFile(path.join(serverDir, "sql/migrations/0001_canonical_schema.sql"), "utf8"));
+            await db.query(`
+              CREATE TABLE schema_migrations (
+                version INT PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+              INSERT INTO schema_migrations (version, name) VALUES
+                (1, '0001_canonical_schema'),
+                (2, '0002_shot_timing_and_scene_storage');
+            `);
+        } finally {
+            await db.end();
+        }
+        const run = runServerNode("src/migrate.js", "migrate_retired");
+        assert.equal(run.status, 0, run.stderr);
+        assert.match(run.stdout, /Applied migrations: 0003_scene_embeddings/);
     });
 });
 

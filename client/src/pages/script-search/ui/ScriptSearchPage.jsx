@@ -3,12 +3,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { getStillFilmPath, getStillThumbnail } from "@/entities/still/model/still.js";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { planStillMotion } from "@/entities/script-scene/model/stillMotion.js";
-import { useSession } from "@/entities/session/model/useSession.js";
 import { getScriptTagLabel } from "@server/domain/script-tags.js";
 import { SceneCard, SceneCardSkeleton } from "@/entities/script-scene/ui/SceneCard.jsx";
 import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
 import {
-  buildSceneEmbeddings,
   getSemanticSearchStatus,
   searchScriptScenes,
   searchScriptScenesSemantically,
@@ -57,19 +55,14 @@ export default function ScriptSearchPage() {
   const query = committedQuery.trim();
   const [draftQuery, setDraftQuery] = useState(committedQuery);
   const [match, setMatch] = useState("all");
-  const [response, setResponse] = useState({ key: null, rows: [], error: "", index: null });
+  const [response, setResponse] = useState({ key: null, rows: [], error: "" });
   // Unfiltered result set, used for the per-tag counts in the sidebar.
   const [catalog, setCatalog] = useState([]);
   // The scene the viewer opened on; it opens on the script, with the still one click away.
   const [openSceneId, setOpenSceneId] = useState(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const { isAdmin } = useSession();
-  // What the API reports about semantic search: whether it is configured, and index counts.
+  // What the API reports about semantic search, including whether it is configured.
   const [semanticStatus, setSemanticStatus] = useState(null);
-  const [indexing, setIndexing] = useState(false);
-  const [indexError, setIndexError] = useState("");
-  // Bumped after an index build so the status and the current search refresh.
-  const [refreshKey, setRefreshKey] = useState(0);
   const openedWithFiltersRef = useRef(selectedTags.length > 0 || Boolean(query));
 
   useEffect(() => {
@@ -78,7 +71,7 @@ export default function ScriptSearchPage() {
 
   // Match mode only matters once tags are selected; a query replaces tag browsing with ranking.
   const requestKey = query
-    ? JSON.stringify(["semantic", query, selectedTags, match, refreshKey])
+    ? JSON.stringify(["semantic", query, selectedTags, match])
     : selectedTags.length
       ? JSON.stringify([selectedTags, match])
       : "all";
@@ -94,26 +87,26 @@ export default function ScriptSearchPage() {
         if (cancelled) return;
         if (query) {
           const rows = Array.isArray(data?.scenes) ? data.scenes : [];
-          setResponse({ key: requestKey, rows, error: "", index: data?.index ?? null });
+          setResponse({ key: requestKey, rows, error: "" });
         } else {
           const rows = Array.isArray(data) ? data : [];
-          setResponse({ key: requestKey, rows, error: "", index: null });
+          setResponse({ key: requestKey, rows, error: "" });
           if (selectedTags.length === 0) setCatalog(rows);
         }
       })
       .catch((e) => {
         if (!cancelled) {
-          setResponse({ key: requestKey, rows: [], error: getErrorMessage(e, "Search failed."), index: null });
+          setResponse({ key: requestKey, rows: [], error: getErrorMessage(e, "Search failed.") });
         }
       });
     return () => {
       cancelled = true;
     };
-    // requestKey captures query, selectedTags, match and refreshKey.
+    // requestKey captures query, selectedTags and match.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey]);
 
-  // Semantic search's configured state and index counts, refreshed after a build.
+  // Whether semantic search is configured, which decides if the search box can be used.
   useEffect(() => {
     let cancelled = false;
     getSemanticSearchStatus()
@@ -124,7 +117,7 @@ export default function ScriptSearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshKey]);
+  }, []);
 
   // A linked, pre-filtered or pre-searched view still needs the unfiltered catalog for tag counts.
   useEffect(() => {
@@ -148,7 +141,6 @@ export default function ScriptSearchPage() {
   const tagCounts = useMemo(() => countSceneTags(catalog), [catalog]);
   const filterGroups = buildFilterGroups();
   const titleCount = useMemo(() => new Set(results.map((row) => row.movie_id)).size, [results]);
-  const semanticPending = response.index?.pending_count ?? semanticStatus?.pending_count ?? 0;
   const semanticConfigured = Boolean(semanticStatus?.configured);
 
   function updateParams(update) {
@@ -207,20 +199,6 @@ export default function ScriptSearchPage() {
     updateParams((params) => params.delete("q"));
   }
 
-  /** Admin-only: embed any scene that has no embedding yet, then refresh the view. */
-  async function buildIndex() {
-    setIndexing(true);
-    setIndexError("");
-    try {
-      await buildSceneEmbeddings();
-      setRefreshKey((key) => key + 1);
-    } catch (error) {
-      setIndexError(getErrorMessage(error, "The semantic index could not be built."));
-    } finally {
-      setIndexing(false);
-    }
-  }
-
   const summary = response.key
     ? query
       ? `${results.length} scene${results.length === 1 ? "" : "s"} closest to your description`
@@ -272,24 +250,6 @@ export default function ScriptSearchPage() {
         {semanticStatus && !semanticConfigured && (
           <Callout tone="info" className={styles.notice}>
             Semantic search isn&apos;t available yet. Add GEMINI_API_KEY to the server environment to turn it on.
-          </Callout>
-        )}
-
-        {semanticConfigured && semanticPending > 0 && (
-          <Callout
-            tone="warning"
-            className={styles.notice}
-            action={isAdmin ? (indexing ? "Building index…" : "Build index") : undefined}
-            onAction={isAdmin && !indexing ? buildIndex : undefined}
-          >
-            {semanticPending} scene{semanticPending === 1 ? " isn't" : "s aren't"} indexed yet, so semantic results
-            may miss them.
-          </Callout>
-        )}
-
-        {indexError && (
-          <Callout tone="error" className={styles.notice}>
-            {indexError}
           </Callout>
         )}
 

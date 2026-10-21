@@ -23,9 +23,12 @@ function tagsFromQuery(value) {
         .filter(Boolean);
 }
 
+// A saved scene is embedded for semantic search in the background, so the save never waits on Gemini.
 router.post(SCENES_PATH, requireAdmin, async (req, res) => {
     const { filmId, scriptId } = req.params;
-    res.status(201).json(await scriptScenes.saveScriptScene(pool, { filmId, scriptId, body: req.body }));
+    const scene = await scriptScenes.saveScriptScene(pool, { filmId, scriptId, body: req.body });
+    semanticSearch.queueSceneEmbeddings(pool, [scene.id]);
+    res.status(201).json(scene);
 });
 
 router.get(SCENES_PATH, async (req, res) => {
@@ -35,7 +38,9 @@ router.get(SCENES_PATH, async (req, res) => {
 
 router.put(`${SCENES_PATH}/:sceneId`, requireAdmin, async (req, res) => {
     const { filmId, scriptId, sceneId } = req.params;
-    res.json(await scriptScenes.saveScriptScene(pool, { filmId, scriptId, sceneId, body: req.body }));
+    const scene = await scriptScenes.saveScriptScene(pool, { filmId, scriptId, sceneId, body: req.body });
+    semanticSearch.queueSceneEmbeddings(pool, [scene.id]);
+    res.json(scene);
 });
 
 router.delete(`${SCENES_PATH}/:sceneId`, requireAdmin, async (req, res) => {
@@ -58,8 +63,8 @@ router.get("/script-scenes/sample", async (req, res) => {
 });
 
 /*
- * Semantic search. Reads embed the visitor's description and rank the indexed
- * scenes; rebuilding the index spends API credit, so that route is admin-only.
+ * Semantic search. A search embeds the visitor's description and ranks the
+ * indexed scenes; the index itself keeps up with saves on its own.
  */
 router.get("/script-scenes/semantic/status", async (req, res) => {
     res.json(await semanticSearch.getSemanticSearchStatus(pool));
@@ -74,10 +79,6 @@ router.get("/script-scenes/semantic", async (req, res) => {
             match: req.query.match === "any" ? "any" : "all",
         })
     );
-});
-
-router.post("/script-scenes/semantic-index", requireAdmin, async (req, res) => {
-    res.json(await semanticSearch.indexScenes(pool));
 });
 
 export default router;

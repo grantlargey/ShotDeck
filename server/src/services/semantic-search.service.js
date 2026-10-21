@@ -8,11 +8,12 @@ import { listScenesByIds } from "./script-scenes.service.js";
  * Semantic scene search: the module behind the semantic routes in
  * routes/script-scenes.routes.js.
  *
- * A captured scene is embedded once from its scene text and the labels of its
- * tags, and the vector is stored in scene_embeddings. A search embeds only the
- * visitor's description and ranks the indexed scenes by cosine similarity.
- * Gemini is optional: without GEMINI_API_KEY the semantic endpoints answer 503,
- * and tag browsing keeps working.
+ * A captured scene is embedded from its scene text and the labels of its tags,
+ * and the vector is stored in scene_embeddings. Embedding happens in the
+ * background whenever a scene is saved and when the API starts; nobody runs it
+ * by hand. A search embeds only the visitor's description and ranks the indexed
+ * scenes by cosine similarity. Gemini is optional: without GEMINI_API_KEY the
+ * semantic search endpoint answers 503, and tag browsing keeps working.
  */
 
 // gemini-embedding-001 is the stable text-only embedding model. It supports
@@ -30,6 +31,11 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_QUERY_LENGTH = 500;
 const DEFAULT_RESULT_LIMIT = 20;
 const MAX_RESULT_LIMIT = 50;
+// Scenes scoring below this are left out, so an unrelated description finds
+// nothing rather than the least-bad scenes. This model's scores bunch between
+// about 0.5 and 0.75: unrelated text lands near 0.5, and real matches can top
+// out below 0.6.
+const MIN_SIMILARITY = 0.55;
 // Ranking happens in the API process, so the candidate set is bounded.
 const MAX_CANDIDATES = 5_000;
 // Gemini accepts at most 100 requests per batch; stay well below that, and
@@ -119,8 +125,10 @@ export async function searchScenesSemantically(pool, { query, limit, tags = [], 
         throw new HttpError(503, DISABLED_MESSAGE);
     }
 
-    const [vectors, index] = await Promise.all([embedTexts([request.query], apiKey, QUERY_TASK), countIndexState(pool)]);
-    const ranked = (await rankScenes(pool, { vector: vectors[0], tags, match })).slice(0, request.limit);
+    const [vector] = await embedTexts([request.query], apiKey, QUERY_TASK);
+    const ranked = (await rankScenes(pool, { vector, tags, match }))
+        .filter((row) => row.similarity >= MIN_SIMILARITY)
+        .slice(0, request.limit);
     const scenesById = new Map(
         (await listScenesByIds(pool, ranked.map((row) => row.id))).map((scene) => [scene.id, scene])
     );
@@ -129,7 +137,7 @@ export async function searchScenesSemantically(pool, { query, limit, tags = [], 
         return scene ? [{ ...scene, similarity }] : [];
     });
 
-    return { model: MODEL, scenes, index };
+    return { model: MODEL, scenes };
 }
 
 /** Whether semantic search can run, and how much of the scene library is indexed. */
@@ -200,6 +208,50 @@ export async function indexScenes(pool, { sceneIds = null } = {}) {
         current_count: result.rows.length - work.length,
         total_count: result.rows.length,
     };
+}
+
+/*
+ * Background indexing. Saving a scene queues it, and the API queues every
+ * scene when it starts, which catches scenes saved before a key was set, saves
+ * whose embedding failed, and a change of model. Work runs one pass at a time,
+ * and each pass re-reads its scenes, so a scene edited mid-pass is embedded
+ * again from its latest text. A failed scene waits for its next save or the
+ * next start.
+ */
+const pendingSceneIds = new Set();
+let draining = null;
+
+async function drain(pool) {
+    while (pendingSceneIds.size > 0) {
+        const sceneIds = [...pendingSceneIds];
+        pendingSceneIds.clear();
+        try {
+            const result = await indexScenes(pool, { sceneIds });
+            if (result.indexed_count > 0) console.log(`Embedded ${result.indexed_count} scene(s) for semantic search`);
+        } catch (error) {
+            console.error(`Failed to embed ${sceneIds.length} scene(s) for semantic search:`, error.message);
+        }
+    }
+    draining = null;
+}
+
+/** Queues these scenes for embedding and returns right away. Does nothing without a Gemini key. */
+export function queueSceneEmbeddings(pool, sceneIds) {
+    if (!geminiApiKey()) return;
+    for (const id of sceneIds) pendingSceneIds.add(id);
+    if (!draining && pendingSceneIds.size > 0) draining = drain(pool);
+}
+
+/** Queues every scene; indexing skips those whose embedding is current. Run when the API starts. */
+export async function queueAllSceneEmbeddings(pool) {
+    if (!geminiApiKey()) return;
+    const result = await pool.query("SELECT id FROM captured_scenes");
+    queueSceneEmbeddings(pool, result.rows.map((row) => row.id));
+}
+
+/** Resolves once the queued embedding work is done, so tests can wait for it. */
+export function sceneEmbeddingsSettled() {
+    return draining ?? Promise.resolve();
 }
 
 async function rankScenes(pool, { vector, tags, match }) {
