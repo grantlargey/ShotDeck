@@ -12,7 +12,7 @@ import {
 } from "./helpers/databases.js";
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SUFFIXES = ["migrate_fresh", "migrate_order", "migrate_retired"];
+const SUFFIXES = ["migrate_fresh", "migrate_order", "migrate_retired", "migrate_chunks"];
 
 before(async () => {
     for (const suffix of SUFFIXES) await createTestDatabase(suffix);
@@ -40,7 +40,6 @@ describe("the numbered migration runner", () => {
                     "captured_scenes",
                     "movies",
                     "scene_chunk_embeddings",
-                    "scene_embeddings",
                     "schema_migrations",
                     "scripts",
                 ]
@@ -52,6 +51,7 @@ describe("the numbered migration runner", () => {
                 { version: 3, name: "0003_scene_embeddings" },
                 { version: 4, name: "0004_scene_text_search" },
                 { version: 5, name: "0005_scene_chunk_embeddings" },
+                { version: 6, name: "0006_drop_scene_embeddings" },
             ]);
             const columns = await db.query(
                 `SELECT table_name, column_name, is_nullable, column_default
@@ -116,22 +116,8 @@ describe("the numbered migration runner", () => {
             for (const name of ["captured_scenes_start_page_check", "captured_scenes_end_page_check"]) {
                 assert.match(named(name).def, /<= 300\)/, name);
             }
-            // The semantic index lives beside captured scenes, not on them, and
-            // disappears with the scene it describes.
-            const embeddingColumns = await db.query(
-                `SELECT column_name FROM information_schema.columns
-                 WHERE table_name = 'scene_embeddings' ORDER BY column_name`
-            );
-            assert.deepEqual(
-                embeddingColumns.rows.map((row) => row.column_name),
-                ["embedding", "model", "scene_id", "source_hash", "updated_at"]
-            );
-            const embeddingForeignKey = await db.query(
-                `SELECT confdeltype FROM pg_constraint
-                 WHERE conrelid = 'scene_embeddings'::regclass AND contype = 'f'`
-            );
-            assert.deepEqual(embeddingForeignKey.rows, [{ confdeltype: "c" }]);
-            // Its successor holds one vector per chunk of a scene.
+            // The semantic index holds one vector per chunk beside captured
+            // scenes and disappears with the scene it describes.
             const chunkColumns = await db.query(
                 `SELECT column_name FROM information_schema.columns
                  WHERE table_name = 'scene_chunk_embeddings' ORDER BY column_name`
@@ -170,6 +156,65 @@ describe("the numbered migration runner", () => {
         const second = runServerNode("src/migrate.js", "migrate_fresh");
         assert.equal(second.status, 0, second.stderr);
         assert.match(second.stdout, /No migrations pending/);
+    });
+
+    test("drops the legacy index while preserving captured scenes and chunk embeddings", async () => {
+        const db = await connectDatabase("migrate_chunks");
+        try {
+            const migrations = [
+                "0001_canonical_schema",
+                "0003_scene_embeddings",
+                "0004_scene_text_search",
+                "0005_scene_chunk_embeddings",
+            ];
+            await db.query(`CREATE TABLE schema_migrations (
+                version INT PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )`);
+            for (const name of migrations) {
+                await db.query(await readFile(path.join(serverDir, `sql/migrations/${name}.sql`), "utf8"));
+                await db.query("INSERT INTO schema_migrations (version, name) VALUES ($1, $2)", [
+                    Number(name.slice(0, 4)),
+                    name,
+                ]);
+            }
+            await db.query(`
+                INSERT INTO movies (id, title, director, year, runtime_minutes)
+                VALUES ('00000000-0000-0000-0000-000000000001', 'Migration film', 'Director', 2026, 90);
+                INSERT INTO scripts (id, movie_id, s3_key)
+                VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'scripts/test.pdf');
+                INSERT INTO captured_scenes (
+                    id, script_id, start_time_seconds, end_time_seconds,
+                    start_page, start_y, end_page, end_y, scene_text, tags
+                ) VALUES (
+                    '00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 0, 10,
+                    1, 10, 1, 100, 'The crew waits by the boats.', '[]'
+                );
+                INSERT INTO scene_embeddings (scene_id, model, source_hash, embedding)
+                VALUES ('00000000-0000-0000-0000-000000000003', 'legacy-model', 'legacy-hash', ARRAY[1, 0]::real[]);
+                INSERT INTO scene_chunk_embeddings (scene_id, chunk, model, source_hash, embedding)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000003', 0, 'gemini-embedding-001', 'current-hash', ARRAY[1, 0]::real[]),
+                    ('00000000-0000-0000-0000-000000000003', 1, 'gemini-embedding-001', 'current-hash', ARRAY[0, 1]::real[]);
+            `);
+            const scenesBefore = await db.query("SELECT * FROM captured_scenes ORDER BY id");
+            const chunksBefore = await db.query("SELECT * FROM scene_chunk_embeddings ORDER BY scene_id, chunk");
+
+            const run = runServerNode("src/migrate.js", "migrate_chunks");
+            assert.equal(run.status, 0, run.stderr);
+            assert.match(run.stdout, /Applied migrations: 0006_drop_scene_embeddings/);
+
+            const legacy = await db.query("SELECT to_regclass('public.scene_embeddings') AS table_name");
+            assert.equal(legacy.rows[0].table_name, null);
+            assert.deepEqual((await db.query("SELECT * FROM captured_scenes ORDER BY id")).rows, scenesBefore.rows);
+            assert.deepEqual(
+                (await db.query("SELECT * FROM scene_chunk_embeddings ORDER BY scene_id, chunk")).rows,
+                chunksBefore.rows
+            );
+        } finally {
+            await db.end();
+        }
     });
 
     test("refuses a pending migration below the highest applied version", async () => {
