@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getStillFilmPath, getStillThumbnail } from "@/entities/still/model/still.js";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
@@ -19,14 +19,14 @@ import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
-import { Input } from "@/shared/ui/Input.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
-import { SearchIcon } from "@/shared/ui/icons.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { buildFilterGroups, countSceneTags } from "../model/sceneBrowse.js";
 import { sweepDelays } from "../model/stillSweep.js";
 import { CardLayoutSwitch } from "./CardLayoutSwitch.jsx";
 import FilterSidebar from "./FilterSidebar.jsx";
+import { SceneSearchTile } from "./SceneSearchTile.jsx";
+import { SearchTag } from "./SearchTag.jsx";
 import styles from "./ScriptSearchPage.module.css";
 
 const SKELETON_CARDS = 6;
@@ -54,6 +54,12 @@ export default function ScriptSearchPage() {
   const committedQuery = searchParams.get("q") || "";
   const query = committedQuery.trim();
   const [draftQuery, setDraftQuery] = useState(committedQuery);
+  const searchFieldRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const [searchFocused, setSearchFocused] = useState(false);
+  // Where the search field was when a description was searched, for its tag to fly in from.
+  const [tagFlyFrom, setTagFlyFrom] = useState(null);
+  const clearTagFlyFrom = useCallback(() => setTagFlyFrom(null), []);
   const [match, setMatch] = useState("all");
   const [response, setResponse] = useState({ key: null, rows: [], error: "" });
   // Unfiltered result set, used for the per-tag counts in the sidebar.
@@ -184,10 +190,11 @@ export default function ScriptSearchPage() {
     setSelectedTags([tag]);
   }
 
-  /** Commit the typed description to the URL, which the result effect follows. */
-  function submitSearch(event) {
-    event.preventDefault();
-    const nextQuery = draftQuery.trim();
+  /** Commit the description to the URL, which the result effect follows; a new one's tag flies in from the field. */
+  function submitSearch(text) {
+    const nextQuery = text.trim();
+    if (nextQuery && nextQuery !== query) setTagFlyFrom(searchFieldRef.current?.getBoundingClientRect() ?? null);
+    setDraftQuery(nextQuery);
     updateParams((params) => {
       if (nextQuery) params.set("q", nextQuery);
       else params.delete("q");
@@ -199,7 +206,17 @@ export default function ScriptSearchPage() {
     updateParams((params) => params.delete("q"));
   }
 
-  const summary = response.key
+  /** From the search's tag: reopen the field on its description, caret at the end. */
+  function editSearch() {
+    const input = searchInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  const summary = loading && query
+    ? "Searching scenes…"
+    : response.key
     ? query
       ? `${results.length} scene${results.length === 1 ? "" : "s"} matching your description`
       : `Showing ${results.length} scene${results.length === 1 ? "" : "s"} from ${titleCount} title${
@@ -224,32 +241,9 @@ export default function ScriptSearchPage() {
       />
 
       <section className={styles.results} aria-busy={loading}>
-        <form className={styles.semanticSearch} role="search" onSubmit={submitSearch}>
-          <Input
-            icon={<SearchIcon size={16} />}
-            className={styles.semanticSearchInput}
-            type="search"
-            name="q"
-            value={draftQuery}
-            onChange={(event) => setDraftQuery(event.target.value)}
-            placeholder="Describe a scene, e.g. a tense standoff in a diner"
-            aria-label="Describe a scene"
-            maxLength={500}
-            autoComplete="off"
-          />
-          <Button type="submit" variant="ai" disabled={semanticStatus !== null && !semanticConfigured}>
-            Find scenes
-          </Button>
-          {query && (
-            <Button variant="link" size="sm" onClick={clearSearch}>
-              Clear
-            </Button>
-          )}
-        </form>
-
         {semanticStatus && !semanticConfigured && (
           <Callout tone="info" className={styles.notice}>
-            Semantic search isn&apos;t available yet. Add GEMINI_API_KEY to the server environment to turn it on.
+            Semantic search isn&apos;t available yet. Add OPENAI_API_KEY to the server environment to turn it on.
           </Callout>
         )}
 
@@ -269,6 +263,16 @@ export default function ScriptSearchPage() {
               <Button size="sm" className={styles.filtersButton} onClick={() => setFiltersOpen(true)}>
                 Filters{selectedTags.length ? ` (${selectedTags.length})` : ""}
               </Button>
+              <SceneSearchTile
+                value={draftQuery}
+                query={query}
+                disabled={semanticStatus !== null && !semanticConfigured}
+                fieldRef={searchFieldRef}
+                inputRef={searchInputRef}
+                onChange={setDraftQuery}
+                onSubmit={submitSearch}
+                onFocusChange={setSearchFocused}
+              />
               <CardLayoutSwitch value={chosenLayout} onChange={setCardLayout} stillUrl={sampleStillUrl} />
               <SceneTextStyleToggle look="toolbar" />
             </>
@@ -278,8 +282,21 @@ export default function ScriptSearchPage() {
           {summary}
         </p>
 
-        {selectedTags.length > 0 && (
+        {(query || selectedTags.length > 0) && (
           <ul className={styles.activeFilters} aria-label="Active filters">
+            {query && (
+              <li className={styles.searchTagItem}>
+                <SearchTag
+                  query={query}
+                  searching={loading}
+                  editing={searchFocused}
+                  flyFrom={tagFlyFrom}
+                  onFlown={clearTagFlyFrom}
+                  onEdit={editSearch}
+                  onClear={clearSearch}
+                />
+              </li>
+            )}
             {selectedTags.map((tag) => (
               <li key={tag}>
                 <Chip onRemove={() => toggleTag(tag)} removeLabel={`Remove ${getScriptTagLabel(tag)} filter`}>

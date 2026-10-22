@@ -1,0 +1,130 @@
+/* The description inside viewfinder corners, the tile's frame drawn round the tag. */
+.tag {
+  --corner: var(--color-accent-line);
+  position: relative;
+  max-width: 100%;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 2px;
+  background:
+    linear-gradient(var(--corner), var(--corner)) left top / 8px 1.5px no-repeat,
+    linear-gradient(var(--corner), var(--corner)) left top / 1.5px 8px no-repeat,
+    linear-gradient(var(--corner), var(--corner)) right top / 8px 1.5px no-repeat,
+    linear-gradient(var(--corner), var(--corner)) right top / 1.5px 8px no-repeat,
+    linear-gradient(var(--corner), var(--corner)) left bottom / 8px 1.5px no-repeat,
+    linear-gradient(var(--corner), var(--corner)) left bottom / 1.5px 8px no-repeat,
+    linear-gradient(var(--corner), var(--corner)) right bottom / 8px 1.5px no-repeat,
+    linear-gradient(var(--corner), var(--corner)) right bottom / 1.5px 8px no-repeat,
+    var(--color-surface);
+  animation: tag-in 0.28s cubic-bezier(0.3, 1.25, 0.5, 1) both;
+  transition: opacity var(--transition-fast);
+}
+
+.tag:hover {
+  --corner: var(--color-accent);
+}
+
+/* The field is open on this description. */
+.editing {
+  opacity: 0.5;
+}
+
+@keyframes tag-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+}
+
+.main {
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0 2px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.icon {
+  flex: none;
+  color: var(--color-accent);
+}
+
+/* Set in Slate, as it was typed in the search tile (keep in step with SceneSearchTile.module.css). */
+.text {
+  min-width: 0;
+  overflow: hidden;
+  font: 700 10.5px/16px var(--font-script);
+  letter-spacing: 0.14em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.clear {
+  flex: none;
+  width: 28px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.clear:hover {
+  color: var(--color-text);
+}
+
+/* Searching: a film-leader sweep, crosshairs and a turning wedge. */
+.leader {
+  position: relative;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  overflow: hidden;
+  border-radius: 50%;
+  background:
+    linear-gradient(var(--color-accent-line), var(--color-accent-line)) center / 1px 100% no-repeat,
+    linear-gradient(var(--color-accent-line), var(--color-accent-line)) center / 100% 1px no-repeat;
+  box-shadow: inset 0 0 0 1px var(--color-accent-line);
+}
+
+.leader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 60%, var(--color-accent-line) 82%, var(--color-accent) 100%);
+  animation: leader-sweep 0.9s linear infinite;
+}
+
+@keyframes leader-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag {
+    animation: none;
+    transition: none;
+  }
+
+  .leader::after {
+    animation: none;
+    transform: rotate(270deg);
+  }
+}

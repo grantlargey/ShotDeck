@@ -65,19 +65,6 @@
   padding: 20px var(--page-gutter) 48px;
 }
 
-/* Natural-language search sits above the tag-filtered browsing controls. */
-.semanticSearch {
-  margin-bottom: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.semanticSearchInput {
-  flex: 1 1 320px;
-}
-
 /* The results heading (a SectionHeading); the Filters button only shows on narrow screens. */
 .toolbar .filtersButton {
   display: none;
@@ -116,6 +103,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* A long description shortens with an ellipsis rather than widening the row. */
+.searchTagItem {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .notice {
@@ -183,5 +176,12 @@
 
   .results {
     padding: 16px var(--page-gutter) 40px;
+  }
+}
+
+/* Phones: the count stays and "from N titles" goes, so the toolbar keeps to one row the search tile can open across. */
+@media (max-width: 480px) {
+  .headingNote {
+    display: none;
   }
 }

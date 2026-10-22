@@ -1,0 +1,388 @@
+/* The tile holds its place among the toolbar's switches. */
+.slot {
+  flex: none;
+  display: inline-flex;
+}
+
+/* ---------- The tile and the field it opens into ---------- */
+
+.field {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition:
+    width 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color var(--transition-fast);
+}
+
+/* Opening springs a touch past its width and settles; closing just closes. */
+.open {
+  width: 400px;
+  transition:
+    width 0.3s cubic-bezier(0.3, 1.2, 0.5, 1),
+    background-color var(--transition-fast);
+}
+
+/* Viewfinder corners. They pull focus when the tile opens. */
+.frame {
+  position: absolute;
+  inset: 4px;
+  pointer-events: none;
+  transition: inset 0.32s cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+
+.frame i {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 0 solid var(--color-line-strong);
+  transition:
+    border-color var(--transition-fast),
+    width 0.32s ease,
+    height 0.32s ease;
+}
+
+.frame i:nth-child(1) {
+  top: 0;
+  left: 0;
+  border-top-width: 1.5px;
+  border-left-width: 1.5px;
+  border-top-left-radius: 2px;
+}
+
+.frame i:nth-child(2) {
+  top: 0;
+  right: 0;
+  border-top-width: 1.5px;
+  border-right-width: 1.5px;
+  border-top-right-radius: 2px;
+}
+
+.frame i:nth-child(3) {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 1.5px;
+  border-left-width: 1.5px;
+  border-bottom-left-radius: 2px;
+}
+
+.frame i:nth-child(4) {
+  right: 0;
+  bottom: 0;
+  border-right-width: 1.5px;
+  border-bottom-width: 1.5px;
+  border-bottom-right-radius: 2px;
+}
+
+.field:not(.open, .disabled):hover .frame {
+  inset: 3px;
+}
+
+.field:not(.open, .disabled):hover .frame i {
+  border-color: var(--color-text-muted);
+}
+
+.open .frame {
+  inset: 0;
+  animation: rack-focus 0.46s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.focused .frame i {
+  width: 10px;
+  height: 10px;
+  border-color: var(--color-accent);
+}
+
+@keyframes rack-focus {
+  0% {
+    inset: -7px;
+    opacity: 0.25;
+  }
+
+  55% {
+    inset: 2px;
+    opacity: 1;
+  }
+
+  100% {
+    inset: 0;
+  }
+}
+
+.icon {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  margin-top: -7.5px;
+  color: var(--color-text-soft);
+  pointer-events: none;
+  transition: color var(--transition-fast);
+}
+
+.focused .icon {
+  color: var(--color-accent);
+}
+
+.input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  /* The end leaves room for the underscore caret after the last character. */
+  padding: 0 calc(var(--tools, 12px) + 10px) 0 34px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  outline: none;
+  /* The field draws its caret as the examples' underscore instead (FieldCaret). */
+  caret-color: transparent;
+  appearance: none;
+}
+
+/* What you type is set in Slate, as the examples are: small typewriter capitals. The search tag matches (SearchTag.module.css). */
+.input,
+.exampleLine {
+  font: 700 10.5px/16px var(--font-script);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.input::-webkit-search-cancel-button,
+.input::-webkit-search-decoration {
+  display: none;
+  appearance: none;
+}
+
+/* Closed, the field is just the tile: click anywhere on it to open it. */
+.field:not(.open) .input {
+  padding: 0;
+  color: transparent;
+  cursor: pointer;
+}
+
+.disabled {
+  opacity: 0.38;
+}
+
+.disabled .input {
+  cursor: not-allowed;
+}
+
+/* ---------- The examples, typed in Slate: small capitals over an underscore caret ---------- */
+
+/*
+ * A flex box, so the line isn't set on a line of the field's larger type
+ * (which pushed it low and cut off the caret below). The line stretches to
+ * the box's height, so the caret keeps its place with no text before it.
+ */
+.example {
+  position: absolute;
+  top: 50%;
+  right: var(--tools, 12px);
+  left: 34px;
+  height: 16px;
+  margin-top: -8px;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Spaces keep their width, so the caret steps past a space just typed. */
+.exampleLine {
+  display: inline-flex;
+  align-items: flex-end;
+  color: var(--color-text-soft);
+  white-space: pre;
+}
+
+/* The field's caret: its text up to the insertion point, laid out unseen, places the underscore. */
+.caretLine {
+  color: var(--color-text);
+}
+
+.caretText {
+  color: transparent;
+}
+
+.caret {
+  flex: none;
+  width: 0.8em;
+  height: 1.5px;
+  margin: 0 0 4px 1px;
+  background: currentColor;
+  animation: caret-blink 0.9s steps(1, end) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- Buttons at the end of the field ---------- */
+
+.tools {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transform: translateY(-50%);
+}
+
+.take,
+.clear,
+.shutter {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  animation: tool-in 0.22s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+
+@keyframes tool-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* Takes the example being typed: a key on a keyboard, a button on a touch screen. */
+.take {
+  height: 22px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 5px;
+  background: var(--color-fill);
+  box-shadow: inset 0 -1px 0 var(--color-bg-deep);
+  color: var(--color-text-soft);
+  font: 600 10.5px/1 var(--font-sans);
+  letter-spacing: 0.04em;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.take:hover {
+  background: var(--color-fill-strong);
+  color: var(--color-text);
+}
+
+.takeTap {
+  display: none;
+}
+
+@media (hover: none) {
+  .takeKey {
+    display: none;
+  }
+
+  .takeTap {
+    display: inline;
+  }
+}
+
+.clear {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-muted);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.clear:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+/* The shutter: searches what's typed. */
+.shutter {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--color-text-muted);
+  transition: box-shadow var(--transition-fast);
+}
+
+.shutter:hover {
+  box-shadow: inset 0 0 0 1.5px var(--color-text);
+}
+
+.shutterDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  transition: transform 0.14s ease;
+}
+
+.shutter:active .shutterDot {
+  transform: scale(0.55);
+}
+
+/* ---------- Narrow screens: the open tile spans the toolbar row ---------- */
+
+/*
+ * The tile's place moves to the end of the row, and the tile sits over it,
+ * placed on the toolbar (Script Search pins it, so it's positioned). Opening
+ * widens it leftwards across the row; keep this width in step with
+ * SPANNING_QUERY in SceneSearchTile.jsx.
+ */
+@media (max-width: 900px) {
+  .slot {
+    order: 1;
+    width: 36px;
+    height: 36px;
+  }
+
+  .field {
+    position: absolute;
+    top: 50%;
+    right: var(--page-gutter);
+    z-index: 1;
+    transform: translateY(-50%);
+  }
+
+  /* Spanning the row, a spring past its width would run off the screen's edge. */
+  .open {
+    width: calc(100% - 2 * var(--page-gutter));
+    transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1), ease;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field,
+  .open,
+  .frame,
+  .frame i,
+  .icon {
+    transition: none;
+  }
+
+  .open .frame,
+  .caret,
+  .take,
+  .clear,
+  .shutter {
+    animation: none;
+  }
+}
