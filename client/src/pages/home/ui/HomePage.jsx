@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { getRecentFilms } from "@/entities/film/model/filmFilters.js";
 import { FilmCard, FilmCardGrid, FilmCardSkeleton } from "@/entities/film/ui/FilmCard.jsx";
 import { useSession } from "@/entities/session/model/useSession.js";
@@ -9,9 +9,10 @@ import { getErrorMessage } from "@/shared/lib/errors.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
-import { ChevronRightIcon, SearchIcon } from "@/shared/ui/icons.jsx";
-import { Input } from "@/shared/ui/Input.jsx";
+import { ChevronRightIcon } from "@/shared/ui/icons.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
+import { HeroArt } from "./HeroArt.jsx";
+import { HeroSceneSearch } from "./HeroSceneSearch.jsx";
 import { LibraryReel } from "./LibraryReel.jsx";
 import styles from "./HomePage.module.css";
 
@@ -19,10 +20,8 @@ const RECENT_FILM_LIMIT = 5;
 
 export default function HomePage() {
   useDocumentTitle();
-  const navigate = useNavigate();
   const { isAdmin } = useSession();
   const [films, setFilms] = useState([]);
-  const [query, setQuery] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -50,15 +49,10 @@ export default function HomePage() {
 
   const recentFilms = useMemo(() => getRecentFilms(films, RECENT_FILM_LIMIT), [films]);
 
-  function submitSearch(event) {
-    event.preventDefault();
-    const trimmed = query.trim();
-    navigate(trimmed ? `/library?query=${encodeURIComponent(trimmed)}` : "/library");
-  }
-
   return (
     <div className={styles.page}>
       <section className={styles.hero}>
+        <HeroArt className={styles.heroArt} />
         <div className={styles.heroInner}>
           <div className={styles.heroIntro}>
             <h1 className={styles.heroTitle}>Read between the lines.</h1>
@@ -67,27 +61,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className={styles.heroActions}>
-            <form className={styles.heroSearch} onSubmit={submitSearch} role="search">
-              <Input
-                icon={<SearchIcon size={18} />}
-                className={styles.heroSearchField}
-                aria-label="Search films"
-                autoComplete="off"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search films by title…"
-                type="search"
-                value={query}
-              />
-              <Button type="submit" variant="primary">
-                Search
-              </Button>
-            </form>
-            <Button as={Link} to="/library" variant="ghost" size="sm" className={styles.browseLink}>
-              Browse the library
-              <ChevronRightIcon size={14} />
-            </Button>
-          </div>
+          <HeroSceneSearch />
         </div>
 
         <p className={styles.heroCredit}>Spider-Man: Into the Spider-Verse (2018)</p>
@@ -100,8 +74,8 @@ export default function HomePage() {
           id="home-recent-heading"
           title="Recently added"
           actions={
-            <Button as={Link} to="/library" variant="link" size="sm">
-              View all
+            <Button as={Link} to="/library" variant="ghost" size="sm" className={styles.browseLink}>
+              Browse the library
               <ChevronRightIcon size={14} />
             </Button>
           }

@@ -25,29 +25,29 @@ afterEach(() => {
 });
 
 describe("the page style toggle", () => {
-  it("turns to the next page style on each click: white, cream, blue, then white again", () => {
+  it("turns to the next page style on each click: from blue to white, cream, then blue again", () => {
     render(<SceneTextStyleToggle />);
 
+    expect(shown()).toBe("midnight");
+    fireEvent.click(toggle());
     expect(shown()).toBe("reading");
     fireEvent.click(toggle());
     expect(shown()).toBe("cream");
     fireEvent.click(toggle());
     expect(shown()).toBe("midnight");
-    fireEvent.click(toggle());
-    expect(shown()).toBe("reading");
   });
 
   it("tells screen readers which page it shows and which comes next, and shows no name on screen", () => {
     render(<SceneTextStyleToggle />);
 
-    expect(toggle().getAttribute("aria-label")).toBe("Page style: Reading Edition. Turn to Cream Paper");
+    expect(toggle().getAttribute("aria-label")).toBe("Page style: Midnight Edition. Turn to Reading Edition");
     expect(toggle().textContent).toBe("");
   });
 
   it("keeps the other two styles' pages behind its own, ready to fan out on hover", () => {
     render(<SceneTextStyleToggle />);
 
-    expect(pages()).toEqual(["midnight", "cream", null]);
+    expect(pages()).toEqual(["cream", "reading", null]);
   });
 
   it("plays a turn on click, the old page leaving as the new one arrives, then settles back", () => {
@@ -55,23 +55,23 @@ describe("the page style toggle", () => {
     render(<SceneTextStyleToggle />);
 
     fireEvent.click(toggle());
-    expect(pages()).toEqual(["reading", null]);
+    expect(pages()).toEqual(["midnight", null]);
 
     act(() => {
       vi.advanceTimersByTime(1200);
     });
-    expect(pages()).toEqual(["reading", "midnight", null]);
+    expect(pages()).toEqual(["midnight", "cream", null]);
   });
 
   it("works the same in a tool bar, and can be shown but not used", () => {
     const { rerender } = render(<SceneTextStyleToggle look="toolbar" />);
 
     fireEvent.click(toggle());
-    expect(shown()).toBe("cream");
+    expect(shown()).toBe("reading");
 
     rerender(<SceneTextStyleToggle look="toolbar" disabled />);
     fireEvent.click(toggle());
     expect(toggle().disabled).toBe(true);
-    expect(shown()).toBe("cream");
+    expect(shown()).toBe("reading");
   });
 });

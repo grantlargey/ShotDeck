@@ -1,0 +1,36 @@
+/* Where the title search and its Browse link were, centred below the falling figure. */
+.slot {
+  width: 100%;
+  max-width: 640px;
+}
+
+/* The field on a pane of glass over the artwork: no outline, just the words and the magnifier. */
+.glass {
+  width: 100%;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-bg) 30%, transparent);
+  backdrop-filter: blur(8px);
+  transition: background-color var(--transition-fast);
+}
+
+/* With focus the glass darkens a little, and the field turns its magnifier blue and shows the Tab key. */
+.glass:focus-within {
+  background: color-mix(in srgb, var(--color-bg) 45%, transparent);
+}
+
+.unavailable {
+  opacity: 0.5;
+}
+
+@media (max-width: 780px) {
+  .glass {
+    height: 58px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass {
+    transition: none;
+  }
+}

@@ -15,7 +15,7 @@ export const SCENE_TEXT_STYLES = [
   { value: "midnight", label: "Midnight Edition" },
 ];
 
-const DEFAULT_STYLE = "reading";
+const DEFAULT_STYLE = "midnight";
 const STORAGE_KEY = "scriptdeck:scene-text-style";
 
 const listeners = new Set();

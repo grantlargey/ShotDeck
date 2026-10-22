@@ -1,0 +1,335 @@
+/*
+ * The field inside its box. The container draws the box (Script Search's tile,
+ * the home hero's pane of glass) and sets its width and height; this sets out
+ * what's inside, from these sizes. Each variant sets them once.
+ */
+.field {
+  --type: 10.5px;
+  --line: 16px;
+  /* How far the underscore sits above the foot of the line. */
+  --lift: 4px;
+  --icon-size: 15px;
+  --icon-left: 11px;
+  --text-left: 34px;
+  --tool: 22px;
+  --take-pad: 7px;
+  --take-type: 10.5px;
+  --shutter: 20px;
+  --shutter-dot: 10px;
+  --tools-right: 7px;
+  --tools-gap: 4px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* The home hero's field: larger, on glass over artwork. Keep TOOL_SPACE.hero in SceneSearchField.jsx in step. */
+.hero {
+  --type: 13px;
+  --line: 20px;
+  --lift: 5px;
+  --icon-size: 18px;
+  --icon-left: 22px;
+  --text-left: 54px;
+  --tool: 26px;
+  --take-pad: 9px;
+  --take-type: 11.5px;
+  --shutter: 26px;
+  --shutter-dot: 12px;
+  --tools-right: 12px;
+  --tools-gap: 6px;
+}
+
+@media (max-width: 780px) {
+  .hero {
+    --type: 12px;
+    --line: 18px;
+    --lift: 4.5px;
+    --icon-size: 16px;
+    --icon-left: 18px;
+    --text-left: 46px;
+    --tools-right: 10px;
+  }
+}
+
+.icon {
+  position: absolute;
+  top: 50%;
+  left: var(--icon-left);
+  width: var(--icon-size);
+  height: var(--icon-size);
+  margin-top: calc(var(--icon-size) / -2);
+  color: var(--color-text-soft);
+  pointer-events: none;
+  transition: color var(--transition-fast);
+}
+
+.focused .icon {
+  color: var(--color-accent);
+}
+
+.input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  /* The end leaves room for the underscore caret after the last character. */
+  padding: 0 calc(var(--tools, 12px) + 10px) 0 var(--text-left);
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  outline: none;
+  /* The field draws its caret as the examples' underscore instead (FieldCaret). */
+  caret-color: transparent;
+  appearance: none;
+}
+
+/* What you type is set in Slate, as the examples are: small typewriter capitals. The search tag matches (SearchTag.module.css). */
+.input,
+.exampleLine {
+  font: 700 var(--type) / var(--line) var(--font-slate);
+  letter-spacing: var(--tracking-slate);
+  text-transform: uppercase;
+}
+
+.input::-webkit-search-cancel-button,
+.input::-webkit-search-decoration {
+  display: none;
+  appearance: none;
+}
+
+/* Closed, the field is just its box: click anywhere on it to open it. */
+.closed .input {
+  padding: 0;
+  color: transparent;
+  cursor: pointer;
+}
+
+.disabled .input {
+  cursor: not-allowed;
+}
+
+/* ---------- The examples, typed in Slate: small capitals over an underscore caret ---------- */
+
+/*
+ * A flex box, so the line isn't set on a line of the field's larger type
+ * (which pushed it low and cut off the caret below). The line stretches to
+ * the box's height, so the caret keeps its place with no text before it.
+ */
+.example {
+  position: absolute;
+  top: 50%;
+  right: var(--tools, 12px);
+  left: var(--text-left);
+  height: var(--line);
+  margin-top: calc(var(--line) / -2);
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Spaces keep their width, so the caret steps past a space just typed. */
+.exampleLine {
+  display: inline-flex;
+  align-items: flex-end;
+  color: var(--color-text-soft);
+  white-space: pre;
+}
+
+/* The field's caret: its text up to the insertion point, laid out unseen, places the underscore. */
+.caretLine {
+  color: var(--color-text);
+}
+
+.caretText {
+  color: transparent;
+}
+
+.caret {
+  flex: none;
+  width: 0.8em;
+  height: max(1.5px, 0.143em);
+  margin: 0 0 var(--lift) 1px;
+  background: currentColor;
+  animation: caret-blink 0.9s steps(1, end) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- Buttons at the end of the field ---------- */
+
+.tools {
+  position: absolute;
+  top: 50%;
+  right: var(--tools-right);
+  display: flex;
+  align-items: center;
+  gap: var(--tools-gap);
+  transform: translateY(-50%);
+}
+
+.take,
+.clear,
+.shutter {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  animation: tool-in 0.22s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+
+@keyframes tool-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* Takes the example being typed: a key on a keyboard, a button on a touch screen. */
+.take {
+  height: var(--tool);
+  padding: 0 var(--take-pad);
+  display: inline-flex;
+  align-items: center;
+  border-radius: 5px;
+  background: var(--color-fill);
+  box-shadow: inset 0 -1px 0 var(--color-bg-deep);
+  color: var(--color-text-soft);
+  font: 600 var(--take-type) / 1 var(--font-text);
+  letter-spacing: 0.04em;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.take:hover {
+  background: var(--color-fill-strong);
+  color: var(--color-text);
+}
+
+.takeTap {
+  display: none;
+}
+
+@media (hover: none) {
+  .takeKey {
+    display: none;
+  }
+
+  .takeTap {
+    display: inline;
+  }
+}
+
+/* Tab only takes an example once the field has focus, so at rest the examples type with no key beside them. A touch screen keeps its Try button. */
+@media (hover: hover) {
+  .field:not(:focus-within) .take {
+    display: none;
+  }
+}
+
+.clear {
+  width: var(--tool);
+  height: var(--tool);
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-muted);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.clear svg {
+  width: calc(var(--tool) * 0.55);
+  height: calc(var(--tool) * 0.55);
+}
+
+.clear:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+/* The shutter: searches what's typed. */
+.shutter {
+  width: var(--shutter);
+  height: var(--shutter);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--color-text-muted);
+  transition: box-shadow var(--transition-fast);
+}
+
+.shutter:hover {
+  box-shadow: inset 0 0 0 1.5px var(--color-text);
+}
+
+.shutterDot {
+  width: var(--shutter-dot);
+  height: var(--shutter-dot);
+  border-radius: 50%;
+  background: var(--color-accent);
+  transition: transform 0.14s ease;
+}
+
+.shutter:active .shutterDot {
+  transform: scale(0.55);
+}
+
+/* ---------- The hero's, on glass over artwork: a white magnifier and lighter buttons ---------- */
+
+.hero .icon {
+  color: var(--color-text);
+}
+
+.hero.focused .icon {
+  color: var(--color-accent);
+}
+
+.hero .take {
+  background: color-mix(in srgb, var(--color-text) 14%, transparent);
+  box-shadow: none;
+  color: var(--color-text);
+  backdrop-filter: blur(6px);
+}
+
+.hero .take:hover {
+  background: color-mix(in srgb, var(--color-text) 24%, transparent);
+}
+
+.hero .clear {
+  color: var(--color-text-soft);
+}
+
+.hero .shutter {
+  box-shadow: inset 0 0 0 1.5px var(--color-text-soft);
+}
+
+.hero .shutter:hover {
+  box-shadow: inset 0 0 0 1.5px var(--color-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon {
+    transition: none;
+  }
+
+  .caret,
+  .take,
+  .clear,
+  .shutter {
+    animation: none;
+  }
+}

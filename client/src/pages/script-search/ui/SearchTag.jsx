@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { cx } from "@/shared/lib/cx.js";
 import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
 import { SearchIcon } from "@/shared/ui/icons.jsx";
@@ -11,11 +11,13 @@ import styles from "./SearchTag.module.css";
  * description for editing; × clears the search.
  *
  * flyFrom: the search field's box when it was searched, for the tag to fly in
- * from; onFlown says it has been used.
+ * from (on this page, or the home page's when it handed the search over);
+ * onFlown says it has been used.
  * editing: the field is open on this description, so the tag steps back.
  */
 export function SearchTag({ query, searching = false, editing = false, flyFrom, onFlown, onEdit, onClear }) {
   const tagRef = useRef(null);
+  const frameRef = useRef(0);
   const reducedMotion = usePrefersReducedMotion();
 
   useLayoutEffect(() => {
@@ -23,17 +25,25 @@ export function SearchTag({ query, searching = false, editing = false, flyFrom, 
     onFlown?.();
     const tag = tagRef.current;
     if (reducedMotion || !tag?.animate) return;
-    const to = tag.getBoundingClientRect();
-    const dx = flyFrom.left - to.left;
-    const dy = flyFrom.top + (flyFrom.height - to.height) / 2 - to.top;
-    tag.animate(
-      [
-        { transform: `translate(${dx}px, ${dy}px) scale(0.94)`, opacity: 0.35 },
-        { transform: "translate(0, 0) scale(1)", opacity: 1 },
-      ],
-      { duration: 560, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
-    );
+    // Measured on the next frame, before it's drawn: a search handed over from
+    // another page arrives before the app scrolls the new page to its top.
+    cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(() => {
+      const to = tag.getBoundingClientRect();
+      const dx = flyFrom.left - to.left;
+      const dy = flyFrom.top + (flyFrom.height - to.height) / 2 - to.top;
+      tag.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px) scale(0.94)`, opacity: 0.35 },
+          { transform: "translate(0, 0) scale(1)", opacity: 1 },
+        ],
+        { duration: 560, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+      );
+    });
   }, [flyFrom, onFlown, reducedMotion]);
+
+  // onFlown clears flyFrom straight away, so the frame is only let go of when the tag goes.
+  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
 
   return (
     <span ref={tagRef} className={cx(styles.tag, editing && styles.editing)} aria-busy={searching}>

@@ -23,25 +23,25 @@ afterEach(() => {
 });
 
 describe("the scene text style", () => {
-  it("shows Reading Edition when this browser has saved nothing", () => {
-    showSavedSceneTextStyle();
-
-    expect(shownStyle()).toBe("reading");
-    expect(getSceneTextStyle()).toBe("reading");
-  });
-
-  it("shows the style this browser saved", () => {
-    window.localStorage.setItem(STORAGE_KEY, "midnight");
+  it("shows Midnight Edition when this browser has saved nothing", () => {
     showSavedSceneTextStyle();
 
     expect(shownStyle()).toBe("midnight");
+    expect(getSceneTextStyle()).toBe("midnight");
   });
 
-  it("falls back to Reading Edition when the saved value isn't a style", () => {
-    window.localStorage.setItem(STORAGE_KEY, "neon");
+  it("shows the style this browser saved", () => {
+    window.localStorage.setItem(STORAGE_KEY, "reading");
     showSavedSceneTextStyle();
 
     expect(shownStyle()).toBe("reading");
+  });
+
+  it("falls back to Midnight Edition when the saved value isn't a style", () => {
+    window.localStorage.setItem(STORAGE_KEY, "neon");
+    showSavedSceneTextStyle();
+
+    expect(shownStyle()).toBe("midnight");
   });
 
   it("shows a pick at once and remembers it for the next visit", () => {
@@ -52,11 +52,11 @@ describe("the scene text style", () => {
   });
 
   it("ignores a style that doesn't exist", () => {
-    setSceneTextStyle("midnight");
+    setSceneTextStyle("cream");
     setSceneTextStyle("neon");
 
-    expect(shownStyle()).toBe("midnight");
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("midnight");
+    expect(shownStyle()).toBe("cream");
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("cream");
   });
 
   it("offers white, then cream, then blue, and steps through them in that order", () => {
@@ -75,9 +75,9 @@ describe("the scene text style", () => {
     });
 
     showSavedSceneTextStyle();
-    expect(shownStyle()).toBe("reading");
-
-    setSceneTextStyle("midnight");
     expect(shownStyle()).toBe("midnight");
+
+    setSceneTextStyle("cream");
+    expect(shownStyle()).toBe("cream");
   });
 });

@@ -130,8 +130,7 @@
  * the small page in the logo and the style switches when that paper is too
  * dark to stand out on the dark chrome around it.
  */
-/* A book page: Newsreader text under Gloock headings. The default. */
-:root,
+/* A book page: Newsreader text under Gloock headings. */
 [data-scene-text-style="reading"] {
   --color-paper: #fcfcfb;
   --color-ink: #1d1e22;
@@ -196,7 +195,11 @@
   --scene-transition-color: var(--color-ink);
 }
 
-/* A book page on navy: Alegreya text, headings and names in its true small caps. */
+/*
+ * A book page on navy: Alegreya text, headings and names in its true small caps.
+ * The default: :root takes it with no specificity, so a chosen style always wins.
+ */
+:where(:root),
 [data-scene-text-style="midnight"] {
   --color-paper: #0c1324;
   --color-ink: #d4dcec;

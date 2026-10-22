@@ -8,8 +8,10 @@
 /* ---------- Hero ---------- */
 
 /*
- * At desktop widths the hero keeps the artwork's 1600×670 proportions, so the
+ * At desktop widths the hero keeps the artwork's 2.39:1 proportions, so the
  * falling figure stays in the open band between the headline and the search.
+ * HeroArt picks its image sizes from this height and the 780px and 470px
+ * breakpoints below.
  */
 .hero {
   position: relative;
@@ -18,19 +20,24 @@
   overflow: hidden;
 }
 
-.hero::before,
-.hero::after {
-  content: "";
+.heroArt {
   position: absolute;
   inset: 0;
 }
 
-.hero::before {
-  background: url("../assets/hero-home-desktop.webp") center top / cover no-repeat;
+.heroArt img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
 }
 
 /* Darkens only behind the header and headline, then fades the artwork into the page. */
 .hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--color-bg-deep) 50%, transparent) 0%,
@@ -47,7 +54,7 @@
   width: 100%;
   max-width: var(--page-max-width);
   margin: 0 auto;
-  padding: calc(var(--sd-nav-height) + 28px) var(--page-gutter) 76px;
+  padding: calc(var(--sd-nav-height) + 28px) var(--page-gutter) 104px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -72,72 +79,12 @@
 }
 
 .heroSubtitle {
-  margin: 14px auto 0;
+  margin: 350px auto 0;
   color: var(--color-text-soft);
   font-size: clamp(1rem, 1.5vw, 1.2rem);
   line-height: 1.5;
   text-shadow: var(--shadow-text);
   text-wrap: balance;
-}
-
-.heroActions {
-  width: 100%;
-  max-width: 620px;
-  display: grid;
-  justify-items: center;
-  gap: 14px;
-}
-
-/* One glass control: the form draws the box, and the input and button sit inside it. */
-.heroSearch {
-  width: 100%;
-  padding: 7px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: var(--radius-lg);
-  background: var(--color-glass);
-  box-shadow: var(--shadow-popover);
-  backdrop-filter: blur(16px);
-  transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast);
-}
-
-.heroSearch:focus-within {
-  border-color: var(--color-accent);
-  box-shadow:
-    0 0 0 3px var(--color-accent-soft),
-    var(--shadow-popover);
-}
-
-.heroSearchField {
-  flex: 1;
-}
-
-.heroSearch .heroSearchField > svg {
-  left: 12px;
-  color: var(--color-text-soft);
-}
-
-.heroSearch .heroSearchField > input,
-.heroSearch .heroSearchField > input:focus {
-  height: 42px;
-  padding-left: 40px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  font-size: var(--text-base);
-  text-overflow: ellipsis;
-}
-
-.heroSearch .heroSearchField > input::placeholder {
-  color: var(--color-text-muted);
-}
-
-.heroActions .browseLink {
-  color: var(--color-text-soft);
 }
 
 .heroCredit {
@@ -166,6 +113,11 @@
 
 .notice {
   margin-bottom: 16px;
+}
+
+/* The ghost button's own padding moves out, so its chevron ends on the end of the heading's hairline. */
+.recent .browseLink {
+  margin-right: -10px;
 }
 
 /* One row of posters; up to five fit at desktop widths. */
@@ -199,12 +151,12 @@
     min-height: 640px;
   }
 
-  .hero::before {
-    background-position: 54% top;
+  .heroArt img {
+    object-position: 54% top;
   }
 
   .heroInner {
-    padding: calc(var(--sd-nav-height) + 24px) var(--page-gutter) 64px;
+    padding: calc(var(--sd-nav-height) + 24px) var(--page-gutter) 86px;
   }
 
   .heroTitle {
@@ -221,5 +173,13 @@
   .recent .recentGrid {
     grid-auto-columns: 42%;
     gap: 12px;
+  }
+}
+
+/* Phones get HeroArt's crop from the middle of the frame; centered, it shows the
+   same slice as 54% across the whole frame. */
+@media (max-width: 470px) {
+  .heroArt img {
+    object-position: 50% top;
   }
 }

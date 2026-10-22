@@ -10,7 +10,6 @@ import { preloadImages, whenDrawable } from "@/shared/lib/media/preloadImages.js
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatMomentToHms } from "@/shared/lib/time.js";
 import { ScreenplayView } from "@/shared/ui/ScreenplayView.jsx";
-import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import { Skeleton } from "@/shared/ui/Skeleton.jsx";
 import styles from "./LibraryReel.module.css";
 
@@ -235,12 +234,12 @@ function ReelStrips({ stills, scenes }) {
 }
 
 /**
- * The home page's "From the library" section. It loads its own random sample
- * of the library and draws strips drifting across the page: two of film stills
- * in opposite directions, then one of captured scenes' screenplay text. Each
- * strip is drawn twice so it loops seamlessly. Hovering or focusing a strip
- * pauses it; with reduced motion the strips sit still and scroll sideways
- * instead.
+ * The home page's "From the library" section, named for screen readers and
+ * shown without a heading. It loads its own random sample of the library and
+ * draws strips drifting across the page: two of film stills in opposite
+ * directions, then one of captured scenes' screenplay text. Each strip is
+ * drawn twice so it loops seamlessly. Hovering or focusing a strip pauses it;
+ * with reduced motion the strips sit still and scroll sideways instead.
  *
  * The strips are built only once their stills have loaded, so the reel arrives
  * whole rather than filling in as it drifts; a placeholder in the shape of the
@@ -256,10 +255,7 @@ export function LibraryReel() {
   if (ready && stills.length === 0 && scenes.length === 0) return null;
 
   return (
-    <section className={styles.section} aria-labelledby="home-library-heading" aria-busy={!ready}>
-      <div className={styles.heading}>
-        <SectionHeading id="home-library-heading" title="From the library" />
-      </div>
+    <section className={styles.section} aria-label="From the library" aria-busy={!ready}>
       {ready ? <ReelStrips stills={stills} scenes={scenes} /> : <ReelSkeleton />}
     </section>
   );

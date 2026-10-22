@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useNavigationType, useSearchParams } from "react-router-dom";
 import { getStillFilmPath, getStillThumbnail } from "@/entities/still/model/still.js";
 import { getSceneScriptPath } from "@/entities/script-scene/model/capturedScene.js";
 import { planStillMotion } from "@/entities/script-scene/model/stillMotion.js";
 import { getScriptTagLabel } from "@server/domain/script-tags.js";
 import { SceneCard, SceneCardSkeleton } from "@/entities/script-scene/ui/SceneCard.jsx";
+import { getHandedOverSearchBox } from "@/features/scene-search/model/searchHandOff.js";
 import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
 import {
   getSemanticSearchStatus,
@@ -37,6 +38,8 @@ const TAG_SEPARATOR = " ";
 export default function ScriptSearchPage() {
   useDocumentTitle("Script Search");
   const nav = useNavigate();
+  const location = useLocation();
+  const navigationType = useNavigationType();
   // Selected tags (?tag=…) and the card view (?preview=stills) live in the URL so views can be linked to.
   const [searchParams, setSearchParams] = useSearchParams();
   const tagKey = searchParams.getAll("tag").join(TAG_SEPARATOR);
@@ -58,7 +61,11 @@ export default function ScriptSearchPage() {
   const searchInputRef = useRef(null);
   const [searchFocused, setSearchFocused] = useState(false);
   // Where the search field was when a description was searched, for its tag to fly in from.
-  const [tagFlyFrom, setTagFlyFrom] = useState(null);
+  // A search the home page hands over flies in from the home page's field, on arrival only:
+  // Back, Forward and a reload return to the page as it was left.
+  const [tagFlyFrom, setTagFlyFrom] = useState(() =>
+    navigationType === "PUSH" && query ? getHandedOverSearchBox(location.state) : null
+  );
   const clearTagFlyFrom = useCallback(() => setTagFlyFrom(null), []);
   const [match, setMatch] = useState("all");
   const [response, setResponse] = useState({ key: null, rows: [], error: "" });

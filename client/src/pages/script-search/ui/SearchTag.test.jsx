@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SearchTag } from "./SearchTag.jsx";
 
@@ -26,7 +26,7 @@ describe("the search tag", () => {
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
   });
 
-  it("flies in from the field it was searched in, once", () => {
+  it("flies in from the field it was searched in, once, measured on the next frame", async () => {
     const animate = vi.fn();
     HTMLElement.prototype.animate = animate;
     const onFlown = vi.fn();
@@ -35,6 +35,8 @@ describe("the search tag", () => {
     );
 
     expect(onFlown).toHaveBeenCalledTimes(1);
+    expect(animate).not.toHaveBeenCalled();
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
     expect(animate).toHaveBeenCalledTimes(1);
     // jsdom has no layout, so the tag measures 0 × 0 at the origin: it starts level with the field's middle.
     const [frames] = animate.mock.calls[0];

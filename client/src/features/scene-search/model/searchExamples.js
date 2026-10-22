@@ -1,6 +1,7 @@
 /**
- * The descriptions the open search tile types out as examples. They're a fixed
- * set: nothing on the page (filters, results, the film) changes which show.
+ * The descriptions the scene search types out as examples, in Script Search's
+ * tile and the home page's hero. They're a fixed set: nothing on the page
+ * (filters, results, the film) changes which show.
  */
 export const SEARCH_EXAMPLES = [
   "Accidental gunshot",

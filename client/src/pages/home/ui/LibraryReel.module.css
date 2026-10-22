@@ -2,12 +2,6 @@
   padding-top: 32px;
 }
 
-.heading {
-  max-width: var(--page-max-width);
-  margin: 0 auto;
-  padding: 0 var(--page-gutter);
-}
-
 .reel {
   display: grid;
   gap: 12px;

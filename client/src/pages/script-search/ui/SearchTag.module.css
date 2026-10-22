@@ -57,7 +57,7 @@
   color: var(--color-accent);
 }
 
-/* Set in Slate, as it was typed in the search tile (keep in step with SceneSearchTile.module.css). */
+/* Set in Slate, as it was typed in the search field (keep in step with features/scene-search/ui/SceneSearchField.module.css). */
 .text {
   min-width: 0;
   overflow: hidden;
