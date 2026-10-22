@@ -16,9 +16,10 @@
   align-items: center;
   gap: 10px;
   color: var(--color-text-soft);
+  font-family: var(--font-slate);
   font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font-weight: 700;
+  letter-spacing: var(--tracking-slate);
   text-transform: uppercase;
 }
 

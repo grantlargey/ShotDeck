@@ -61,8 +61,8 @@
 .text {
   min-width: 0;
   overflow: hidden;
-  font: 700 10.5px/16px var(--font-script);
-  letter-spacing: 0.14em;
+  font: 700 10.5px/16px var(--font-slate);
+  letter-spacing: var(--tracking-slate);
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;

@@ -57,7 +57,7 @@ export function TagCategoryList({
             >
               <span className={styles.label}>{group.label}</span>
               {selectedCount > 0 && (
-                <Badge tone="accent" solid>
+                <Badge tone="accent" solid count>
                   {selectedCount}
                 </Badge>
               )}

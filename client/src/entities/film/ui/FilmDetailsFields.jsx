@@ -28,6 +28,7 @@ export function FilmDetailsFields({ values, onChange }) {
 
       <Field label="Release year" required className={styles.half}>
         <Input
+          numeric
           type="number"
           min="1888"
           max="2100"
@@ -39,6 +40,7 @@ export function FilmDetailsFields({ values, onChange }) {
 
       <Field label="Runtime" hint="Format: HH:MM:SS" required className={styles.half}>
         <Input
+          numeric
           value={values.runtime_hms}
           placeholder="00:00:00"
           onChange={(event) => onChange("runtime_hms", event.target.value)}

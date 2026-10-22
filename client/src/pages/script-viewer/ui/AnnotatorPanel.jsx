@@ -106,6 +106,7 @@ function TimeField({ label, value, onChange, onBlur }) {
   return (
     <Field label={label}>
       <Input
+        numeric
         value={value}
         placeholder="00:00:00"
         autoComplete="off"
@@ -370,7 +371,7 @@ export function AnnotatorPanel({
           <p className={cx(styles.eyebrow, editing && styles.eyebrowEditing)}>
             {editing ? "Editing saved scene" : "New scene"}
           </p>
-          <h2 className={styles.title}>{sceneLabel}</h2>
+          <h2 className={cx(styles.title, draft.savedScene && styles.titleTiming)}>{sceneLabel}</h2>
         </div>
         <Button size="sm" onClick={onNewScene}>
           <PlusIcon size={14} />

@@ -149,6 +149,7 @@
   border-radius: 50%;
   background: var(--color-primary);
   color: var(--color-on-primary);
+  font-family: var(--font-slate);
   font-size: var(--text-2xs);
   font-weight: 700;
   text-transform: uppercase;

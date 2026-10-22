@@ -78,9 +78,10 @@
   border-bottom: 1px solid var(--color-line);
   background: var(--color-well);
   color: var(--color-text-muted);
+  font-family: var(--font-slate);
   font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: var(--tracking-slate);
   text-align: left;
   text-transform: uppercase;
   white-space: nowrap;
@@ -108,9 +109,10 @@
 .you {
   margin-left: 8px;
   color: var(--color-text-muted);
+  font-family: var(--font-slate);
   font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: var(--tracking-slate);
   text-transform: uppercase;
 }
 

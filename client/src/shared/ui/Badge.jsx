@@ -6,7 +6,12 @@ import styles from "./Badge.module.css";
  *
  * tone: neutral | accent | success | warning | danger | ai
  * solid: filled accent style, used for counts on controls
+ * count: the badge holds a number, set in Slate like every count
  */
-export function Badge({ tone = "neutral", solid = false, className, children }) {
-  return <span className={cx(styles.badge, styles[tone], solid && styles.solid, className)}>{children}</span>;
+export function Badge({ tone = "neutral", solid = false, count = false, className, children }) {
+  return (
+    <span className={cx(styles.badge, styles[tone], solid && styles.solid, count && styles.count, className)}>
+      {children}
+    </span>
+  );
 }

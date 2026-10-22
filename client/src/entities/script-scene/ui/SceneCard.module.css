@@ -144,6 +144,10 @@
   gap: 6px 8px;
 }
 
+.timing {
+  font-family: var(--font-slate);
+}
+
 .tags {
   margin-top: auto;
   padding-top: 4px;

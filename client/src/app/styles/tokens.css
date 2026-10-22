@@ -73,11 +73,16 @@
   --anchor-end: #5cd0ff;
 
   /* Type */
-  --font-sans: "Host Grotesk", Arial, sans-serif;
+  /* Everything else that's read: navigation, instructions, buttons and fields. */
+  --font-text: "Newsreader", Georgia, serif;
   /* Titles only: the wordmark, the home headline, page titles and film titles.
      Gloock has a single weight, so text set in it keeps font-weight 400. */
   --font-display: "Gloock", Georgia, serif;
   --font-script: "Courier Prime", "Courier New", Courier, monospace;
+  /* Slate: typewriter capitals for small labels, and every timecode and count.
+     Labels take it at weight 700 with this tracking. */
+  --font-slate: var(--font-script);
+  --tracking-slate: 0.14em;
   --text-2xs: 0.72rem;
   --text-xs: 0.78rem;
   --text-sm: 0.84rem;

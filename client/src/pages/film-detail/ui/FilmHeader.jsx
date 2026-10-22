@@ -21,15 +21,24 @@ const NO_TURNS = { source: null, ids: [], currentId: null, shownIds: new Set() }
 /**
  * The film's details as the hero sets them: the title, then the facts under
  * it. `field` is the detail's key in the film edit form (`createFilmEditForm`)
- * and `format` reads it off the film for the hero at rest.
+ * and `format` reads it off the film for the hero at rest. `numeric` facts are
+ * set in Slate, like every timecode and count.
  */
 const TITLE = { field: "title", label: "Title", placeholder: "Title", format: (film) => film.title };
 const FACTS = [
-  { field: "year", label: "Year", placeholder: "YYYY", inputMode: "numeric", format: (film) => film.year },
+  {
+    field: "year",
+    label: "Year",
+    placeholder: "YYYY",
+    inputMode: "numeric",
+    numeric: true,
+    format: (film) => film.year,
+  },
   {
     field: "runtime_hms",
     label: "Runtime",
     placeholder: "HH:MM:SS",
+    numeric: true,
     normalize: normalizeTypedTime,
     format: (film) => (film.runtime_minutes ? formatMinutesToHms(film.runtime_minutes) : ""),
   },
@@ -327,7 +336,7 @@ export function FilmHeader({ film, coverUrl, stills = NO_STILLS, onOpenStill, ed
               {facts.map((fact, index) => (
                 <div key={fact.field}>
                   <dt>{fact.label}</dt>
-                  <dd>
+                  <dd className={fact.numeric ? styles.factNumber : undefined}>
                     {edit ? (
                       <DetailField
                         detail={fact}

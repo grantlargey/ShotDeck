@@ -73,9 +73,15 @@ export function SceneViewerModal({
 
   let meta = "Script";
   if (showStill) {
-    meta = still ? `Film still · ${formatMomentToHms(still.time_seconds)}` : "Film still";
+    meta = still ? (
+      <>
+        Film still · <span className={styles.metaTime}>{formatMomentToHms(still.time_seconds)}</span>
+      </>
+    ) : (
+      "Film still"
+    );
   } else if (scene) {
-    meta = formatFilmTiming(scene);
+    meta = <span className={styles.metaTime}>{formatFilmTiming(scene)}</span>;
   }
 
   return (

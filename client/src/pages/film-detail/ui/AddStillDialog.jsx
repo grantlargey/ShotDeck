@@ -100,6 +100,7 @@ export function AddStillDialog({ filmId, runtimeSeconds, onAdded, onClose }) {
           hint={`${hint}. Add a tenth, like 00:10:00.5, for a second shot in the same second.`}
         >
           <Input
+            numeric
             disabled={busy}
             placeholder="HH:MM:SS"
             value={time}

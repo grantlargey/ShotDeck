@@ -104,7 +104,7 @@ export function SceneCard({
           <span className={styles.title}>{cardTitle}</span>
         </div>
         <div className={styles.subRow}>
-          <span>{formatFilmTiming(scene)}</span>
+          <span className={styles.timing}>{formatFilmTiming(scene)}</span>
           {status && <Badge tone="success">{status}</Badge>}
         </div>
         {tags.length > 0 && (
@@ -112,7 +112,7 @@ export function SceneCard({
             {tags.slice(0, MAX_CARD_TAGS).map((tag) => (
               <Badge key={tag}>{getScriptTagLabel(tag)}</Badge>
             ))}
-            {tags.length > MAX_CARD_TAGS && <Badge>+{tags.length - MAX_CARD_TAGS}</Badge>}
+            {tags.length > MAX_CARD_TAGS && <Badge count>+{tags.length - MAX_CARD_TAGS}</Badge>}
           </div>
         )}
       </div>

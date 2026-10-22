@@ -3,15 +3,17 @@ import styles from "./forms.module.css";
 
 /**
  * Text input. With an `icon`, the input is wrapped and `className` goes on the
- * wrapper so layout rules (flex, width) still apply.
+ * wrapper so layout rules (flex, width) still apply. `numeric` is for a field
+ * that takes a number or a timecode, set in Slate like every timecode and count.
  */
-export function Input({ icon, className, ...props }) {
-  if (!icon) return <input className={cx(styles.control, className)} {...props} />;
+export function Input({ icon, numeric = false, className, ...props }) {
+  const controlClass = cx(styles.control, numeric && styles.numeric);
+  if (!icon) return <input className={cx(controlClass, className)} {...props} />;
 
   return (
     <span className={cx(styles.withIcon, className)}>
       {icon}
-      <input className={styles.control} {...props} />
+      <input className={controlClass} {...props} />
     </span>
   );
 }

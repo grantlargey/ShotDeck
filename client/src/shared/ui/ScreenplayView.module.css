@@ -131,7 +131,7 @@
 
 .empty {
   margin: 0;
-  font-family: var(--font-sans);
+  font-family: var(--font-text);
   font-size: var(--text-sm);
   font-style: italic;
   opacity: 0.6;

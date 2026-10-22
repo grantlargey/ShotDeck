@@ -89,7 +89,7 @@ export function SegmentedControl({
             {option.icon}
             {option.hideLabel ? <span className={styles.srOnly}>{option.label}</span> : option.label}
             {option.badge ? (
-              <Badge tone="accent" solid>
+              <Badge tone="accent" solid count>
                 {option.badge}
               </Badge>
             ) : null}

@@ -43,7 +43,7 @@ export function ViewerTopBar({
         )}
         <Button size="sm" onClick={onJumpToScenes}>
           Scenes
-          <Badge tone="accent">{sceneCount}</Badge>
+          <Badge tone="accent" count>{sceneCount}</Badge>
         </Button>
         <Button size="sm" onClick={onSearchScripts} title="Search all scripts">
           <SearchIcon size={14} />

@@ -48,9 +48,10 @@
 .filterHeading {
   margin: 0;
   color: var(--color-text-muted);
+  font-family: var(--font-slate);
   font-size: var(--text-2xs);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-slate);
   text-transform: uppercase;
 }
 

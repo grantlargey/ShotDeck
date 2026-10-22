@@ -163,6 +163,7 @@
 .captionTime {
   flex: none;
   color: var(--color-text-soft);
+  font-family: var(--font-slate);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }

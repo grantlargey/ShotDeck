@@ -49,3 +49,7 @@
   color: var(--color-on-accent);
   font-weight: 700;
 }
+
+.count {
+  font-family: var(--font-slate);
+}

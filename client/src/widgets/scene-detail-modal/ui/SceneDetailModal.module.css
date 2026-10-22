@@ -45,6 +45,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.metaTime {
+  font-family: var(--font-slate);
+}
+
 .toolbar {
   flex: none;
   display: flex;
@@ -54,6 +58,7 @@
 
 .counter {
   color: var(--color-text-muted);
+  font-family: var(--font-slate);
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
@@ -114,9 +119,10 @@
 .paperHeading {
   margin: 0;
   color: var(--color-text-muted);
+  font-family: var(--font-slate);
   font-size: var(--text-2xs);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-slate);
   text-transform: uppercase;
 }
 
@@ -196,9 +202,10 @@
 
 .tagGroup dt {
   color: var(--color-text);
+  font-family: var(--font-slate);
   font-size: var(--text-2xs);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-slate);
   text-transform: uppercase;
   white-space: nowrap;
 }

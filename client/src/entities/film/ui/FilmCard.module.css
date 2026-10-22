@@ -107,6 +107,7 @@
 
 .year {
   flex: none;
+  font-family: var(--font-slate);
 }
 
 .menu {

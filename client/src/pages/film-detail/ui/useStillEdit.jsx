@@ -137,6 +137,7 @@ export function useStillEdit({ filmId, runtimeSeconds, onChange }) {
           <div className={styles.editRow}>
             <Field label="Timestamp" required className={styles.timeField}>
               <Input
+                numeric
                 disabled={busy}
                 placeholder="HH:MM:SS"
                 value={edit.time}

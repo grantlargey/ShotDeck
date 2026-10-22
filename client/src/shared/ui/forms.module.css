@@ -59,6 +59,10 @@
   cursor: not-allowed;
 }
 
+.numeric {
+  font-family: var(--font-slate);
+}
+
 .select {
   appearance: none;
   padding-right: 34px;
