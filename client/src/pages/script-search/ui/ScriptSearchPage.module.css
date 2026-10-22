@@ -83,6 +83,19 @@
   display: none;
 }
 
+/* The Scenes row (layout and script-style toggles) pins under the site header while the
+   results scroll, and under the window top while a phone's header is slid away. It bleeds
+   to the page gutters so cards pass beneath it rather than beside it. */
+.results .toolbar {
+  position: sticky;
+  top: var(--sd-header-offset);
+  z-index: 2;
+  margin-inline: calc(-1 * var(--page-gutter));
+  padding: 12px var(--page-gutter);
+  background: var(--color-bg);
+  transition: top 0.22s ease;
+}
+
 /* "from 3 titles" beside the count, in sentence case rather than the label's capitals. */
 .headingNote {
   color: var(--color-text-muted);

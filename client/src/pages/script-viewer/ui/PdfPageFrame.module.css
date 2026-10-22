@@ -159,7 +159,7 @@
 
 .sceneBar:hover,
 .sceneBarActive {
-  background: var(--color-accent-strong);
+  background: #fde047;
 }
 
 .sceneChip {

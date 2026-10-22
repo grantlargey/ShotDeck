@@ -282,8 +282,11 @@
     width: 100%;
   }
 
-  .toolbar > * {
-    width: 100%;
+  /* The view switch fills the row and the page-style tile beside it keeps its own size,
+     as on desktop. (A width of 100% on every child pushed the tile off the screen.) */
+  .toolbar > :first-child {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .stage {

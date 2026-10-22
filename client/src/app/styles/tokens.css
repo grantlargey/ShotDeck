@@ -69,8 +69,8 @@
   --color-btn-ai-line: rgba(150, 138, 196, 0.4);
 
   /* Scene anchors in the script viewer */
-  --anchor-start: #34d399;
-  --anchor-end: #fbbf24;
+  --anchor-start: #e879f9;
+  --anchor-end: #5cd0ff;
 
   /* Type */
   --font-sans: "Host Grotesk", Arial, sans-serif;
