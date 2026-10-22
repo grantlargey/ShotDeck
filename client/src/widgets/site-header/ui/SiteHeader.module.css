@@ -14,13 +14,13 @@
     border-color var(--transition-fast);
 }
 
-/* On the home page the hero runs up behind the header. */
+/* On the home and film pages the hero runs up behind the header. */
 .navbarFloating {
   position: fixed;
   left: 0;
 }
 
-/* At the top of the home page the hero's own top gradient keeps the header legible. */
+/* At the top of those pages the hero's own gradient keeps the header legible. */
 .navbarClear {
   border-bottom-color: transparent;
   background: transparent;

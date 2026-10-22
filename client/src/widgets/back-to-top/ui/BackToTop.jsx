@@ -10,7 +10,9 @@ const SHOW_AFTER_SCREENS = 2;
 /**
  * Round button in the bottom-right corner that scrolls back to the header.
  * Focus moves to `focusTargetId` (the skip link, the first stop on the page),
- * so a keyboard user carries on from the top too.
+ * so a keyboard user carries on from the top too. Render it just before the
+ * footer: it stays in the window's corner until the footer scrolls into view,
+ * then stops above it.
  */
 export default function BackToTop({ focusTargetId }) {
   const [visible, setVisible] = useState(false);

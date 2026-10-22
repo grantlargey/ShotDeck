@@ -42,6 +42,8 @@ export default function App() {
   const mainClassName = isFullBleed ? page.mainFullBleed : page.main;
   // The script viewer pins its own tool bar, so the site header above it scrolls away.
   const pinHeader = !matchPath(SCRIPT_VIEWER_PATH, pathname);
+  // Home and film pages run their hero up behind the header.
+  const floatHeader = pathname === "/" || isFilmPage;
 
   return (
     <div className={page.shell}>
@@ -49,7 +51,7 @@ export default function App() {
         Skip to content
       </a>
 
-      <SiteHeader pinned={pinHeader} />
+      <SiteHeader pinned={pinHeader} floating={floatHeader} />
 
       <main id={MAIN_ID} tabIndex={-1} className={mainClassName}>
         <ErrorBoundary resetKey={pathname}>
@@ -103,8 +105,9 @@ export default function App() {
         </ErrorBoundary>
       </main>
 
-      <SiteFooter />
+      {/* Before the footer, so it stops above the footer's links rather than covering them. */}
       <BackToTop focusTargetId={SKIP_LINK_ID} />
+      <SiteFooter />
     </div>
   );
 }

@@ -62,14 +62,16 @@
     linear-gradient(180deg, transparent 55%, var(--color-bg) 100%);
 }
 
-/* Tall enough that a good slice of the backdrop shows above the poster. */
+/* Tall enough that a good slice of the backdrop shows above the poster. The
+   site header floats over the hero's top, so the hero runs up behind it by its
+   height and the poster and details stay below it. */
 .heroInner {
   position: relative;
   z-index: 1;
   max-width: var(--page-max-width);
-  min-height: 494px;
+  min-height: calc(var(--sd-nav-height) + 494px);
   margin: 0 auto;
-  padding: 56px var(--page-gutter) 40px;
+  padding: calc(var(--sd-nav-height) + 56px) var(--page-gutter) 40px;
   display: flex;
   align-items: flex-end;
   gap: 36px;
@@ -463,6 +465,11 @@
   gap: 44px;
 }
 
+/* A film that didn't load has no hero, so its message starts below the header. */
+.loadError {
+  padding-top: calc(var(--sd-nav-height) + 32px);
+}
+
 .scriptRow {
   display: flex;
   align-items: center;
@@ -606,7 +613,7 @@
 @media (max-width: 600px) {
   .heroInner {
     min-height: 0;
-    padding: 28px var(--page-gutter);
+    padding: calc(var(--sd-nav-height) + 28px) var(--page-gutter) 28px;
     flex-direction: column;
     align-items: flex-start;
     gap: 20px;

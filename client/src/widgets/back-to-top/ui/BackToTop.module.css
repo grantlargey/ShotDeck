@@ -1,13 +1,21 @@
+/*
+ * A strip with no height between the page and the footer. It sticks to the
+ * window's bottom edge while the page scrolls by, and stops on top of the
+ * footer once that scrolls into view, so the button never covers its links.
+ */
 .dock {
-  position: fixed;
-  right: max(20px, env(safe-area-inset-right, 0px));
-  bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  position: sticky;
+  bottom: 0;
   z-index: var(--z-toast);
+  height: 0;
   animation: back-to-top-in var(--transition-fast) both;
 }
 
 /* Compound selector: IconButton sets its own radius and shadow. */
 .dock .button {
+  position: absolute;
+  right: max(20px, env(safe-area-inset-right, 0px));
+  bottom: max(20px, env(safe-area-inset-bottom, 0px));
   border-radius: 50%;
   box-shadow: var(--shadow-popover);
 }

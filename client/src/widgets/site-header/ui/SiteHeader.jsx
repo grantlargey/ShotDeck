@@ -15,15 +15,15 @@ import styles from "./SiteHeader.module.css";
  * The site's header. `pinned` keeps it at the top of the window as the page
  * scrolls (on phones it slides away while scrolling down); the script viewer
  * passes false, so the header scrolls off above the viewer's own pinned bar.
+ * `floating` lays it over the top of a page whose hero runs up behind it.
  */
-export default function SiteHeader({ pinned = true }) {
+export default function SiteHeader({ pinned = true, floating = false }) {
   const { pathname } = useLocation();
   const headerRef = useRef(null);
   const { scrolled, hidden } = useHeaderScroll(headerRef, { enabled: pinned });
   const nav = useNavigate();
   const { isAdmin, isOwner, user, signOut } = useSession();
   const [changingPassword, setChangingPassword] = useState(false);
-  const isExplore = pathname === "/";
   const isNew = pathname === "/films/new";
 
   const navLinks = [
@@ -61,9 +61,9 @@ export default function SiteHeader({ pinned = true }) {
       className={cx(
         styles.navbar,
         !pinned && styles.navbarStatic,
-        // Home: the header floats over the hero, clear until the page scrolls.
-        pinned && isExplore && styles.navbarFloating,
-        pinned && isExplore && !scrolled && styles.navbarClear,
+        // Over a hero, the header is clear until the page scrolls.
+        pinned && floating && styles.navbarFloating,
+        pinned && floating && !scrolled && styles.navbarClear,
         hidden && styles.navbarHidden
       )}
     >

@@ -12,6 +12,7 @@ import { listStills } from "@/shared/api/stills.js";
 import { getFilm } from "@/shared/api/films.js";
 import { getFilmScript } from "@/shared/api/scripts.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
+import { cx } from "@/shared/lib/cx.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { formatMomentToHms } from "@/shared/lib/time.js";
@@ -270,7 +271,7 @@ export default function FilmDetailPage() {
     return (
       <div className={styles.page}>
         {err ? (
-          <div className={styles.content}>
+          <div className={cx(styles.content, styles.loadError)}>
             <Callout tone="error">{err}</Callout>
           </div>
         ) : (
