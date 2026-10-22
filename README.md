@@ -10,9 +10,9 @@ The app uses React/Vite, Express, PostgreSQL, and S3-compatible storage. Locally
 | --- | --- |
 | Node.js | 24.13.1 |
 | npm | 11.x, bundled with Node |
-| Docker | Engine 24+ with Compose v2 supporting `up --wait` |
+| Docker | Docker Desktop with `docker desktop start --timeout` support, Engine 24+, and Compose v2 supporting `up --wait` |
 
-Keep Docker running during development. On Windows, select the WSL 2 backend when installing Docker Desktop.
+`npm run dev` starts Docker Desktop automatically and waits up to 120 seconds for startup before starting local services, the API, and the client. On Windows, select the WSL 2 backend when installing Docker Desktop.
 
 ## First-time setup
 
@@ -35,6 +35,8 @@ copy server\.env.example server\.env      # Windows cmd
 The defaults match the local containers, including development S3 credentials. No editing or client environment file is required.
 
 ### 3. Start services and apply migrations
+
+Start Docker Desktop first; `services:up` requires Docker to be running.
 
 ```bash
 npm run services:up
@@ -69,7 +71,7 @@ Sign in through the Admin link or `/login`, then create a project and upload a s
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start local services, API, and client. |
+| `npm run dev` | Start Docker Desktop, wait for startup, then start local services, API, and client. |
 | `npm run services:up` | Start PostgreSQL and S3, wait for readiness, and create the bucket. |
 | `npm run services:stop` | Stop containers while keeping their data. |
 | `npm run services:logs` | Follow PostgreSQL and S3 logs. |
