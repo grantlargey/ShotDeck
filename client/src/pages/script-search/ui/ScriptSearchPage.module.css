@@ -71,6 +71,12 @@
   display: none;
 }
 
+/* The actions take the rest of the row, so the search tile can open across the room beside the heading. */
+.toolbarActions {
+  flex: 1;
+  justify-content: flex-end;
+}
+
 /* The Scenes row (layout and script-style toggles) pins under the site header while the
    results scroll, and under the window top while a phone's header is slid away. It bleeds
    to the page gutters so cards pass beneath it rather than beside it. */

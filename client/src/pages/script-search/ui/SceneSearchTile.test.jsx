@@ -24,12 +24,21 @@ function Tile({ initialValue = "", query = "", onSubmit = () => {}, ...props }) 
 const field = () => screen.getByRole("searchbox", { name: "Describe a scene" });
 const wait = (ms) => act(() => vi.advanceTimersByTime(ms));
 
+/** jsdom lays nothing out: puts the tile's slot on a 1140px toolbar with this much room beside the heading. */
+function giveRoom(width) {
+  vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockReturnValue(document.body);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(width);
+  vi.spyOn(HTMLElement.prototype, "offsetLeft", "get").mockReturnValue(988 - width);
+  vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(1140);
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   delete window.matchMedia;
 });
 
@@ -109,6 +118,22 @@ describe("the scene search tile", () => {
     expect(screen.queryByRole("button", { name: "Find scenes" })).toBeNull();
 
     fireEvent.change(field(), { target: { value: "a fight on a train" } });
+    expect(screen.getByRole("button", { name: "Find scenes" })).toBeTruthy();
+  });
+
+  it("stays open beside the heading while it holds a description not yet searched", () => {
+    giveRoom(748);
+    render(<Tile initialValue="a fight" />);
+
+    expect(screen.getByRole("button", { name: "Find scenes" })).toBeTruthy();
+  });
+
+  it("opens over the heading only while it has focus, when the room beside the heading is short", () => {
+    giveRoom(331);
+    render(<Tile initialValue="a fight" />);
+    expect(screen.queryByRole("button", { name: "Find scenes" })).toBeNull();
+
+    act(() => field().focus());
     expect(screen.getByRole("button", { name: "Find scenes" })).toBeTruthy();
   });
 

@@ -1,26 +1,37 @@
-/* The tile holds its place among the toolbar's switches. */
+/*
+ * The tile holds its place beside the toolbar's switches, and its slot takes
+ * the rest of the room to their left for the tile to open across, stopping
+ * 32px short of the heading (the toolbar's 12px gap and this margin).
+ */
 .slot {
-  flex: none;
-  display: inline-flex;
+  flex: 1 1 0;
+  min-width: 36px;
+  margin-left: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* ---------- The tile and the field it opens into (features/scene-search) ---------- */
 
 .box {
+  flex: none;
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
   background: var(--color-surface);
   transition:
-    width 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    width var(--close-ms, 0.24s) cubic-bezier(0.4, 0, 0.2, 1),
     background-color var(--transition-fast);
 }
 
-/* Opening springs a touch past its width and settles; closing just closes. */
+/*
+ * Opening fills the slot, springing a touch past it and settling; closing just
+ * closes. The wider it opens, the longer each takes (paceFor in SceneSearchTile.jsx).
+ */
 .open {
-  width: 400px;
+  width: 100%;
   transition:
-    width 0.3s cubic-bezier(0.3, 1.2, 0.5, 1),
+    width var(--open-ms, 0.3s) cubic-bezier(0.3, 1.2, 0.5, 1),
     background-color var(--transition-fast);
 }
 
@@ -114,6 +125,29 @@
   opacity: 0.38;
 }
 
+/* ---------- Little room beside the heading: the open tile covers it ---------- */
+
+/*
+ * The tile sits at its slot's end, placed on the toolbar (Script Search pins
+ * it, so it's positioned), and opening widens it left over the heading to the
+ * toolbar's padding, short of the switches. --cover-right is how far the
+ * slot's end is from the toolbar's. It glides in rather than springs, which
+ * would run past the padding. Compound, to win over the field's own position
+ * whichever stylesheet loads first.
+ */
+.covering .box {
+  position: absolute;
+  top: 50%;
+  right: var(--cover-right);
+  z-index: 1;
+  transform: translateY(-50%);
+}
+
+.covering .open {
+  width: calc(100% - var(--page-gutter) - var(--cover-right));
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1), ease;
+}
+
 /* ---------- Narrow screens: the open tile spans the toolbar row ---------- */
 
 /*
@@ -125,8 +159,10 @@
 @media (max-width: 900px) {
   .slot {
     order: 1;
+    flex: none;
     width: 36px;
     height: 36px;
+    margin-left: 0;
   }
 
   /* Compound, to win over the field's own position whichever stylesheet loads first. */

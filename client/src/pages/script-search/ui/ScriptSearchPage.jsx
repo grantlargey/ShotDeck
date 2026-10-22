@@ -256,6 +256,7 @@ export default function ScriptSearchPage() {
 
         <SectionHeading
           className={styles.toolbar}
+          actionsClassName={styles.toolbarActions}
           title="Scenes"
           count={response.key ? results.length : undefined}
           badge={
