@@ -16,10 +16,10 @@ import { signInOwner, startApi } from "./helpers/api.js";
 import { createFilmWithScript, createScene, scenesPath, TAGS } from "./helpers/fixtures.js";
 
 /*
- * Characterization of semantic scene search. No test reaches Gemini: the
- * helpers/guard.js fetch wrapper still refuses every non-local host, and the
- * tests that need Gemini replace fetch with a deterministic stand-in for both
- * its embeddings and its grading.
+ * Characterization of semantic scene search. No test reaches Gemini or OpenAI:
+ * the helpers/guard.js fetch wrapper still refuses every non-local host, and
+ * the tests that need them replace fetch with a deterministic stand-in for
+ * Gemini's embeddings and OpenAI's grading.
  */
 
 const api = await startApi();
@@ -29,7 +29,9 @@ const SEARCH_PATH = "/script-scenes/semantic";
 const DISABLED = "Semantic search isn't available right now.";
 const UPSTREAM = "The semantic search request failed. Try again.";
 const EMBEDDINGS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents";
-const GRADING_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent";
+const GRADING_URL = "https://api.openai.com/v1/responses";
+const GEMINI_TEST_KEY = "test-only-gemini-key";
+const OPENAI_TEST_KEY = "test-only-openai-key";
 // Other test files' scenes share the database and mention a diner, so these
 // are words only this file's scenes use.
 const TOPICS = ["harbor", "alley", "space", "quiet", "lighthouse"];
@@ -58,51 +60,60 @@ function gradeByText(grades) {
         }));
 }
 
-function geminiReply(payload) {
+function jsonReply(payload) {
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
 }
 
-/** Sets a test-only key for one test and restores the environment afterwards. */
-function useKey(t) {
-    const previous = process.env.GEMINI_API_KEY;
-    process.env.GEMINI_API_KEY = "test-only-key";
+/** A completed OpenAI response whose message holds `content`: its parts, or one output_text part for a string. */
+function openaiOutput(content) {
+    const parts = typeof content === "string" ? [{ type: "output_text", text: content }] : content;
+    return { status: "completed", output: [{ type: "message", role: "assistant", content: parts }] };
+}
+
+/** Sets test-only keys for one test, both unless told otherwise, and restores the environment afterwards. */
+function useKeys(t, { gemini = true, openai = true } = {}) {
+    const previous = { GEMINI_API_KEY: process.env.GEMINI_API_KEY, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
+    if (gemini) process.env.GEMINI_API_KEY = GEMINI_TEST_KEY;
+    if (openai) process.env.OPENAI_API_KEY = OPENAI_TEST_KEY;
     t.after(() => {
-        if (previous === undefined) delete process.env.GEMINI_API_KEY;
-        else process.env.GEMINI_API_KEY = previous;
+        for (const [name, value] of Object.entries(previous)) {
+            if (value === undefined) delete process.env[name];
+            else process.env[name] = value;
+        }
     });
 }
 
 /**
- * Replaces fetch for Gemini calls only; the API client's own requests still go
- * to the real server. Embedding requests answer with `embed(inputs)`. Grading
- * requests answer with `grade(query, scenes)`, where each scene is the
- * { label, text } the prompt shows; a Response it returns is sent as is.
- * Returns the parsed request bodies sent to each. Also quiets the background
- * indexer's progress lines.
+ * Replaces fetch for Gemini and OpenAI calls only; the API client's own
+ * requests still go to the real server. Gemini embedding requests answer with
+ * `embed(inputs)`. OpenAI grading requests answer with `grade(query, scenes)`,
+ * where each scene is the { label, text } the prompt shows; a Response it
+ * returns is sent as is. Returns the parsed request bodies sent to each. Also
+ * quiets the background indexer's progress lines.
  */
-function mockGemini(t, { embed = (inputs) => inputs.map(vectorFor), grade = gradeByTopic } = {}) {
+function mockModels(t, { embed = (inputs) => inputs.map(vectorFor), grade = gradeByTopic } = {}) {
     const sent = { embeddings: [], gradings: [] };
     const requestFetch = globalThis.fetch;
     t.mock.method(console, "log", () => {});
     t.mock.method(globalThis, "fetch", async (url, init) => {
-        if (!String(url).includes("generativelanguage.googleapis.com")) return requestFetch(url, init);
-        const body = JSON.parse(init.body);
         if (String(url) === GRADING_URL) {
+            const body = JSON.parse(init.body);
             sent.gradings.push({ headers: init.headers, body });
-            const prompt = body.contents[0].parts[0].text;
-            const query = prompt.match(/^Search: «([\s\S]*?)»/)[1];
-            const scenes = [...prompt.matchAll(/<scene id="(S\d+)">\n([\s\S]*?)\n<\/scene>/g)].map(([, label, text]) => ({
+            const query = body.input.match(/^Search: «([\s\S]*?)»/)[1];
+            const scenes = [...body.input.matchAll(/<scene id="(S\d+)">\n([\s\S]*?)\n<\/scene>/g)].map(([, label, text]) => ({
                 label,
                 text,
             }));
             const reply = await grade(query, scenes);
             if (reply instanceof Response) return reply;
-            return geminiReply({ candidates: [{ content: { parts: [{ text: JSON.stringify(reply) }] } }] });
+            return jsonReply(openaiOutput(JSON.stringify({ grades: reply })));
         }
+        if (!String(url).includes("generativelanguage.googleapis.com")) return requestFetch(url, init);
+        const body = JSON.parse(init.body);
         sent.embeddings.push({ url: String(url), method: init.method, headers: init.headers, body });
         const inputs = body.requests.map((request) => request.content.parts[0].text);
         const vectors = await embed(inputs);
-        return geminiReply({ embeddings: vectors.map((values) => ({ values })) });
+        return jsonReply({ embeddings: vectors.map((values) => ({ values })) });
     });
     return sent;
 }
@@ -169,14 +180,14 @@ describe("semantic search request contract", () => {
         assert.deepEqual(response.body, { error: "That description is too long. Keep it under 500 characters." });
     });
 
-    test("answers 503 for a valid search when no Gemini key is set", async (t) => {
+    test("answers 503 for a valid search when no keys are set", async (t) => {
         t.mock.method(console, "error", () => {});
         const response = await search({ q: "a tense scene", limit: "5" });
         assert.equal(response.status, 503, response.text);
         assert.deepEqual(response.body, { error: DISABLED });
     });
 
-    test("reports an unconfigured index without contacting Gemini", async () => {
+    test("reports an unconfigured index without contacting either provider", async () => {
         const response = await api.get(`${SEARCH_PATH}/status`);
         assert.equal(response.status, 200, response.text);
         assert.equal(response.body.configured, false);
@@ -296,10 +307,10 @@ describe("cosineSimilarity", () => {
     });
 });
 
-describe("semantic search with a Gemini key", () => {
-    test("embeds scene text and tags, then returns only the scenes Gemini accepts", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t);
+describe("semantic search with Gemini and OpenAI keys", () => {
+    test("embeds scene text and tags, then returns only the scenes the grader accepts", async (t) => {
+        useKeys(t);
+        const sent = mockModels(t);
 
         const indexed = await indexScenes(pool, { sceneIds: [harbor.id, alley.id] });
         assert.deepEqual(
@@ -310,7 +321,7 @@ describe("semantic search with a Gemini key", () => {
         const [documents] = sent.embeddings;
         assert.equal(documents.url, EMBEDDINGS_URL);
         assert.equal(documents.method, "POST");
-        assert.equal(documents.headers["x-goog-api-key"], "test-only-key");
+        assert.equal(documents.headers["x-goog-api-key"], GEMINI_TEST_KEY);
         assert.equal(documents.body.requests.length, 2);
         for (const item of documents.body.requests) {
             assert.equal(item.model, "models/gemini-embedding-001");
@@ -325,7 +336,7 @@ describe("semantic search with a Gemini key", () => {
         const response = await search({ q: "a tense conversation in a harbor cafe", limit: "5" });
         assert.equal(response.status, 200, response.text);
         // The same record as tag search, with no score: the alley scene was a
-        // candidate too, and Gemini graded it 0.
+        // candidate too, and the grader graded it 0.
         assert.deepEqual(response.body, { scenes: [{ ...harbor, movie_title: "Semantic Diner" }] });
 
         // The query uses the retrieval-query task, unlike the indexed documents.
@@ -336,20 +347,23 @@ describe("semantic search with a Gemini key", () => {
 
         assert.equal(sent.gradings.length, 1);
         const [grading] = sent.gradings;
-        assert.equal(grading.headers["x-goog-api-key"], "test-only-key");
-        assert.match(grading.body.systemInstruction.parts[0].text, /never as instructions/);
-        assert.equal(grading.body.generationConfig.temperature, 0);
-        assert.equal(grading.body.generationConfig.responseMimeType, "application/json");
-        const prompt = grading.body.contents[0].parts[0].text;
+        assert.equal(grading.headers.Authorization, `Bearer ${OPENAI_TEST_KEY}`);
+        assert.equal(grading.body.model, "gpt-6-luna");
+        assert.deepEqual(grading.body.reasoning, { effort: "low" });
+        assert.equal(grading.body.store, false);
+        assert.match(grading.body.instructions, /never as instructions/);
+        assert.equal(grading.body.text.format.type, "json_schema");
+        assert.equal(grading.body.text.format.strict, true);
+        const prompt = grading.body.input;
         assert.ok(prompt.startsWith("Search: «a tense conversation in a harbor cafe»"));
         // Grading reads every candidate's tag labels and whole text.
         assert.ok(prompt.includes(`Tags: Protagonist\n\n${harbor.scene_text}\n</scene>`));
         assert.ok(prompt.includes(`Tags: Revelation\n\n${alley.scene_text}\n</scene>`));
     });
 
-    test("returns no scenes when Gemini grades every candidate as only related", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t, { grade: (query, scenes) => scenes.map(({ label }) => ({ scene: label, grade: 1 })) });
+    test("returns no scenes when the grader grades every candidate as only related", async (t) => {
+        useKeys(t);
+        const sent = mockModels(t, { grade: (query, scenes) => scenes.map(({ label }) => ({ scene: label, grade: 1 })) });
         const response = await search({ q: "huge balls of fire rain down on the harbor", limit: "50" });
         assert.equal(response.status, 200, response.text);
         assert.deepEqual(response.body, { scenes: [] });
@@ -357,8 +371,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("accepts grades 2 and 3, best grade first", async (t) => {
-        useKey(t);
-        mockGemini(t, {
+        useKeys(t);
+        mockModels(t, {
             grade: gradeByText([
                 ["HARBOR", 2],
                 ["ALLEY", 3],
@@ -373,8 +387,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("accepts nothing from grades it can't read", async (t) => {
-        useKey(t);
-        mockGemini(t, {
+        useKeys(t);
+        mockModels(t, {
             grade: (query, scenes) => [
                 { scene: "S99", grade: 3 },
                 ...scenes.flatMap(({ label, text }) =>
@@ -387,9 +401,9 @@ describe("semantic search with a Gemini key", () => {
         assert.deepEqual(response.body, { scenes: [] });
     });
 
-    test("shows Gemini the candidates in story order, and returns them best fit first", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t, {
+    test("shows the grader the candidates in story order, and returns them best fit first", async (t) => {
+        useKeys(t);
+        const sent = mockModels(t, {
             grade: gradeByText([
                 ["HARBOR", 3],
                 ["ALLEY", 3],
@@ -402,13 +416,13 @@ describe("semantic search with a Gemini key", () => {
             response.body.scenes.map((row) => row.id),
             [alley.id, harbor.id]
         );
-        const prompt = sent.gradings[0].body.contents[0].parts[0].text;
+        const prompt = sent.gradings[0].body.input;
         assert.ok(prompt.indexOf(harbor.scene_text) < prompt.indexOf(alley.scene_text));
     });
 
     test("accepts a scene containing the description as an exact phrase, whatever its grade", async (t) => {
-        useKey(t);
-        mockGemini(t, { grade: (query, scenes) => scenes.map(({ label }) => ({ scene: label, grade: 0 })) });
+        useKeys(t);
+        mockModels(t, { grade: (query, scenes) => scenes.map(({ label }) => ({ scene: label, grade: 0 })) });
         const phrase = await search({ q: "Footsteps echo", limit: "5" });
         assert.equal(phrase.status, 200, phrase.text);
         assert.deepEqual(
@@ -422,8 +436,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("finds a scene by its words before it has an embedding", async (t) => {
-        useKey(t);
-        mockGemini(t, { grade: gradeByText([["STAIRWELL", 3]]) });
+        useKeys(t);
+        mockModels(t, { grade: gradeByText([["STAIRWELL", 3]]) });
         assert.equal(await hasEmbedding(unembedded.id), false);
 
         const response = await search({ q: "footsteps echoing in a stairwell", limit: "5" });
@@ -435,8 +449,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("applies the tag filters to both retrievers", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t);
+        useKeys(t);
+        const sent = mockModels(t);
         const onlyRevelation = await search({
             q: "from the harbor out into the alley",
             tags: TAGS.revelation,
@@ -449,7 +463,7 @@ describe("semantic search with a Gemini key", () => {
         );
         // The harbor scene matches by meaning and by words, but its tags keep
         // it from being graded at all.
-        assert.ok(!sent.gradings[0].body.contents[0].parts[0].text.includes(harbor.scene_text));
+        assert.ok(!sent.gradings[0].body.input.includes(harbor.scene_text));
 
         const eitherTag = await search({
             q: "from the harbor out into the alley",
@@ -464,8 +478,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("skips grading when no scene is a candidate", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t);
+        useKeys(t);
+        const sent = mockModels(t);
         const response = await search({ q: "from the harbor out into the alley", tags: "tone:awe", limit: "50" });
         assert.equal(response.status, 200, response.text);
         assert.deepEqual(response.body, { scenes: [] });
@@ -473,8 +487,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("respects the requested result limit", async (t) => {
-        useKey(t);
-        mockGemini(t);
+        useKeys(t);
+        mockModels(t);
         const one = await search({ q: "from the harbor out into the alley", limit: "1" });
         assert.equal(one.body.scenes.length, 1);
         const many = await search({ q: "from the harbor out into the alley", limit: "50" });
@@ -485,8 +499,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("re-embeds a saved scene in the background only when its text changes", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t);
+        useKeys(t);
+        const sent = mockModels(t);
         const save = (sceneText) =>
             api.put(`${scenesPath(place)}/${harbor.id}`, {
                 cookie,
@@ -519,12 +533,12 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("embeds a newly captured scene without holding up the save", async (t) => {
-        useKey(t);
+        useKeys(t);
         let release;
         const gate = new Promise((resolve) => {
             release = resolve;
         });
-        const sent = mockGemini(t, {
+        const sent = mockModels(t, {
             embed: async (inputs) => {
                 await gate;
                 return inputs.map(vectorFor);
@@ -553,8 +567,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("embeds a long scene in chunks and ranks it by its closest chunk", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t, { grade: (query, scenes) => scenes.map(({ label }) => ({ scene: label, grade: 3 })) });
+        useKeys(t);
+        const sent = mockModels(t, { grade: (query, scenes) => scenes.map(({ label }) => ({ scene: label, grade: 3 })) });
         const beats = Array.from({ length: 26 }, (_, index) => `Beat ${index}: ${"The crew waits by the boats. ".repeat(12).trim()}`);
         const docks = await createScene(api, cookie, place, {
             start_time_seconds: 100,
@@ -578,7 +592,7 @@ describe("semantic search with a Gemini key", () => {
             inputs.map((_, index) => index)
         );
 
-        // Gemini accepts every candidate, so the order is the retrievers'.
+        // The grader accepts every candidate, so the order is the retrievers'.
         const response = await search({ q: "lighthouse", limit: "1" });
         assert.equal(response.status, 200, response.text);
         assert.deepEqual(
@@ -588,7 +602,7 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("keeps a scene saved when its embedding fails", async (t) => {
-        useKey(t);
+        useKeys(t);
         const errors = t.mock.method(console, "error", () => {});
         const requestFetch = globalThis.fetch;
         t.mock.method(globalThis, "fetch", async (url, init) => {
@@ -607,8 +621,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("embeds every missing or stale scene when the API starts, once", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t);
+        useKeys(t);
+        const sent = mockModels(t);
 
         await queueAllSceneEmbeddings(pool);
         await sceneEmbeddingsSettled();
@@ -628,7 +642,7 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("reports an embedding failure as a 502", async (t) => {
-        useKey(t);
+        useKeys(t);
         t.mock.method(console, "error", () => {});
         const requestFetch = globalThis.fetch;
         t.mock.method(globalThis, "fetch", async (url, init) => {
@@ -642,34 +656,58 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("fails the search when grading fails, rather than return ungraded scenes", async (t) => {
-        useKey(t);
+        useKeys(t);
         t.mock.method(console, "error", () => {});
-        mockGemini(t, { grade: () => new Response("overloaded", { status: 503 }) });
+        mockModels(t, { grade: () => new Response("overloaded", { status: 503 }) });
         const failed = await search({ q: "harbor" });
         assert.equal(failed.status, 502, failed.text);
         assert.deepEqual(failed.body, { error: UPSTREAM });
     });
 
-    test("fails the search when Gemini's grades can't be read", async (t) => {
-        useKey(t);
+    test("fails the search when the grades can't be read", async (t) => {
+        useKeys(t);
         const errors = t.mock.method(console, "error", () => {});
         const replies = [
-            geminiReply({ candidates: [{ content: { parts: [{ text: "not json" }] }, finishReason: "STOP" }] }),
-            geminiReply({ promptFeedback: { blockReason: "SAFETY" } }),
+            jsonReply(openaiOutput("not json")),
+            jsonReply(openaiOutput(JSON.stringify([{ scene: "S1", grade: 3 }]))),
+            jsonReply(openaiOutput([{ type: "refusal", refusal: "I can't help with that." }])),
+            jsonReply({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [] }),
             new Response("<html>", { status: 200, headers: { "content-type": "application/json" } }),
         ];
-        mockGemini(t, { grade: () => replies.shift() });
-        for (let attempt = 0; attempt < 3; attempt += 1) {
+        mockModels(t, { grade: () => replies.shift() });
+        for (let attempt = 0; attempt < 5; attempt += 1) {
             const response = await search({ q: "harbor" });
             assert.equal(response.status, 502, response.text);
             assert.deepEqual(response.body, { error: UPSTREAM });
         }
-        assert.ok(errors.mock.calls.some((call) => String(call.arguments[0]).includes("(SAFETY)")));
+        const logged = errors.mock.calls.map((call) => String(call.arguments[0]));
+        assert.ok(logged.some((line) => line.includes("(refusal)")));
+        assert.ok(logged.some((line) => line.includes("(max_output_tokens)")));
+    });
+
+    test("reads the grades from the last message when a draft comes first", async (t) => {
+        useKeys(t);
+        mockModels(t, {
+            grade: (query, scenes) =>
+                jsonReply({
+                    status: "completed",
+                    output: [
+                        ...openaiOutput('{"grades":[]} Need output exact.').output,
+                        ...openaiOutput(JSON.stringify({ grades: gradeByTopic(query, scenes) })).output,
+                    ],
+                }),
+        });
+        const response = await search({ q: "harbor", limit: "50" });
+        assert.equal(response.status, 200, response.text);
+        assert.deepEqual(
+            response.body.scenes.map((row) => row.id),
+            [harbor.id]
+        );
     });
 
     test("reports a grading timeout as a 504", async (t) => {
-        useKey(t);
-        mockGemini(t, {
+        useKeys(t);
+        mockModels(t, {
             grade: () => {
                 throw new DOMException("The operation was aborted.", "AbortError");
             },
@@ -680,9 +718,9 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("rejects a malformed embedding vector", async (t) => {
-        useKey(t);
+        useKeys(t);
         t.mock.method(console, "error", () => {});
-        mockGemini(t, { embed: (inputs) => inputs.map(() => []) });
+        mockModels(t, { embed: (inputs) => inputs.map(() => []) });
 
         const response = await search({ q: "harbor" });
         assert.equal(response.status, 502, response.text);
@@ -690,8 +728,8 @@ describe("semantic search with a Gemini key", () => {
     });
 
     test("limits an address to 20 searches a minute, and only counts searches it runs", async (t) => {
-        useKey(t);
-        const sent = mockGemini(t);
+        useKeys(t);
+        const sent = mockModels(t);
         const address = freshAddress();
         const invalid = await search({ q: "harbor", limit: "0" }, address);
         assert.equal(invalid.status, 400, invalid.text);
@@ -705,10 +743,45 @@ describe("semantic search with a Gemini key", () => {
         assert.equal(refused.status, 429, refused.text);
         assert.match(refused.body.error, /^Too many searches\. Try again in \d+ seconds?\.$/);
         assert.ok(refused.body.retry_after_seconds > 0 && refused.body.retry_after_seconds <= 60);
-        // A refused search never reaches Gemini, and other visitors keep searching.
+        // A refused search never reaches the grader, and other visitors keep searching.
         assert.equal(sent.gradings.length, gradings);
         const other = await search({ q: "harbor", limit: "1" });
         assert.equal(other.status, 200, other.text);
+    });
+
+    test("answers 503 with only the Gemini key, and keeps indexing", async (t) => {
+        useKeys(t, { openai: false });
+        const errors = t.mock.method(console, "error", () => {});
+        const sent = mockModels(t);
+
+        const response = await search({ q: "harbor" });
+        assert.equal(response.status, 503, response.text);
+        assert.deepEqual(response.body, { error: DISABLED });
+        assert.ok(errors.mock.calls.some((call) => String(call.arguments[0]).includes("OPENAI_API_KEY is not set")));
+        assert.equal(sent.embeddings.length + sent.gradings.length, 0);
+
+        const status = await api.get(`${SEARCH_PATH}/status`);
+        assert.equal(status.body.configured, false);
+
+        const pier = await createScene(api, cookie, place, {
+            start_time_seconds: 120,
+            end_time_seconds: 130,
+            scene_text: "## EXT. PIER - DUSK\n\nGulls circle the empty boats.",
+        });
+        await sceneEmbeddingsSettled();
+        assert.equal(await hasEmbedding(pier.id), true);
+    });
+
+    test("answers 503 with only the OpenAI key", async (t) => {
+        useKeys(t, { gemini: false });
+        const errors = t.mock.method(console, "error", () => {});
+        const sent = mockModels(t);
+
+        const response = await search({ q: "harbor" });
+        assert.equal(response.status, 503, response.text);
+        assert.deepEqual(response.body, { error: DISABLED });
+        assert.ok(errors.mock.calls.some((call) => String(call.arguments[0]).includes("GEMINI_API_KEY is not set")));
+        assert.equal(sent.embeddings.length + sent.gradings.length, 0);
     });
 });
 

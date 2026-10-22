@@ -55,7 +55,8 @@ export function sampleScriptScenes() {
 /**
  * The scenes that match `query`, best match first, optionally narrowed to the
  * same tag filters. Answers `{ scenes }`, which is empty when nothing matches;
- * the API answers 503 until GEMINI_API_KEY is configured on the server.
+ * the API answers 503 until GEMINI_API_KEY and OPENAI_API_KEY are configured on
+ * the server.
  */
 export function searchScriptScenesSemantically({ query, tags, match, limit }) {
   const params = new URLSearchParams({ q: query });

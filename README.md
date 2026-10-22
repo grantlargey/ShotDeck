@@ -100,9 +100,9 @@ The server reads `server/.env`, with shell environment variables taking preceden
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Change storage credentials. Local values are supplied in the example file. |
 | `S3_PUBLIC_ENDPOINT` | Give the browser a different storage address from the API. |
 | `ALLOWED_ORIGINS` | Allow additional browser origins. |
-| `OPENAI_API_KEY` | Enable optional AI screenplay formatting. |
+| `OPENAI_API_KEY` | Enable optional AI screenplay formatting, and with `GEMINI_API_KEY`, semantic scene search. |
 | `OPENAI_SCREENPLAY_TIMEOUT_MS` | Change the AI formatting timeout from `90000` ms. |
-| `GEMINI_API_KEY` | Enable semantic scene search. |
+| `GEMINI_API_KEY` | Enable semantic scene search, with `OPENAI_API_KEY`. |
 | `GEMINI_TIMEOUT_MS` | Change the timeout for each semantic search request to Gemini from `30000` ms. |
 | `ADMIN_PASSWORD` | Supply an admin CLI password without the interactive prompt. |
 
@@ -164,9 +164,10 @@ description that matches no scene finds nothing. Matching reads each scene's
 captured text and the labels of its tags, and selected tag filters narrow the
 scenes it considers.
 
-Semantic search is optional and off by default. Without `GEMINI_API_KEY`, tag
-browsing keeps working, the search box explains that the feature is not enabled,
-and the semantic search endpoint answers `503`.
+Semantic search is optional and off by default. It needs `GEMINI_API_KEY` for
+embeddings and `OPENAI_API_KEY` for grading. Without either, tag browsing keeps
+working, the search box explains that the feature is not enabled, and the
+semantic search endpoint answers `503`.
 
 ### How it works
 
@@ -178,12 +179,12 @@ steps:
    cosine similarity. The other ranks them by the description's words with
    PostgreSQL full-text search (`english` stemming; any word may match). The
    two rankings are merged by reciprocal rank fusion, and the best 30 go on.
-2. **Grading.** One `gemini-3.5-flash-lite` call reads the description and
-   every candidate's text and tags, and grades each scene: 3 shows what was
-   described, 2 mostly does, 1 is only related, 0 is unrelated. The grader
-   sees the candidates in story order (film, then film time), not best first:
-   shown best first, it accepted about six times as many unrelated scenes and
-   missed exact matches, at the same speed.
+2. **Grading.** One OpenAI `gpt-6-luna` call, at low reasoning effort, reads
+   the description and every candidate's text and tags, and grades each scene:
+   3 shows what was described, 2 mostly does, 1 is only related, 0 is
+   unrelated. The grader sees the candidates in story order (film, then film
+   time), not best first: shown best first, it accepted about six times as many
+   unrelated scenes and missed exact matches, at the same speed.
 3. **Acceptance.** Only scenes graded 2 or 3 come back, grade 3 first, then by
    how well they matched in step 1. A scene that contains the whole
    description as a phrase, such as a name, title or quote, counts as grade 3.
@@ -209,10 +210,9 @@ Indexing:
   start-up pass is cheap. Changing the embedding model re-embeds everything
   because stored rows carry their model name.
 
-Each search makes two Gemini calls: one small embedding and one grading call
-that reads up to 30 scenes (about 15,000 tokens for 20 scenes, about two
-seconds). Grading needs a key with billing enabled for anything beyond light
-use; the free tier allows about 15 grading calls a minute. To bound that cost,
+Each search makes two calls: one small Gemini embedding, and one OpenAI grading
+call that reads up to 30 scenes (about 14,000 tokens for 20 scenes, about three
+seconds). A grading request times out after 30 seconds. To bound the cost,
 each client address can search 20 times a minute; further searches answer
 `429` with `retry_after_seconds` until its minute passes. The count is kept in
 memory, which suits the single API task.
@@ -220,9 +220,11 @@ memory, which suits the single API task.
 ### Enabling it
 
 1. Run `npm run db:migrate` to create the search tables and indexes.
-2. Set `GEMINI_API_KEY` in `server/.env` and restart the API. Get a key from
-   Google AI Studio (https://aistudio.google.com/apikey). The API embeds the
-   existing scenes in the background and logs how many it embedded.
+2. Set `GEMINI_API_KEY` and `OPENAI_API_KEY` in `server/.env` and restart the
+   API. Get keys from Google AI Studio (https://aistudio.google.com/apikey) and
+   the OpenAI dashboard (https://platform.openai.com/api-keys). The API embeds
+   the existing scenes in the background, which needs only the Gemini key, and
+   logs how many it embedded.
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -285,6 +287,6 @@ docker compose --profile container-api stop api
 | Missing database tables | Run `npm run db:migrate`. |
 | PostgreSQL unreachable or uploads failing | Run `npm run services:up`, then inspect `npm run services:logs`. |
 | AI formatting unavailable | Set `OPENAI_API_KEY` if needed; manual editing still works without it. |
-| Semantic search says it isn't available | Run `npm run db:migrate`, set `GEMINI_API_KEY`, then restart the API. |
+| Semantic search says it isn't available | Run `npm run db:migrate`, set `GEMINI_API_KEY` and `OPENAI_API_KEY`, then restart the API. |
 | App unavailable at `127.0.0.1:5173` | Use `http://localhost:5173`. |
 | Wrong Node version | Install Node.js 24.13.1, reopen the terminal, and check your PATH. |

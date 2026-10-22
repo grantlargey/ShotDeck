@@ -12,19 +12,20 @@ import { listScenesByIds } from "./script-scenes.service.js";
  * A search runs in three steps. Two retrievers pick candidates under the same
  * tag filters: one by meaning (the description's embedding against the
  * scenes'), one by words (Postgres full-text search over scene text). Their
- * rankings are merged by reciprocal rank fusion and capped. One Gemini call then
+ * rankings are merged by reciprocal rank fusion and capped. One OpenAI call then
  * reads the description and every candidate and grades each 0–3, and only
  * scenes graded MIN_ACCEPTED_GRADE or better come back, best grade first. A
  * scene containing the whole description as a phrase, such as a name, title or
  * quote, is accepted whatever its grade. A description that matches nothing
  * finds nothing.
  *
- * A captured scene is embedded from its tag labels and scene text. A scene too
- * long for one embedding is split into overlapping chunks and scores as its
- * closest chunk. Embedding happens in the background whenever a scene is saved
- * and when the API starts; nobody runs it by hand. Gemini is optional: without
- * GEMINI_API_KEY the semantic search endpoint answers 503, and tag browsing
- * keeps working.
+ * A captured scene is embedded with Gemini from its tag labels and scene text.
+ * A scene too long for one embedding is split into overlapping chunks and
+ * scores as its closest chunk. Embedding happens in the background whenever a
+ * scene is saved and when the API starts; nobody runs it by hand. Both keys are
+ * optional: without GEMINI_API_KEY or OPENAI_API_KEY the semantic search
+ * endpoint answers 503, and tag browsing keeps working. Indexing needs only the
+ * Gemini key.
  */
 
 // gemini-embedding-001 is the stable text-only embedding model. It supports
@@ -38,10 +39,10 @@ const EMBEDDINGS_URL = `https://generativelanguage.googleapis.com/v1beta/models/
 const EMBEDDING_DIMENSIONS = 768;
 const DOCUMENT_TASK = "RETRIEVAL_DOCUMENT";
 const QUERY_TASK = "RETRIEVAL_QUERY";
-// Grades a search's candidates. It reads 20 scenes and answers in about two
-// seconds, without thinking tokens.
-const GRADING_MODEL = "gemini-3.5-flash-lite";
-const GRADING_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GRADING_MODEL}:generateContent`;
+// Grades a search's candidates.
+const GRADING_MODEL = "gpt-6-luna";
+const GRADING_EFFORT = "low";
+const GRADING_URL = "https://api.openai.com/v1/responses";
 // 3 shows what was described, 2 mostly does, 1 is only related (same people,
 // place or subject), 0 is unrelated. Over 55 labeled searches of the Joker
 // scenes, accepting 2 and up found every real description and nothing for
@@ -92,13 +93,22 @@ Grade every scene:
 0 = unrelated.
 Judge each scene on its own text. It is fine for every scene to be 0.`;
 
+// Strict structured output needs an object at the top.
 const GRADES_SCHEMA = {
-    type: "ARRAY",
-    items: {
-        type: "OBJECT",
-        properties: { scene: { type: "STRING" }, grade: { type: "INTEGER" } },
-        required: ["scene", "grade"],
+    type: "object",
+    properties: {
+        grades: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: { scene: { type: "string" }, grade: { type: "integer" } },
+                required: ["scene", "grade"],
+                additionalProperties: false,
+            },
+        },
     },
+    required: ["grades"],
+    additionalProperties: false,
 };
 
 // plainto_tsquery joins the description's words with AND, and a description
@@ -110,9 +120,14 @@ const INSERT_CHUNK_SQL = `
     INSERT INTO scene_chunk_embeddings (scene_id, chunk, model, source_hash, embedding)
     VALUES ($1, $2, $3, $4, $5::real[])`;
 
-/** The Gemini key, or an empty string when semantic search is not configured. */
+/** The Gemini key, which embedding needs, or an empty string. */
 function geminiApiKey() {
     return process.env.GEMINI_API_KEY || "";
+}
+
+/** The OpenAI key, which grading needs, or an empty string. */
+function openaiApiKey() {
+    return process.env.OPENAI_API_KEY || "";
 }
 
 /** The scene's tags as people read them, which its embeddings and its grading both start with. */
@@ -256,15 +271,17 @@ export function fuseRankings(rankings) {
 }
 
 /**
- * The scenes Gemini accepts for the description, best grade first, each
+ * The scenes the grader accepts for the description, best grade first, each
  * stitched to its movie title. `ip` is the visitor's address, which bounds how
  * often they can search.
  */
 export async function searchScenesSemantically(pool, { query, limit, tags = [], match = "all", ip }) {
     const request = readSearchRequest({ query, limit });
-    const apiKey = geminiApiKey();
-    if (!apiKey) {
-        console.error("Semantic search is disabled: GEMINI_API_KEY is not set.");
+    const geminiKey = geminiApiKey();
+    const openaiKey = openaiApiKey();
+    if (!geminiKey || !openaiKey) {
+        const missing = [geminiKey ? "" : "GEMINI_API_KEY", openaiKey ? "" : "OPENAI_API_KEY"].filter(Boolean);
+        console.error(`Semantic search is disabled: ${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} not set.`);
         throw new HttpError(503, DISABLED_MESSAGE);
     }
     const retryAfter = admitSearch(ip || "unknown");
@@ -275,7 +292,7 @@ export async function searchScenesSemantically(pool, { query, limit, tags = [], 
     }
 
     const [[vector], byWords] = await Promise.all([
-        embedTexts([request.query], apiKey, QUERY_TASK),
+        embedTexts([request.query], geminiKey, QUERY_TASK),
         rankScenesByWords(pool, { query: request.query, tags, match }),
     ]);
     const byMeaning = await rankScenesByMeaning(pool, { vector, tags, match });
@@ -284,7 +301,7 @@ export async function searchScenesSemantically(pool, { query, limit, tags = [], 
     const candidates = candidateIds.flatMap((id) => (scenesById.has(id) ? [scenesById.get(id)] : []));
     if (candidates.length === 0) return { scenes: [] };
 
-    const grades = await gradeScenes(request.query, candidates, apiKey);
+    const grades = await gradeScenes(request.query, candidates, openaiKey);
     const gradeOf = (id) => Math.max(grades.get(id) ?? 0, byWords.phraseIds.has(id) ? PHRASE_GRADE : 0);
     const scenes = candidates
         .map((scene, rank) => ({ scene, rank, grade: gradeOf(scene.id) }))
@@ -298,7 +315,7 @@ export async function searchScenesSemantically(pool, { query, limit, tags = [], 
 /** Whether semantic search can run, and how much of the scene library is indexed. */
 export async function getSemanticSearchStatus(pool) {
     return {
-        configured: Boolean(geminiApiKey()),
+        configured: Boolean(geminiApiKey() && openaiApiKey()),
         model: MODEL,
         ...(await countIndexState(pool)),
     };
@@ -479,7 +496,7 @@ async function rankScenesByWords(pool, { query, tags, match }) {
 }
 
 /**
- * Grades every candidate 0–3 against the description in one Gemini call and
+ * Grades every candidate 0–3 against the description in one OpenAI call and
  * returns the grades by scene id. A scene the reply leaves out grades 0.
  *
  * The candidates are shown in story order, not best first: shown best first,
@@ -499,27 +516,34 @@ async function gradeScenes(query, scenes, apiKey) {
         ({ label, scene }) =>
             `<scene id="${label}">\n${sceneTagLine(scene)}\n\n${scene.scene_text.slice(0, MAX_GRADED_SCENE_CHARS)}\n</scene>`
     );
-    const payload = await postToGemini(
+    const payload = await postToOpenAI(
         GRADING_URL,
         {
-            systemInstruction: { parts: [{ text: GRADING_INSTRUCTIONS }] },
-            contents: [{ role: "user", parts: [{ text: `Search: «${query}»\n\nScenes:\n\n${sceneBlocks.join("\n\n")}` }] }],
-            generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: GRADES_SCHEMA },
+            model: GRADING_MODEL,
+            reasoning: { effort: GRADING_EFFORT },
+            instructions: GRADING_INSTRUCTIONS,
+            input: `Search: «${query}»\n\nScenes:\n\n${sceneBlocks.join("\n\n")}`,
+            // Nothing here needs OpenAI to keep the response.
+            store: false,
+            text: { format: { type: "json_schema", name: "scene_grades", schema: GRADES_SCHEMA, strict: true } },
         },
         apiKey
     );
 
-    const candidate = payload?.candidates?.[0];
-    const text = (candidate?.content?.parts ?? []).map((part) => part?.text ?? "").join("");
+    // The answer is the last message; the model can write a draft message first.
+    const answer = (payload?.output ?? []).filter((item) => item?.type === "message").at(-1);
+    const parts = Array.isArray(answer?.content) ? answer.content : [];
+    const text = parts.find((part) => part?.type === "output_text")?.text ?? "";
     let graded = null;
     try {
-        graded = JSON.parse(text);
+        graded = JSON.parse(text)?.grades;
     } catch {
         // Reported below.
     }
     if (!Array.isArray(graded)) {
-        const reason = payload?.promptFeedback?.blockReason ?? candidate?.finishReason ?? "no grades";
-        console.error(`Gemini returned unreadable scene grades (${reason}): ${text.slice(0, 200)}`);
+        const refused = parts.some((part) => part?.type === "refusal");
+        const reason = refused ? "refusal" : (payload?.incomplete_details?.reason ?? "no grades");
+        console.error(`OpenAI returned unreadable scene grades (${reason}): ${text.slice(0, 200)}`);
         throw new HttpError(502, UPSTREAM_MESSAGE);
     }
 
@@ -611,9 +635,18 @@ async function embedTexts(inputs, apiKey, taskType) {
     return vectors;
 }
 
-/** POSTs `body` to a Gemini endpoint and returns its JSON reply; failures become the search's HTTP errors. */
-async function postToGemini(url, body, apiKey) {
-    const configuredTimeout = Number(process.env.GEMINI_TIMEOUT_MS);
+/** POSTs `body` to a Gemini endpoint, waiting up to GEMINI_TIMEOUT_MS. */
+function postToGemini(url, body, apiKey) {
+    return postToModel("Gemini", url, { "x-goog-api-key": apiKey }, body, Number(process.env.GEMINI_TIMEOUT_MS));
+}
+
+/** POSTs `body` to an OpenAI endpoint, waiting up to the default timeout. */
+function postToOpenAI(url, body, apiKey) {
+    return postToModel("OpenAI", url, { Authorization: `Bearer ${apiKey}` }, body);
+}
+
+/** POSTs `body` to `service` and returns its JSON reply; failures become the search's HTTP errors. */
+async function postToModel(service, url, headers, body, configuredTimeout) {
     const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : DEFAULT_TIMEOUT_MS;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -621,17 +654,14 @@ async function postToGemini(url, body, apiKey) {
     try {
         const response = await fetch(url, {
             method: "POST",
-            headers: {
-                "x-goog-api-key": apiKey,
-                "Content-Type": "application/json",
-            },
+            headers: { ...headers, "Content-Type": "application/json" },
             signal: controller.signal,
             body: JSON.stringify(body),
         });
 
         if (!response.ok) {
             const text = await response.text().catch(() => "");
-            console.error(`Gemini request failed (${response.status}): ${text}`);
+            console.error(`${service} request failed (${response.status}): ${text}`);
             throw new HttpError(502, UPSTREAM_MESSAGE);
         }
         return await response.json();
@@ -640,7 +670,7 @@ async function postToGemini(url, body, apiKey) {
             throw new HttpError(504, "Semantic search timed out. Try again.");
         }
         if (error instanceof SyntaxError) {
-            console.error("Gemini answered with a body that isn't JSON.");
+            console.error(`${service} answered with a body that isn't JSON.`);
             throw new HttpError(502, UPSTREAM_MESSAGE);
         }
         throw error;
