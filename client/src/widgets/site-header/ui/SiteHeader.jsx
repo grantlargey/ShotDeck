@@ -5,7 +5,6 @@ import { ChangePasswordDialog } from "@/features/auth/ui/ChangePasswordDialog.js
 import { SceneTextStyleToggle } from "@/features/scene-text-style/ui/SceneTextStyleToggle.jsx";
 import { cx } from "@/shared/lib/cx.js";
 import { BrandLogo } from "@/shared/ui/BrandLogo.jsx";
-import { Button } from "@/shared/ui/Button.jsx";
 import { DropdownMenu } from "@/shared/ui/DropdownMenu.jsx";
 import { ChevronDownIcon, PlusIcon } from "@/shared/ui/icons.jsx";
 import { useHeaderScroll } from "../model/useHeaderScroll.js";
@@ -35,6 +34,10 @@ export default function SiteHeader({ pinned = true, floating = false }) {
     },
     { to: "/script-search", label: "Script Search", isActive: pathname === "/script-search" },
   ];
+  // A link lit by moving to its page types itself in; the one lit when the header mounts just shows.
+  const litTo = navLinks.find((link) => link.isActive)?.to ?? null;
+  const [lit, setLit] = useState({ to: litTo, typed: false });
+  if (lit.to !== litTo) setLit({ to: litTo, typed: litTo !== null });
 
   const accountItems = [
     ...(isOwner ? [{ key: "admins", label: "Manage admins", onSelect: () => nav("/admin/users") }] : []),
@@ -80,27 +83,33 @@ export default function SiteHeader({ pinned = true, floating = false }) {
           {navLinks.map((link) => (
             <Link
               key={link.to}
-              className={cx(styles.navLink, link.isActive && styles.navLinkActive)}
+              className={cx(
+                styles.navLink,
+                link.isActive && styles.navLinkActive,
+                link.isActive && lit.typed && styles.navLinkTyped
+              )}
               to={link.to}
               aria-current={link.isActive ? "page" : undefined}
             >
-              {link.label}
+              {/* Holds the label's full width while it types, so the links beside it stay put. */}
+              <span className={styles.label} style={{ "--letters": link.label.length }}>
+                <span className={styles.typed}>{link.label}</span>
+                <span className={styles.caret} aria-hidden="true" />
+              </span>
             </Link>
           ))}
         </nav>
 
         {isAdmin && (
           <div className={styles.actions}>
-            <Button
-              as={Link}
+            <Link
               to="/films/new"
-              variant="primary"
-              className={cx(styles.cta, isNew && styles.ctaActive)}
+              className={cx(styles.addFilm, isNew && styles.addFilmCurrent)}
               aria-current={isNew ? "page" : undefined}
             >
-              <PlusIcon size={14} />
+              <PlusIcon size={14} strokeWidth={1.8} className={styles.addFilmIcon} />
               Add Film
-            </Button>
+            </Link>
 
             <DropdownMenu
               label="Account"
@@ -113,11 +122,11 @@ export default function SiteHeader({ pinned = true, floating = false }) {
               items={accountItems}
               trigger={(props) => (
                 <button type="button" className={styles.account} title={user.email} {...props}>
-                  <span className={styles.avatar} aria-hidden="true">
+                  <span className={styles.monogram} aria-hidden="true">
                     {user.email.charAt(0)}
                   </span>
-                  <span className={styles.accountLabel}>{roleLabel}</span>
-                  <ChevronDownIcon size={12} />
+                  <span className={styles.accountRole}>{roleLabel}</span>
+                  <ChevronDownIcon size={12} className={styles.accountChevron} />
                 </button>
               )}
             />
