@@ -82,8 +82,12 @@
   --color-hero-still: #8bb6ff;
 
   /* Type */
-  /* Everything else that's read: navigation, instructions, buttons and fields. */
-  --font-text: "Newsreader", Georgia, serif;
+  /* Type has four faces, one job each (DESIGN.md, Typography):
+     Gloock for titles, Host Grotesk for the interface, Alegreya for scene
+     text, and Courier Prime for the script and Slate. */
+  /* The interface: navigation, instructions, buttons, fields, tags and filters.
+     A sans, so controls never read as part of the screenplay beside them. */
+  --font-text: "Host Grotesk", "Helvetica Neue", Arial, sans-serif;
   /* Titles only: the wordmark, the home headline, page titles and film titles.
      Gloock has a single weight, so text set in it keeps font-weight 400. */
   --font-display: "Gloock", Georgia, serif;
@@ -140,14 +144,14 @@
  * dark to stand out on the dark chrome around it. The script viewer shows its
  * PDF pages in the same style; the --script-* tokens are what those pages read.
  */
-/* A book page: Newsreader text under Gloock headings. */
+/* A book page: Alegreya text under Gloock headings. */
 [data-scene-text-style="reading"] {
   --color-paper: #fcfcfb;
   --color-ink: #1d1e22;
   --color-ink-muted: #6b6e76;
   --scene-paper-edge: transparent;
   --scene-mark-outline: transparent;
-  --scene-font: "Newsreader", Georgia, serif;
+  --scene-font: "Alegreya", Georgia, serif;
   --scene-scale: 1.16;
   --scene-leading: 1.5;
   --scene-leading-card: 1.42;
@@ -160,13 +164,13 @@
   --scene-heading-scale: 1.04;
   --scene-heading-tracking: 0.04em;
   --scene-heading-color: var(--color-ink);
-  --scene-cue-font: "Newsreader", Georgia, serif;
+  --scene-cue-font: "Alegreya", Georgia, serif;
   --scene-cue-scale: 0.78;
   --scene-cue-tracking: 0.14em;
   --scene-cue-color: var(--color-ink);
   --scene-aside-color: var(--color-ink-muted);
   --scene-aside-style: italic;
-  --scene-transition-font: "Newsreader", Georgia, serif;
+  --scene-transition-font: "Alegreya", Georgia, serif;
   --scene-transition-scale: 0.76;
   --scene-transition-tracking: 0.16em;
   --scene-transition-color: var(--color-ink-muted);
