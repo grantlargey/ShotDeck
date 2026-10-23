@@ -34,4 +34,14 @@ describe("Script location projection", () => {
     expect(segments.map(({ lane }) => lane)).toEqual([0, 1, 0]);
     expect(segments[0].top).toBe(83.6);
   });
+  it("marks the pages a scene begins and ends on", () => {
+    const scenes = [{ id: "span", script_location: location(100, 200, 1, 3) }];
+    const pages = new Map([1, 2, 3].map((number) => [number, page(number)]));
+    const segments = buildSceneSegmentsByPage(scenes, pages);
+    expect([1, 2, 3].map((number) => segments.get(number)[0]).map(({ isStart, isEnd }) => [isStart, isEnd])).toEqual([
+      [true, false],
+      [false, false],
+      [false, true],
+    ]);
+  });
 });

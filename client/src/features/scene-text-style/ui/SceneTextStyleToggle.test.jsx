@@ -63,15 +63,18 @@ describe("the page style toggle", () => {
     expect(pages()).toEqual(["midnight", "cream", null]);
   });
 
-  it("works the same in a tool bar, and can be shown but not used", () => {
-    const { rerender } = render(<SceneTextStyleToggle look="toolbar" />);
-
+  it("works the same in a tool bar or a bar, and can be shown but not used", () => {
+    const { rerender } = render(<SceneTextStyleToggle look="bar" />);
     fireEvent.click(toggle());
     expect(shown()).toBe("reading");
+
+    rerender(<SceneTextStyleToggle look="toolbar" />);
+    fireEvent.click(toggle());
+    expect(shown()).toBe("cream");
 
     rerender(<SceneTextStyleToggle look="toolbar" disabled />);
     fireEvent.click(toggle());
     expect(toggle().disabled).toBe(true);
-    expect(shown()).toBe("reading");
+    expect(shown()).toBe("cream");
   });
 });

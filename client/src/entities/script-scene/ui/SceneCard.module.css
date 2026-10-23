@@ -25,9 +25,9 @@
 
 .selected,
 .selected:hover {
-  border-color: var(--color-accent);
+  border-color: var(--color-mark);
   box-shadow:
-    0 0 0 1px var(--color-accent),
+    0 0 0 1px var(--color-mark-line),
     var(--shadow-card);
 }
 
@@ -146,6 +146,17 @@
 
 .timing {
   font-family: var(--font-slate);
+}
+
+/* What's happening to the scene, as the script viewer's "Editing". */
+.status {
+  color: var(--color-mark);
+  font-family: var(--font-slate);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: var(--tracking-slate);
+  text-transform: uppercase;
 }
 
 .tags {

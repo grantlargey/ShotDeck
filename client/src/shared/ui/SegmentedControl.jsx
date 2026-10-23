@@ -38,7 +38,8 @@ function useChosenOptionBox(groupRef, enabled, value) {
  * options: [{ value, label, icon?, hideLabel?, badge?, disabled?, title? }]
  * `hideLabel` shows only the icon; the label stays as the accessible name.
  * `sliding` draws the chosen option's highlight as one piece that glides
- * between options instead of jumping.
+ * between options instead of jumping. `quietBadges` sets badges as plain
+ * counts instead of solid blue ones.
  */
 export function SegmentedControl({
   options,
@@ -50,6 +51,7 @@ export function SegmentedControl({
   panelId,
   block = false,
   sliding = false,
+  quietBadges = false,
   className,
 }) {
   const isTabs = role === "tablist";
@@ -89,7 +91,7 @@ export function SegmentedControl({
             {option.icon}
             {option.hideLabel ? <span className={styles.srOnly}>{option.label}</span> : option.label}
             {option.badge ? (
-              <Badge tone="accent" solid count>
+              <Badge tone={quietBadges ? "neutral" : "accent"} solid={!quietBadges} count>
                 {option.badge}
               </Badge>
             ) : null}

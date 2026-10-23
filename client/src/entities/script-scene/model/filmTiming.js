@@ -41,13 +41,13 @@ function checkTypedTiming(startTime, endTime, runtimeSeconds, whileTyping) {
   const end = parseTimeInputToSeconds(endText);
 
   if (!whileTyping && ((startText && start === null) || (endText && end === null))) {
-    return { error: "Use HH:MM:SS (or MM:SS) for the start and end times." };
+    return { error: "Use HH:MM:SS (or MM:SS) for the Begin and End times." };
   }
   if (!whileTyping && (start === null || end === null)) {
-    return { error: "Enter a start and an end time for this scene." };
+    return { error: "Enter a Begin and an End time for this scene." };
   }
   if (start !== null && end !== null && end < start) {
-    return { error: "The end time must be at or after the start time." };
+    return { error: "The End time must be at or after the Begin time." };
   }
   if (isPastRuntime(start ?? 0, runtimeSeconds) || isPastRuntime(end ?? 0, runtimeSeconds)) {
     return { error: `Times can't be later than the film's runtime (${formatSecondsToHms(runtimeSeconds)}).` };

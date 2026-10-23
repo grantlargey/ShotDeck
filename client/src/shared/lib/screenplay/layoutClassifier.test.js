@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPageTextLines } from "../pdf-text/pageTextLines.js";
-import { estimateActionMargin, screenplayElementsFromLayout } from "./layoutClassifier.js";
+import { estimateActionMargin, sceneHeadingBoxes, screenplayElementsFromLayout } from "./layoutClassifier.js";
 
 /*
  * Synthetic screenplay pages for the layout classifier: pdf.js-like text runs
@@ -180,5 +180,29 @@ describe("estimating the action margin", () => {
     ]);
 
     expect(estimateActionMargin([page])).toBe(72);
+  });
+});
+
+describe("where scene headings sit", () => {
+  it("boxes each heading's words, leaving out its scene numbers and revision mark", () => {
+    const page = positionedPage(1, [
+      line(120, [72, "33"], [ACTION_X, "EXT. CLUB - NIGHT"], [516, "33"], [550, "*"]),
+      line(144, [ACTION_X, "People pile out onto the narrow street, under the signs."]),
+      line(180, [CUE_X, "SOPHIE"]),
+      line(192, [DIALOGUE_X, "Int. is not a heading here."]),
+      line(228, [ACTION_X, "INT. ELEVATOR - CONTINUOUS"]),
+    ]);
+
+    expect(sceneHeadingBoxes(page)).toEqual([
+      { left: ACTION_X, right: ACTION_X + 17 * 12 * CHAR_WIDTH_RATIO, top: 120 - 12 * 0.82, bottom: 120 + 12 * 0.24 },
+      { left: ACTION_X, right: ACTION_X + 26 * 12 * CHAR_WIDTH_RATIO, top: 228 - 12 * 0.82, bottom: 228 + 12 * 0.24 },
+    ]);
+  });
+
+  it("finds none on a page without headings, or without a page", () => {
+    const page = positionedPage(1, [line(120, [ACTION_X, "Rain on the windows of an empty diner, long past midnight."])]);
+
+    expect(sceneHeadingBoxes(page)).toEqual([]);
+    expect(sceneHeadingBoxes(null)).toEqual([]);
   });
 });

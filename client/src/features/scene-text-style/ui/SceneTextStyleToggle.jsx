@@ -6,8 +6,8 @@ import { ScenePage } from "./ScenePage.jsx";
 import styles from "./SceneTextStyleToggle.module.css";
 
 // How tall the page stands: as tall as the logo mark it replaces, or sized to
-// sit among a tool bar's 36px switches.
-const PAGE_HEIGHTS = { logo: { md: 26, sm: 20 }, toolbar: { md: 20, sm: 20 } };
+// sit among a tool bar's 36px switches or a bar's 32px buttons.
+const PAGE_HEIGHTS = { logo: { md: 26, sm: 20 }, toolbar: { md: 20, sm: 20 }, bar: { md: 20, sm: 20 } };
 // How long a turn plays: the shuffle, the typing, then the carriage return
 // (SceneTextStyleToggle.module.css).
 const TURN_MS = 1120;
@@ -24,7 +24,7 @@ const TURN_MS = 1120;
  * home) and in the tool bars that show scene text.
  *
  * look: "logo" stands bare; "toolbar" sits in a tile shaped like the switches
- * beside it.
+ * beside it; "bar" in a clear tile the size of the icon buttons beside it.
  * size: sm | md, for the logo, as BrandLogo.
  * disabled: shown but not usable, as while the scene dialog shows a still.
  */

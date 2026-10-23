@@ -1,4 +1,4 @@
-import { assembleLineText } from "../pdf-text/pageTextLines.js";
+import { assembleLineText, lineBoxAt } from "../pdf-text/pageTextLines.js";
 import { joinWrappedLine } from "./grammar.js";
 
 /*
@@ -149,6 +149,22 @@ function cleanLayoutLine(line, page, margin) {
     centerOffset: (left + right) / 2 - page.width / 2,
     more: MORE_MARKER.test(text),
   };
+}
+
+/**
+ * Where a page's scene headings sit, without their scene numbers or revision
+ * marks, as line boxes in PDF points. The page alone gives the action margin
+ * unless one is passed. The script viewer tints these in page styles with
+ * colored headings.
+ */
+export function sceneHeadingBoxes(page, actionMargin = estimateActionMargin([page]) ?? DEFAULT_ACTION_MARGIN) {
+  const boxes = [];
+  for (const line of page?.lines || []) {
+    const cleaned = cleanLayoutLine(line, page, actionMargin);
+    if (cleaned?.zone !== "left" || !SCENE_HEADING.test(cleaned.text)) continue;
+    boxes.push({ left: cleaned.left, right: cleaned.right, ...lineBoxAt(line.baseline, line.fontSize) });
+  }
+  return boxes;
 }
 
 /**

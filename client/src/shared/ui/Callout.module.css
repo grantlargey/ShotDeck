@@ -40,6 +40,12 @@
   color: var(--color-ai);
 }
 
+.neutral {
+  border-color: var(--color-line-control);
+  background: var(--color-surface);
+  color: var(--color-text-soft);
+}
+
 .action {
   padding: 0;
   border: 0;

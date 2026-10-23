@@ -50,6 +50,12 @@
   transform: rotate(180deg);
 }
 
+/* Quiet: an open category stays in the text's own color. */
+.quiet .toggleOpen,
+.quiet .toggleOpen .chevron {
+  color: var(--color-text);
+}
+
 .options {
   padding-bottom: 12px;
 }

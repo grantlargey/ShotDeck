@@ -68,9 +68,13 @@
   --color-btn-ai-soft: rgba(150, 138, 196, 0.12);
   --color-btn-ai-line: rgba(150, 138, 196, 0.4);
 
-  /* Scene anchors in the script viewer */
-  --anchor-start: #e879f9;
-  --anchor-end: #5cd0ff;
+  /* The script viewer's marks on the dark UI: the Begin and End glyphs, the
+     markers toggle, ticked tags and the scene being edited, in the Midnight
+     page style's heading blue. Marks drawn on the script page itself take
+     its style's inks (--script-mark below). */
+  --color-mark: #8bb6ff;
+  --color-mark-soft: rgba(139, 182, 255, 0.1);
+  --color-mark-line: rgba(139, 182, 255, 0.45);
 
   /* The stills timeline's mark for the still behind the film hero: the
      Midnight page style's heading blue, apart from the white hover light
@@ -133,7 +137,8 @@
  * never inherits a piece of the style around it. ScreenplayView reads the type
  * tokens; the papers that hold it read the colors; --scene-mark-outline traces
  * the small page in the logo and the style switches when that paper is too
- * dark to stand out on the dark chrome around it.
+ * dark to stand out on the dark chrome around it. The script viewer shows its
+ * PDF pages in the same style; the --script-* tokens are what those pages read.
  */
 /* A book page: Newsreader text under Gloock headings. */
 [data-scene-text-style="reading"] {
@@ -165,6 +170,18 @@
   --scene-transition-scale: 0.76;
   --scene-transition-tracking: 0.16em;
   --scene-transition-color: var(--color-ink-muted);
+  /* The script viewer's page in this style: the PDF as it was made, and the
+     pencil-blue marks drawn on it. */
+  --script-page-filter: none;
+  --script-heading-tint: transparent;
+  --script-mark: #35578f;
+  --script-mark-on: #ffffff;
+  --script-mark-soft: rgba(53, 87, 143, 0.07);
+  --script-mark-dots: rgba(53, 87, 143, 0.62);
+  --script-mark-idle: rgba(12, 19, 36, 0.36);
+  --script-mark-strong: #0c1324;
+  --script-mark-muted: rgba(12, 19, 36, 0.5);
+  --script-mark-wash: rgba(12, 19, 36, 0.06);
 }
 
 /* The typewritten page: Courier Prime on cream. */
@@ -198,6 +215,18 @@
   --scene-transition-scale: 1;
   --scene-transition-tracking: normal;
   --scene-transition-color: var(--color-ink);
+  /* The script viewer's page in this style: the PDF recolored to this paper
+     and ink (ScriptPageFilters), and pencil-blue marks drawn on it. */
+  --script-page-filter: url("#script-page-cream");
+  --script-heading-tint: transparent;
+  --script-mark: #35578f;
+  --script-mark-on: #ffffff;
+  --script-mark-soft: rgba(53, 87, 143, 0.07);
+  --script-mark-dots: rgba(53, 87, 143, 0.62);
+  --script-mark-idle: rgba(31, 29, 26, 0.36);
+  --script-mark-strong: #1f1d1a;
+  --script-mark-muted: rgba(31, 29, 26, 0.52);
+  --script-mark-wash: rgba(31, 29, 26, 0.06);
 }
 
 /*
@@ -234,6 +263,19 @@
   --scene-transition-scale: 1;
   --scene-transition-tracking: 0.1em;
   --scene-transition-color: #8bb6ff;
+  /* The script viewer's page in this style: the PDF recolored to this paper
+     and ink (ScriptPageFilters), its scene headings tinted to the heading
+     blue (multiplied over the ink), and heading-blue marks drawn on it. */
+  --script-page-filter: url("#script-page-midnight");
+  --script-heading-tint: #a7d3ff;
+  --script-mark: #8bb6ff;
+  --script-mark-on: #0c1324;
+  --script-mark-soft: rgba(139, 182, 255, 0.08);
+  --script-mark-dots: rgba(139, 182, 255, 0.6);
+  --script-mark-idle: rgba(212, 220, 236, 0.38);
+  --script-mark-strong: #edf2fc;
+  --script-mark-muted: rgba(212, 220, 236, 0.55);
+  --script-mark-wash: rgba(139, 182, 255, 0.08);
 }
 
 /* The site header stacks into two fixed-height rows on narrow screens. */

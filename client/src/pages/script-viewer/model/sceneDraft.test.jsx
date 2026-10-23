@@ -130,7 +130,7 @@ describe("committed view and stable interface", () => {
       actions.normalizeTime("startTime");
       pendingSave = actions.buildSave(NO_OTHER_SCENES);
     });
-    expect(pendingSave).toEqual({ error: "Enter a start and an end time for this scene." });
+    expect(pendingSave).toEqual({ error: "Enter a Begin and an End time for this scene." });
     expect(view(result).draft.startTime).toBe("1:05");
     run(result, (actions) => actions.normalizeTime("startTime"));
     expect(view(result).draft.startTime).toBe("00:01:05");
@@ -222,10 +222,10 @@ describe("capture and canonical save contract", () => {
   it("refuses incomplete anchors and waits for an unfinished range", () => {
     const { result } = renderDraft(textIndexFrom([page1, page3]));
     setTiming(result);
-    expect(save(result)).toEqual({ error: "Place a start anchor in the script before saving." });
+    expect(save(result)).toEqual({ error: "Set Begin in the script before saving." });
 
     place(result, "start", page1, 0);
-    expect(save(result)).toEqual({ error: "Place an end anchor in the script before saving." });
+    expect(save(result)).toEqual({ error: "Set End in the script before saving." });
 
     place(result, "end", page3, 0);
     expect(save(result)).toEqual({
@@ -235,7 +235,7 @@ describe("capture and canonical save contract", () => {
     const third = renderDraft(textIndexFrom([], { complete: true }));
     setTiming(third.result);
     // No indexed line can be placed, so the draft remains incomplete.
-    expect(save(third.result)).toEqual({ error: "Place a start anchor in the script before saving." });
+    expect(save(third.result)).toEqual({ error: "Set Begin in the script before saving." });
   });
 
   it("reports unreadable after indexing finishes without a required range page", () => {
@@ -360,7 +360,7 @@ describe("anchors, indexing and editor identity", () => {
 
     run(result, (actions) => actions.clearAnchors());
     expect(view(result).draft).toMatchObject({ anchors: { start: null, end: null }, dirty: true });
-    expect(save(result)).toEqual({ error: "Place a start anchor in the script before saving." });
+    expect(save(result)).toEqual({ error: "Set Begin in the script before saving." });
 
     run(result, (actions) => actions.undoAnchors());
     expect(view(result).draft.anchors).toEqual(savedScene.script_location);
@@ -660,7 +660,7 @@ describe("AI proposal provenance", () => {
       textOrigin: "ai",
       text: "## AI\n\nProposal.",
     });
-    expect(save(result)).toEqual({ error: "Place a start anchor in the script before saving." });
+    expect(save(result)).toEqual({ error: "Set Begin in the script before saving." });
   });
 
   it("ignores superseded responses and supports failure and dismissal", () => {

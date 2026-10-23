@@ -105,7 +105,7 @@ export function SceneCard({
         </div>
         <div className={styles.subRow}>
           <span className={styles.timing}>{formatFilmTiming(scene)}</span>
-          {status && <Badge tone="success">{status}</Badge>}
+          {status && <span className={styles.status}>{status}</span>}
         </div>
         {tags.length > 0 && (
           <div className={styles.tags}>

@@ -41,6 +41,22 @@
   outline-offset: 2px;
 }
 
+/* In a bar: a clear tile the size of the icon buttons beside it, lit on hover as they are. */
+.bar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.bar:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.bar:focus-visible {
+  outline-offset: 2px;
+}
+
 /* The pages, stacked; the component sizes it and sets --u, a pixel at the logo's 26px. */
 .stack {
   position: relative;
@@ -136,6 +152,7 @@
 /* No motion: the fan still shows, without moving, and a click just changes the page. */
 @media (prefers-reduced-motion: reduce) {
   .toolbar,
+  .bar,
   .stack,
   .layer {
     transition: none;

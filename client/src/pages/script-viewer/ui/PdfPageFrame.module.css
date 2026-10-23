@@ -1,15 +1,17 @@
 .frame {
   position: relative;
   flex: none;
-  background: #fff;
+  background: var(--color-paper);
   border-radius: 2px;
   box-shadow: var(--shadow-card);
 }
 
+/* The PDF in the script page style: recolored to its paper and ink, or as it was made. */
 .frame :global(canvas) {
   display: block;
   max-width: 100%;
   height: auto !important;
+  filter: var(--script-page-filter);
 }
 
 .interactive,
@@ -18,15 +20,22 @@
   cursor: crosshair;
 }
 
-.active {
-  box-shadow:
-    0 0 0 2px rgba(var(--accent-rgb), 0.6),
-    var(--shadow-card);
-}
-
 .placeholder {
   max-width: 100%;
-  background: linear-gradient(180deg, #fbfbf9 0%, #efefec 100%);
+  background: var(--color-paper);
+}
+
+/* Scene headings, tinted in styles with colored headings: multiplied over the ink, which takes the tint. */
+.headings {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.heading {
+  position: absolute;
+  background: var(--script-heading-tint);
+  mix-blend-mode: multiply;
 }
 
 .overlay {
@@ -37,39 +46,93 @@
   font-family: var(--font-text);
 }
 
-.range {
+/* ---------- The draft's bracket: Begin to End, down the left margin ---------- */
+
+/* In the margin outside the scene numbers at any page width: 38px on an 880px page. */
+.bracket,
+.openBracket {
   position: absolute;
-  left: 0;
-  right: 0;
-  background: rgba(var(--accent-rgb), 0.09);
-  box-shadow: inset 3px 0 0 rgba(var(--accent-rgb), 0.6);
+  left: 4.3%;
+  width: 9px;
+  border-left: 1.5px solid var(--script-mark);
 }
+
+.bracket {
+  animation: draw-down 0.32s cubic-bezier(0.3, 0.7, 0.2, 1) backwards;
+}
+
+.bracketStart {
+  border-top: 1.5px solid var(--script-mark);
+}
+
+.bracketEnd {
+  border-bottom: 1.5px solid var(--script-mark);
+}
+
+/* Only one anchor placed: its serif, and the bracket running on toward the other, fading. */
+.openDown {
+  border-top: 1.5px solid var(--script-mark);
+  -webkit-mask-image: linear-gradient(#000 30%, transparent);
+  mask-image: linear-gradient(#000 30%, transparent);
+  animation: draw-down 0.32s cubic-bezier(0.3, 0.7, 0.2, 1) backwards;
+}
+
+.openUp {
+  border-bottom: 1.5px solid var(--script-mark);
+  -webkit-mask-image: linear-gradient(transparent, #000 70%);
+  mask-image: linear-gradient(transparent, #000 70%);
+}
+
+@keyframes draw-down {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+
+  to {
+    clip-path: inset(0);
+  }
+}
+
+/* ---------- The line under the pointer: a soft band and its number ---------- */
 
 .hoverLine {
   position: absolute;
+  top: 0;
   left: 0;
   right: 0;
-  border-top: 1px dashed rgba(var(--accent-rgb), 0.9);
-  border-bottom: 1px dashed rgba(var(--accent-rgb), 0.9);
-  background: rgba(var(--accent-rgb), 0.08);
+  transition:
+    transform 90ms cubic-bezier(0.3, 0.7, 0.2, 1),
+    height 90ms ease;
+}
+
+.hoverLine::before {
+  content: "";
+  position: absolute;
+  inset: -5px 0;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--script-mark-wash) 30%,
+    var(--script-mark-wash) 70%,
+    transparent
+  );
 }
 
 .hoverLabel {
   position: absolute;
   top: 50%;
   right: 52px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--color-accent-strong);
-  color: var(--color-on-primary);
+  color: var(--script-mark-muted);
+  font-family: var(--font-slate);
   font-size: 10px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1;
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
   transform: translateY(-50%);
 }
 
-/* ---------- Anchors ---------- */
+/* ---------- Begin and End ---------- */
 
 .anchor {
   position: absolute;
@@ -78,114 +141,180 @@
   height: 0;
 }
 
-.start {
-  --anchor-color: var(--anchor-start);
-}
-
-.end {
-  --anchor-color: var(--anchor-end);
-}
-
+/* A dotted hairline across the text, at the top of Begin's line and the foot of End's. */
 .anchorRule {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: -1px;
-  height: 2px;
-  background: var(--anchor-color);
-  box-shadow: 0 0 0 1px rgba(11, 13, 19, 0.12);
+  top: -0.5px;
+  left: 5.7%;
+  right: 5.7%;
+  height: 1px;
+  background: linear-gradient(90deg, var(--script-mark-dots) 1px, transparent 1px) 0 0 / 3px 1px repeat-x;
+  animation: sweep-in 0.32s cubic-bezier(0.3, 0.7, 0.2, 1) backwards;
 }
 
+/* The anchor's name in the margin, above Begin's line and below End's. */
 .anchorTab {
   position: absolute;
-  left: 8px;
-  height: 20px;
-  padding: 0 3px 0 7px;
+  left: 4px;
+  height: 12px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: var(--anchor-color);
-  color: var(--color-on-accent);
+  gap: 2px;
+  color: var(--script-mark);
   font-family: var(--font-slate);
-  font-size: 10px;
+  font-size: 8.5px;
   font-weight: 700;
-  letter-spacing: var(--tracking-slate);
+  line-height: 12px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
   pointer-events: auto;
   cursor: default;
+  animation: fade-in 0.24s ease-out backwards;
 }
 
 .start .anchorTab {
-  bottom: 1px;
-  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  bottom: 3px;
 }
 
 .end .anchorTab {
-  top: 1px;
-  border-radius: 0 0 var(--radius-xs) var(--radius-xs);
+  top: 3px;
 }
 
 .anchorRemove {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   padding: 0;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 3px;
-  background: rgba(11, 13, 19, 0.12);
-  color: inherit;
-  font-size: 13px;
+  border-radius: 2px;
+  background: none;
+  color: var(--script-mark-muted);
+  font-size: 12px;
   line-height: 1;
+  opacity: 0;
   cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.anchorTab:hover .anchorRemove,
+.anchorRemove:focus-visible {
+  opacity: 1;
 }
 
 .anchorRemove:hover {
-  background: rgba(11, 13, 19, 0.28);
+  color: var(--script-mark-strong);
 }
 
-/* ---------- Saved scene bars ---------- */
+@keyframes sweep-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
 
-.sceneBar {
+  to {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- Saved scenes: a ] bracket each in the right margin ---------- */
+
+.sceneBracket {
   position: absolute;
-  width: 6px;
+  width: 14px;
   padding: 0;
   border: 0;
-  border-radius: 3px;
-  background: rgba(100, 116, 139, 0.55);
+  background: none;
+  color: var(--script-mark-idle);
   pointer-events: auto;
   cursor: pointer;
+  transition: color var(--transition-fast);
 }
 
-.sceneBar:hover,
-.sceneBarActive {
-  background: #fde047;
-}
-
-.sceneChip {
+.sceneBracketLine {
   position: absolute;
   top: 0;
-  right: calc(100% + 4px);
-  padding: 2px 6px;
-  border-radius: var(--radius-xs);
-  background: var(--color-header);
-  color: var(--color-text);
+  right: 4px;
+  bottom: 0;
+  width: 7px;
+  border-right: 1.5px solid currentColor;
+  transition: background var(--transition-fast);
+}
+
+.sceneBracketStart .sceneBracketLine {
+  border-top: 1.5px solid currentColor;
+}
+
+.sceneBracketEnd .sceneBracketLine {
+  border-bottom: 1.5px solid currentColor;
+}
+
+.sceneBracket:hover {
+  color: var(--script-mark-strong);
+}
+
+/* The scene being edited, or the one a visitor opened. */
+.sceneBracketActive,
+.sceneBracketActive:hover {
+  color: var(--script-mark);
+}
+
+.sceneBracketActive .sceneBracketLine {
+  border-right-width: 2px;
+  background: var(--script-mark-soft);
+}
+
+/* The scene's first second of film, beside its top serif. */
+.sceneTime {
+  position: absolute;
+  top: -7px;
+  right: calc(100% - 2px);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--color-paper);
+  color: var(--script-mark-muted);
   font-family: var(--font-slate);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 12px;
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
-.sceneBar:hover .sceneChip,
-.sceneBarActive .sceneChip {
-  background: var(--color-accent-strong);
-  color: var(--color-on-primary);
+.sceneBracket:hover .sceneTime {
+  color: var(--script-mark-strong);
 }
 
-.sceneBar:focus-visible,
+.sceneBracketActive .sceneTime,
+.sceneBracketActive:hover .sceneTime {
+  background: var(--script-mark);
+  color: var(--script-mark-on);
+}
+
+.sceneBracket:focus-visible,
 .anchorRemove:focus-visible {
   outline-color: var(--color-accent-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoverLine {
+    transition: none;
+  }
+
+  .bracket,
+  .openDown,
+  .anchorRule,
+  .anchorTab {
+    animation: none;
+  }
 }

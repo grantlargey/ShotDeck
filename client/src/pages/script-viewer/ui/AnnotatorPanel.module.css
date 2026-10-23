@@ -29,10 +29,6 @@
   text-transform: uppercase;
 }
 
-.eyebrowEditing {
-  color: var(--color-success);
-}
-
 .title {
   margin: 0;
   overflow: hidden;
@@ -130,7 +126,7 @@
   border-radius: var(--radius-xs);
   background: var(--color-surface);
   color: var(--color-text);
-  font-family: var(--font-text);
+  font-family: var(--font-slate);
   font-size: var(--text-2xs);
   font-weight: 700;
 }
@@ -168,53 +164,42 @@
   background: transparent;
 }
 
-.anchorBadge {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-xs);
-  color: var(--color-on-accent);
-  font-size: var(--text-2xs);
-  font-weight: 800;
-}
-
-.anchorBadgeStart {
-  background: var(--anchor-start);
-}
-
-.anchorBadgeEnd {
-  background: var(--anchor-end);
-}
-
-.anchorRowEmpty .anchorBadge {
-  background: transparent;
-  color: var(--color-text-muted);
-  box-shadow: inset 0 0 0 1.5px currentColor;
-}
-
 .anchorText {
   min-width: 0;
   display: grid;
   gap: 2px;
 }
 
+/* "Begin · Page 30 · Line 6" in Slate, over the words of that line in the script's own Courier. */
 .anchorLocation {
   color: var(--color-text-muted);
-  font-size: var(--text-2xs);
+  font-family: var(--font-slate);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: var(--tracking-slate);
+  text-transform: uppercase;
   font-variant-numeric: tabular-nums;
 }
 
-.anchorPage,
+.anchorLine,
 .anchorPlaceholder {
   overflow: hidden;
-  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.anchorLine {
+  color: var(--color-text-soft);
+  font-family: var(--font-script);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
 .anchorPlaceholder {
   color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
 }
 
 .anchorActions {
@@ -234,6 +219,22 @@
   margin-top: 10px;
 }
 
+/* Where the text came from, said quietly in Slate; AI in its own muted violet. */
+.origin {
+  color: var(--color-text-muted);
+  font-family: var(--font-slate);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: var(--tracking-slate);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.originAi {
+  color: var(--color-btn-ai);
+}
+
 /* ---------- Tags ---------- */
 
 .chipList {
@@ -243,6 +244,23 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.chipList .tagChip {
+  border-color: var(--color-line-control);
+  background: var(--color-surface);
+}
+
+.chipList .tagChip:hover {
+  border-color: var(--color-line-strong);
+}
+
+.sectionHeader .clearTags {
+  color: var(--color-text-muted);
+}
+
+.sectionHeader .clearTags:hover:not(:disabled) {
+  color: var(--color-text);
 }
 
 .categoryList {

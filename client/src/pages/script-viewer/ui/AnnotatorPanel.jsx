@@ -7,7 +7,6 @@ import {
 import { SceneCard } from "@/entities/script-scene/ui/SceneCard.jsx";
 import { TagCategoryList } from "@/entities/script-scene/ui/TagCategoryList.jsx";
 import { cx } from "@/shared/lib/cx.js";
-import { Badge } from "@/shared/ui/Badge.jsx";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
@@ -18,14 +17,17 @@ import { CloseIcon, PlusIcon } from "@/shared/ui/icons.jsx";
 import { Input } from "@/shared/ui/Input.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { undoShortcutLabel } from "../lib/platform.js";
+import { ANCHOR_KEYS, ANCHOR_NAMES } from "../model/anchorNames.js";
 import { scriptLocationOverlapError } from "../model/sceneDraft.js";
+import { AnchorGlyph } from "./AnchorGlyph.jsx";
 import styles from "./AnnotatorPanel.module.css";
 
-const ORIGIN_BADGES = {
-  capture: { label: "Captured from PDF", tone: "success" },
-  edited: { label: "Edited", tone: "warning" },
-  ai: { label: "AI formatted", tone: "ai" },
-  saved: { label: "Saved", tone: "neutral" },
+// Where the draft's text came from, said quietly beside its heading.
+const ORIGIN_LABELS = {
+  capture: "Captured from PDF",
+  edited: "Edited",
+  ai: "AI formatted",
+  saved: "Saved",
 };
 
 /*
@@ -39,7 +41,7 @@ const ORIGIN_BADGES = {
  * remaining case: the anchors do capture text, and the admin emptied the
  * draft's own text by hand.
  */
-const PLACE_ANCHORS_HINT = "Place a start and an end anchor to capture this scene's text.";
+const PLACE_ANCHORS_HINT = `Set ${ANCHOR_NAMES.start} and ${ANCHOR_NAMES.end} in the script to capture this scene's text.`;
 const NO_TEXT_HINTS = {
   start: PLACE_ANCHORS_HINT,
   end: PLACE_ANCHORS_HINT,
@@ -57,16 +59,19 @@ function CrosshairIcon() {
   );
 }
 
-function AnchorRow({ kind, anchor, onJump, onRemove }) {
-  const label = kind === "start" ? "Start" : "End";
-  const badgeClass = cx(styles.anchorBadge, kind === "start" ? styles.anchorBadgeStart : styles.anchorBadgeEnd);
+/**
+ * Begin or End: its bracket, where it is, and the words of the line it's on.
+ * Before its page is indexed, only the page is known.
+ */
+function AnchorRow({ kind, anchor, line, onJump, onRemove }) {
+  const name = ANCHOR_NAMES[kind];
 
   if (!anchor) {
     return (
       <div className={cx(styles.anchorRow, styles.anchorRowEmpty)}>
-        <span className={badgeClass}>{label[0]}</span>
+        <AnchorGlyph kind={kind} empty />
         <span className={styles.anchorText}>
-          <span className={styles.anchorLocation}>{label} anchor</span>
+          <span className={styles.anchorLocation}>{name}</span>
           <span className={styles.anchorPlaceholder}>Not placed</span>
         </span>
       </div>
@@ -75,26 +80,20 @@ function AnchorRow({ kind, anchor, onJump, onRemove }) {
 
   return (
     <div className={styles.anchorRow}>
-      <span className={badgeClass}>{label[0]}</span>
+      <AnchorGlyph kind={kind} />
       <span className={styles.anchorText}>
-        <span className={styles.anchorLocation}>{label} anchor</span>
-        <span className={styles.anchorPage}>Page {anchor.page}</span>
+        <span className={styles.anchorLocation}>
+          {line ? `${name} · Page ${anchor.page} · Line ${line.index + 1}` : name}
+        </span>
+        <span className={line ? styles.anchorLine : styles.anchorPlaceholder}>
+          {line ? line.text : `Page ${anchor.page}`}
+        </span>
       </span>
       <span className={styles.anchorActions}>
-        <IconButton
-          size="sm"
-          label={`Scroll to the ${kind} anchor`}
-          title="Scroll to anchor"
-          onClick={() => onJump(kind)}
-        >
+        <IconButton size="sm" label={`Scroll to ${name}`} title={`Scroll to ${name}`} onClick={() => onJump(kind)}>
           <CrosshairIcon />
         </IconButton>
-        <IconButton
-          size="sm"
-          label={`Remove the ${kind} anchor`}
-          title="Remove anchor"
-          onClick={() => onRemove(kind)}
-        >
+        <IconButton size="sm" label={`Remove ${name}`} title={`Remove ${name}`} onClick={() => onRemove(kind)}>
           <CloseIcon size={14} />
         </IconButton>
       </span>
@@ -123,6 +122,7 @@ function CaptureTab({
   indexStatus,
   overlapScene,
   onEditOverlapScene,
+  anchorLines,
   onJumpToAnchor,
   runtimeSeconds,
   filmTitle,
@@ -134,7 +134,7 @@ function CaptureTab({
   const { anchors, canUndoAnchors, captureUnavailable, startTime, endTime, text, textOrigin, textStale } = draft;
   const hasAnchors = Boolean(anchors.start || anchors.end);
   const hasText = Boolean(text.trim());
-  const originBadge = ORIGIN_BADGES[textOrigin];
+  const originLabel = ORIGIN_LABELS[textOrigin];
   const timingError = filmTimingErrorWhileTyping(startTime, endTime, runtimeSeconds);
 
   return (
@@ -160,14 +160,23 @@ function CaptureTab({
         </div>
 
         <div className={styles.anchorList}>
-          <AnchorRow kind="start" anchor={anchors.start} onJump={onJumpToAnchor} onRemove={draftActions.removeAnchor} />
-          <AnchorRow kind="end" anchor={anchors.end} onJump={onJumpToAnchor} onRemove={draftActions.removeAnchor} />
+          {["start", "end"].map((kind) => (
+            <AnchorRow
+              key={kind}
+              kind={kind}
+              anchor={anchors[kind]}
+              line={anchorLines?.[kind] ?? null}
+              onJump={onJumpToAnchor}
+              onRemove={draftActions.removeAnchor}
+            />
+          ))}
         </div>
 
         {!(anchors.start && anchors.end) && (
           <p className={styles.hint}>
-            Right-click a line in the script to place an anchor. Or hover a line and press <kbd>[</kbd> for the start
-            or <kbd>]</kbd> for the end.
+            Right-click a line in the script to set {ANCHOR_NAMES.start} or {ANCHOR_NAMES.end}. Or hover a line and
+            press <kbd>{ANCHOR_KEYS.start}</kbd> for {ANCHOR_NAMES.start} or <kbd>{ANCHOR_KEYS.end}</kbd> for{" "}
+            {ANCHOR_NAMES.end}.
           </p>
         )}
 
@@ -190,13 +199,13 @@ function CaptureTab({
         </h3>
         <div className={styles.fieldRow}>
           <TimeField
-            label="Start"
+            label={ANCHOR_NAMES.start}
             value={startTime}
             onChange={(value) => draftActions.setTime("startTime", value)}
             onBlur={() => draftActions.normalizeTime("startTime")}
           />
           <TimeField
-            label="End"
+            label={ANCHOR_NAMES.end}
             value={endTime}
             onChange={(value) => draftActions.setTime("endTime", value)}
             onBlur={() => draftActions.normalizeTime("endTime")}
@@ -214,11 +223,13 @@ function CaptureTab({
           <h3 id="annotator-text" className={styles.sectionTitle}>
             Script text
           </h3>
-          {hasText && originBadge && <Badge tone={originBadge.tone}>{originBadge.label}</Badge>}
+          {hasText && originLabel && (
+            <span className={cx(styles.origin, textOrigin === "ai" && styles.originAi)}>{originLabel}</span>
+          )}
         </div>
 
         {textStale && (
-          <Callout tone="info" className={styles.callout} action="Re-capture from anchors" onAction={onRecapture}>
+          <Callout tone="neutral" className={styles.callout} action="Re-capture from anchors" onAction={onRecapture}>
             The anchors moved after this text was captured.
           </Callout>
         )}
@@ -284,7 +295,13 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
     <>
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle}>Selected · {tags.length}</h3>
-        <Button variant="link" size="sm" onClick={onClearTags} disabled={tags.length === 0}>
+        <Button
+          variant="link"
+          size="sm"
+          className={styles.clearTags}
+          onClick={onClearTags}
+          disabled={tags.length === 0}
+        >
           Clear all
         </Button>
       </div>
@@ -293,7 +310,11 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
         <ul className={styles.chipList} aria-label="Selected tags">
           {tags.map((tag) => (
             <li key={tag}>
-              <Chip onRemove={() => onToggleTag(tag)} removeLabel={`Remove ${getScriptTagLabel(tag)}`}>
+              <Chip
+                className={styles.tagChip}
+                onRemove={() => onToggleTag(tag)}
+                removeLabel={`Remove ${getScriptTagLabel(tag)}`}
+              >
                 {getScriptTagLabel(tag)}
               </Chip>
             </li>
@@ -305,6 +326,7 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
 
       <TagCategoryList
         className={styles.categoryList}
+        look="quiet"
         groups={SCRIPT_TAG_CATEGORIES}
         selectedTags={tags}
         onToggleTag={onToggleTag}
@@ -323,8 +345,8 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
  *
  * It reads the scene draft and calls `draftActions` itself. The page passes
  * what it owns: the tab, the film's title and runtime, indexing progress, the
- * overlapping scene, request state, and the handlers that prompt or send a
- * request.
+ * overlapping scene, the lines Begin and End sit on, request state, and the
+ * handlers that prompt or send a request.
  */
 export function AnnotatorPanel({
   draft,
@@ -337,6 +359,7 @@ export function AnnotatorPanel({
   overlapScene,
   onEditOverlapScene,
   onNewScene,
+  anchorLines,
   onJumpToAnchor,
   onRecapture,
   onExpandDraft,
@@ -368,9 +391,7 @@ export function AnnotatorPanel({
     <aside className={styles.panel} aria-label="Scene annotator">
       <header className={styles.header}>
         <div className={styles.headerText}>
-          <p className={cx(styles.eyebrow, editing && styles.eyebrowEditing)}>
-            {editing ? "Editing saved scene" : "New scene"}
-          </p>
+          <p className={styles.eyebrow}>{editing ? "Editing saved scene" : "New scene"}</p>
           <h2 className={cx(styles.title, draft.savedScene && styles.titleTiming)}>{sceneLabel}</h2>
         </div>
         <Button size="sm" onClick={onNewScene}>
@@ -385,6 +406,7 @@ export function AnnotatorPanel({
         idPrefix="annotator-tab"
         panelId="annotator-tabpanel"
         className={styles.tabs}
+        quietBadges
         value={visibleTab}
         onChange={onTabChange}
         options={[
@@ -420,6 +442,7 @@ export function AnnotatorPanel({
             indexStatus={indexStatus}
             overlapScene={overlapScene}
             onEditOverlapScene={onEditOverlapScene}
+            anchorLines={anchorLines}
             onJumpToAnchor={onJumpToAnchor}
             runtimeSeconds={runtimeSeconds}
             filmTitle={filmTitle}

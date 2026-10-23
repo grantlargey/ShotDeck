@@ -262,8 +262,8 @@ export function scriptLocationOverlapError(scene) {
 }
 
 const CAPTURE_UNAVAILABLE_ERRORS = {
-  start: "Place a start anchor in the script before saving.",
-  end: "Place an end anchor in the script before saving.",
+  start: "Set Begin in the script before saving.",
+  end: "Set End in the script before saving.",
   indexing: "Wait for the pages between the anchors to finish indexing, then save again.",
   unreadable: "The script text between the anchors can't be read. Move the anchors to lines with text, then save again.",
 };
@@ -296,7 +296,7 @@ function buildSavePayload(draft, captured, text, { runtimeSeconds, scenes }) {
     return { error: CAPTURE_UNAVAILABLE_ERRORS[captured.unavailable] };
   }
   if (!text.trim()) {
-    return { error: "Place start and end anchors in the script to capture the scene text." };
+    return { error: "Set Begin and End in the script to capture the scene text." };
   }
 
   const locationOverlap = findOverlappingScriptLocation(scenes, draft.anchors, savedScene?.id);

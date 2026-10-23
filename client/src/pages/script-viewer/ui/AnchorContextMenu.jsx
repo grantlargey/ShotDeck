@@ -1,27 +1,43 @@
 import { useEffect, useRef } from "react";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
 import { undoShortcutLabel } from "../lib/platform.js";
+import { ANCHOR_KEYS, ANCHOR_NAMES } from "../model/anchorNames.js";
+import { AnchorGlyph } from "./AnchorGlyph.jsx";
 import styles from "./AnchorContextMenu.module.css";
 
-function MenuItem({ label, shortcut, tone, disabled = false, onSelect }) {
+function MenuItem({ label, shortcut, disabled = false, onSelect }) {
   return (
-    <button
-      type="button"
-      role="menuitem"
-      className={`${styles.item} ${tone ? styles[tone] : ""}`}
-      disabled={disabled}
-      onClick={onSelect}
-    >
-      <span className={styles.swatch} aria-hidden="true" />
+    <button type="button" role="menuitem" className={styles.item} disabled={disabled} onClick={onSelect}>
       <span className={styles.label}>{label}</span>
       {shortcut && <kbd className={styles.shortcut}>{shortcut}</kbd>}
     </button>
   );
 }
 
+/** Begin or End as a big key: its bracket, its name, and the key that sets it from the keyboard. */
+function SetAnchorKey({ kind, disabled, onSelect }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={styles.setKey}
+      disabled={disabled}
+      aria-keyshortcuts={ANCHOR_KEYS[kind]}
+      onClick={onSelect}
+    >
+      <AnchorGlyph kind={kind} className={styles.setGlyph} />
+      <span className={styles.setName}>{ANCHOR_NAMES[kind]}</span>
+      <span className={styles.setHint} aria-hidden="true">
+        Key {ANCHOR_KEYS[kind]}
+      </span>
+    </button>
+  );
+}
+
 /**
- * Right-click (or tap, on touch devices) menu for placing and removing line
- * anchors, positioned at the pointer.
+ * Right-click (or tap, on touch devices) menu for setting and removing Begin
+ * and End on a line, positioned at the pointer. Begin and End lead, side by
+ * side; the rest are listed under them.
  */
 export function AnchorContextMenu({
   menu,
@@ -97,26 +113,22 @@ export function AnchorContextMenu({
         </span>
       </div>
 
-      <MenuItem
-        tone="start"
-        label="Set start anchor"
-        shortcut="["
-        disabled={!line}
-        onSelect={run(() => onSetAnchor("start", menu.pageNumber, line))}
-      />
-      <MenuItem
-        tone="end"
-        label="Set end anchor"
-        shortcut="]"
-        disabled={!line}
-        onSelect={run(() => onSetAnchor("end", menu.pageNumber, line))}
-      />
+      <div className={styles.setKeys}>
+        <SetAnchorKey kind="start" disabled={!line} onSelect={run(() => onSetAnchor("start", menu.pageNumber, line))} />
+        <SetAnchorKey kind="end" disabled={!line} onSelect={run(() => onSetAnchor("end", menu.pageNumber, line))} />
+      </div>
 
-      <div className={styles.separator} role="separator" />
-
-      <MenuItem label="Remove start anchor" disabled={!anchors.start} onSelect={run(() => onRemoveAnchor("start"))} />
-      <MenuItem label="Remove end anchor" disabled={!anchors.end} onSelect={run(() => onRemoveAnchor("end"))} />
-      <MenuItem label="Clear anchors" disabled={!anchors.start && !anchors.end} onSelect={run(onClearAnchors)} />
+      <MenuItem
+        label={`Remove ${ANCHOR_NAMES.start}`}
+        disabled={!anchors.start}
+        onSelect={run(() => onRemoveAnchor("start"))}
+      />
+      <MenuItem label={`Remove ${ANCHOR_NAMES.end}`} disabled={!anchors.end} onSelect={run(() => onRemoveAnchor("end"))} />
+      <MenuItem
+        label={`Clear ${ANCHOR_NAMES.start} and ${ANCHOR_NAMES.end}`}
+        disabled={!anchors.start && !anchors.end}
+        onSelect={run(onClearAnchors)}
+      />
       <MenuItem label="Undo anchor change" shortcut={undoShortcutLabel()} disabled={!canUndo} onSelect={run(onUndo)} />
 
       {menu.scenes.length > 0 && (

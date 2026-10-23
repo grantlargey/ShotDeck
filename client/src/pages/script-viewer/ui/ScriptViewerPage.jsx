@@ -25,7 +25,7 @@ import { CloseIcon } from "@/shared/ui/icons.jsx";
 import { LoadingState } from "@/shared/ui/LoadingState.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { requestScreenplayProposal } from "../model/aiScreenplayFormat.js";
-import { buildSceneSegmentsByPage } from "../model/anchors.js";
+import { buildSceneSegmentsByPage, resolveAnchorLine } from "../model/anchors.js";
 import { nextScrollAction } from "../model/pendingScrollIntent.js";
 import { useSceneCollection } from "../model/sceneCollection.js";
 import { useSceneDraft } from "../model/sceneDraft.js";
@@ -36,6 +36,7 @@ import { AnnotatorPanel } from "./AnnotatorPanel.jsx";
 import { DraftEditorModal } from "./DraftEditorModal.jsx";
 import { PdfPageFrame } from "./PdfPageFrame.jsx";
 import { SavedScenesGrid } from "./SavedScenesGrid.jsx";
+import { ScriptPageFilters } from "./ScriptPageFilters.jsx";
 import { ViewerTopBar } from "./ViewerTopBar.jsx";
 import styles from "./ScriptViewerPage.module.css";
 
@@ -106,7 +107,7 @@ function ScriptViewerPage() {
   const [modal, setModal] = useState(null);
   // The scene a visitor last opened or followed a link to, marked in the margin.
   const [focusSceneId, setFocusSceneId] = useState("");
-  // Hides the on-page start/end markers for uncluttered reading; anchors stay set.
+  // Hides the on-page Begin and End marks for uncluttered reading; anchors stay set.
   const [showAnchorMarkers, setShowAnchorMarkers] = useState(true);
   const [pendingScroll, setPendingScroll] = useState(() => {
     const page = parsePageParam(searchParams.get("page"));
@@ -177,6 +178,14 @@ function ScriptViewerPage() {
     () => findOverlappingScriptLocation(scenes.list, draft.anchors, draftSceneId),
     [scenes.list, draft.anchors, draftSceneId]
   );
+  // The lines Begin and End sit on, for the annotator to name; null until their page is indexed.
+  const anchorLines = useMemo(() => {
+    const { start, end } = draft.anchors;
+    return {
+      start: start ? resolveAnchorLine(textIndex.pages.get(start.page), start) : null,
+      end: end ? resolveAnchorLine(textIndex.pages.get(end.page), end) : null,
+    };
+  }, [draft.anchors, textIndex.pages]);
   const title = film?.title || "Script";
   const runtimeSeconds = film?.runtime_minutes ? Number(film.runtime_minutes) * 60 : 0;
   useDocumentTitle(film ? `${film.title} script` : "Script");
@@ -464,6 +473,7 @@ function ScriptViewerPage() {
 
       <div className={cx(styles.workspace, !canEdit && styles.workspaceReadOnly)}>
         <section className={styles.viewer} aria-label="Script PDF">
+          <ScriptPageFilters className={styles.pageFilters} />
           {!script?.script_url ? (
             <p className={styles.viewerMessage}>This script has no PDF file.</p>
           ) : pdfLoadError ? (
@@ -514,6 +524,7 @@ function ScriptViewerPage() {
             overlapScene={overlapScene}
             onEditOverlapScene={() => overlapScene && selectScene(overlapScene)}
             onNewScene={startNewScene}
+            anchorLines={anchorLines}
             onJumpToAnchor={jumpToAnchor}
             onRecapture={recapture}
             onExpandDraft={() => setModal({ kind: "draft" })}
@@ -605,6 +616,23 @@ function ScriptViewerPage() {
           className={`${styles.toast} ${notice.tone === "error" ? styles.toastError : styles.toastInfo}`}
           role={notice.tone === "error" ? "alert" : "status"}
         >
+          {notice.tone !== "error" && (
+            <svg
+              className={styles.toastIcon}
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M3.5 8.5l3 3 6-7" />
+            </svg>
+          )}
           <span>{notice.text}</span>
           <IconButton size="sm" label="Dismiss" onClick={() => setNotice(null)}>
             <CloseIcon size={14} />

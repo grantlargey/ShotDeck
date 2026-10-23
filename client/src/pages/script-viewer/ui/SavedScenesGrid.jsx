@@ -1,6 +1,7 @@
 import { SceneCard } from "@/entities/script-scene/ui/SceneCard.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
+import { ANCHOR_NAMES } from "../model/anchorNames.js";
 import styles from "./ScriptViewerPage.module.css";
 
 /**
@@ -25,7 +26,7 @@ export function SavedScenesGrid({ ref, scenes, selectedSceneId, title, readOnly 
         <EmptyState compact title="No scenes yet">
           {readOnly
             ? "No scenes have been captured for this script yet."
-            : "Right-click a line in the script to place a start anchor and begin one."}
+            : `Right-click a line in the script and choose ${ANCHOR_NAMES.start} to start one.`}
         </EmptyState>
       ) : (
         <ul className={styles.sceneGrid}>

@@ -9,9 +9,9 @@ import {
   parseFilmTiming,
 } from "./filmTiming.js";
 
-const FORMAT = "Use HH:MM:SS (or MM:SS) for the start and end times.";
-const BOTH = "Enter a start and an end time for this scene.";
-const ORDER = "The end time must be at or after the start time.";
+const FORMAT = "Use HH:MM:SS (or MM:SS) for the Begin and End times.";
+const BOTH = "Enter a Begin and an End time for this scene.";
+const ORDER = "The End time must be at or after the Begin time.";
 
 function scene(id, start, end) {
   return { id, start_time_seconds: start, end_time_seconds: end };

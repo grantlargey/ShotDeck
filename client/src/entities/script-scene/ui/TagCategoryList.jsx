@@ -12,6 +12,8 @@ import styles from "./TagCategoryList.module.css";
  * - `counts` (Map of tag → scene count) shows per-tag totals and dims empty tags.
  * - `openGroups` / `onToggleGroup` keep the expanded state in the parent, so it
  *   survives the list unmounting (e.g. when switching tabs).
+ * - `look`: "accent", blue boxes and counts with an open category in blue; or
+ *   "quiet", typed [x] boxes, plain counts and no blue but the ticks.
  */
 export function TagCategoryList({
   groups,
@@ -21,8 +23,10 @@ export function TagCategoryList({
   idPrefix,
   openGroups,
   onToggleGroup,
+  look = "accent",
   className,
 }) {
+  const quiet = look === "quiet";
   const [localOpenGroups, setLocalOpenGroups] = useState(() => new Set());
   const expanded = openGroups ?? localOpenGroups;
 
@@ -40,7 +44,7 @@ export function TagCategoryList({
   }
 
   return (
-    <ul className={cx(styles.list, className)}>
+    <ul className={cx(styles.list, quiet && styles.quiet, className)}>
       {groups.map((group) => {
         const isOpen = expanded.has(group.key);
         const selectedCount = group.tags.filter((tag) => selectedTags.includes(tag.value)).length;
@@ -56,11 +60,14 @@ export function TagCategoryList({
               onClick={() => toggleGroup(group.key)}
             >
               <span className={styles.label}>{group.label}</span>
-              {selectedCount > 0 && (
-                <Badge tone="accent" solid count>
-                  {selectedCount}
-                </Badge>
-              )}
+              {selectedCount > 0 &&
+                (quiet ? (
+                  <Badge count>{selectedCount}</Badge>
+                ) : (
+                  <Badge tone="accent" solid count>
+                    {selectedCount}
+                  </Badge>
+                ))}
               <ChevronDownIcon className={styles.chevron} size={12} />
             </button>
 
@@ -73,7 +80,11 @@ export function TagCategoryList({
                   return (
                     <li key={tag.value}>
                       <label className={cx(styles.option, count === 0 && !checked && styles.optionEmpty)}>
-                        <Checkbox checked={checked} onChange={() => onToggleTag(tag.value)} />
+                        <Checkbox
+                          look={quiet ? "typed" : "box"}
+                          checked={checked}
+                          onChange={() => onToggleTag(tag.value)}
+                        />
                         <span>{tag.label}</span>
                         {count !== null && <span className={styles.count}>({count.toLocaleString()})</span>}
                       </label>

@@ -85,13 +85,20 @@ const STALE_SAVE_PROMPT =
   "This scene text doesn't match the current anchors. Save it anyway? The scene keeps this text, but its script location will come from the current anchors. To save the text between the anchors instead, cancel and re-capture.";
 const RECAPTURE_PROMPT = "Replace the current text with a fresh capture from the anchors? Your text edits will be lost.";
 
-function anchorPage(kind) {
-  const label = inPanel().getByText(`${kind} anchor`);
-  return label.parentElement.textContent.replace(`${kind} anchor`, "");
+/** The page an anchor's row says it sits on ("Page 3"), found by the anchor's name ("Begin"). */
+function anchorPage(name) {
+  const anchors = within(inPanel().getByRole("region", { name: "Anchors" }));
+  const label = anchors.getByText(new RegExp(`^${name}( · |$)`));
+  return label.parentElement.textContent.match(/Page \d+/)?.[0] ?? null;
 }
 
 function inPanel() {
   return within(annotator());
+}
+
+/** The annotator's Script text section, where the draft's text shows. */
+function inScriptText() {
+  return within(inPanel().getByRole("region", { name: "Script text" }));
 }
 
 function inDialog() {
@@ -111,7 +118,7 @@ function lastSavePayload() {
 }
 
 function setTiming(start = "00:01:00", end = "00:02:00") {
-  typeTime("Start", start);
+  typeTime("Begin", start);
   typeTime("End", end);
 }
 
@@ -162,9 +169,9 @@ describe("canonical capture and persistence", () => {
     expect(inPanel().getByText("New scene", { selector: "p" })).toBeTruthy();
     click(sceneCard("00:01:00 – 00:02:00"));
 
-    expect(anchorPage("Start")).toBe("Page 1");
+    expect(anchorPage("Begin")).toBe("Page 1");
     expect(anchorPage("End")).toBe("Page 2");
-    expect(inPanel().getByText(DINER)).toBeTruthy();
+    expect(inScriptText().getByText(DINER)).toBeTruthy();
     click(inPanel().getByRole("button", { name: "Update scene" }));
     await waitFor(() => expect(pending.saves).toHaveLength(2));
     expect(lastSavePayload()).toEqual(pending.saves[0].args.at(-1));
@@ -173,11 +180,11 @@ describe("canonical capture and persistence", () => {
   it("makes a cleared saved location unsaveable until undo restores and captures it", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedScene], sceneId: savedScene.id });
     publishWholeScript();
-    expect(anchorPage("Start")).toBe("Page 3");
+    expect(anchorPage("Begin")).toBe("Page 3");
 
     click(inPanel().getByRole("button", { name: "Clear" }));
     click(inPanel().getByRole("button", { name: "Update scene" }));
-    expect(screen.getByRole("alert").textContent).toContain("Place a start anchor in the script before saving.");
+    expect(screen.getByRole("alert").textContent).toContain("Set Begin in the script before saving.");
     expect(fakeApi.updateScriptScene).not.toHaveBeenCalled();
 
     click(inPanel().getByRole("button", { name: "Undo" }));
@@ -335,7 +342,7 @@ describe("editor, indexing and AI", () => {
 
     hoverLine(2, 4);
     pressKey("]");
-    expect(inPanel().getAllByText("Maya pours two cups and slides one across the counter.")).toHaveLength(1);
+    expect(inScriptText().getAllByText("Maya pours two cups and slides one across the counter.")).toHaveLength(1);
   });
 
   it("keeps a pending AI request's selection baseline when anchors move", async () => {
@@ -394,24 +401,24 @@ describe("draft interaction guards", () => {
     openEditor();
     expect(pressKey("z", { metaKey: true })).toBe(true);
     closeEditor();
-    expect(pressKey("z", { ctrlKey: true }, timeInput("Start"))).toBe(true);
+    expect(pressKey("z", { ctrlKey: true }, timeInput("Begin"))).toBe(true);
     openLineMenu(1, 2);
     hoverLine(1, 3);
     expect(pressKey("[")).toBe(true);
     pressKey("Escape");
-    expect(anchorPage("Start")).toBe("Page 1");
+    expect(anchorPage("Begin")).toBe("Page 1");
   });
 
   it("keeps a dirty scene open when switching is canceled and discards it only after confirmation", async () => {
     await renderViewer(ScriptViewerRoute, { scenes: [savedScene, otherScene], sceneId: savedScene.id });
     publishWholeScript();
-    typeTime("Start", "00:10:01");
+    typeTime("Begin", "00:10:01");
     click(sceneCard("00:05:00 – 00:06:00"));
     expect(window.confirm).toHaveBeenCalledWith("Discard unsaved changes to the current scene?");
-    expect(timeInput("Start").value).toBe("00:10:01");
+    expect(timeInput("Begin").value).toBe("00:10:01");
     answerConfirm(true);
     click(sceneCard("00:05:00 – 00:06:00"));
-    expect(timeInput("Start").value).toBe("00:05:00");
+    expect(timeInput("Begin").value).toBe("00:05:00");
   });
 
   it("starts no AI request when both capture and draft text are unavailable", async () => {
@@ -441,7 +448,7 @@ describe("stale-text save decisions", () => {
     pressKey("]");
 
     click(inPanel().getByRole("button", { name: "Save scene" }));
-    expect(screen.getByText("Enter a start and an end time for this scene.")).toBeTruthy();
+    expect(screen.getByText("Enter a Begin and an End time for this scene.")).toBeTruthy();
     expect(window.confirm).not.toHaveBeenCalled();
     setTiming();
     click(inPanel().getByRole("button", { name: "Save scene" }));
@@ -522,10 +529,10 @@ describe("overlap, request races and navigation", () => {
       )
     ).toBeTruthy();
     expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
-    typeTime("Start", "00:06:00");
+    typeTime("Begin", "00:06:00");
     click(inPanel().getByRole("button", { name: "Save scene" }));
     expect(fakeApi.createScriptScene).not.toHaveBeenCalled();
-    typeTime("Start", "00:06:01");
+    typeTime("Begin", "00:06:01");
     click(inPanel().getByRole("button", { name: "Save scene" }));
     await waitFor(() => expect(pending.saves).toHaveLength(1));
     expect(lastSavePayload()).toMatchObject({
@@ -571,7 +578,7 @@ describe("overlap, request races and navigation", () => {
     await waitFor(() => expect(pending.saves).toHaveLength(1));
     click(sceneCard("00:05:00 – 00:06:00"));
     await settle(pending.saves[0]);
-    expect(timeInput("Start").value).toBe("00:05:00");
+    expect(timeInput("Begin").value).toBe("00:05:00");
     expect(inPanel().getByText("Editing saved scene")).toBeTruthy();
   });
 
@@ -594,10 +601,10 @@ describe("overlap, request races and navigation", () => {
     click(inPanel().getByRole("button", { name: "Update scene" }));
     await waitFor(() => expect(pending.saves).toHaveLength(1));
     click(inPanel().getByRole("button", { name: "New scene", exact: true }));
-    typeTime("Start", "00:30:00");
+    typeTime("Begin", "00:30:00");
     await settle(pending.saves[0]);
     expect(inPanel().getByText("New scene", { selector: "p" })).toBeTruthy();
-    expect(timeInput("Start").value).toBe("00:30:00");
+    expect(timeInput("Begin").value).toBe("00:30:00");
   });
 
   it("scrolls canonical deep links to the start anchor for admins and visitors", async () => {
@@ -694,7 +701,7 @@ describe("delete races, visitor navigation and load failures", () => {
     expect(pending.deletes[0].args).toEqual(["m1", "s1", savedScene.id]);
     click(sceneCard("00:05:00 – 00:06:00"));
     await settle(pending.deletes[0]);
-    expect(timeInput("Start").value).toBe("00:05:00");
+    expect(timeInput("Begin").value).toBe("00:05:00");
     expect(inPanel().getByText("Editing saved scene")).toBeTruthy();
   });
 
@@ -706,7 +713,7 @@ describe("delete races, visitor navigation and load failures", () => {
     await waitFor(() => expect(pending.deletes).toHaveLength(1));
     await settle(pending.deletes[0]);
     expect(inPanel().getByText("New scene", { selector: "p" })).toBeTruthy();
-    expect(timeInput("Start").value).toBe("");
+    expect(timeInput("Begin").value).toBe("");
   });
 
   it("keeps edits made during deletion as a new unsaved draft whose next save creates", async () => {
@@ -763,7 +770,7 @@ describe("page-frame and capture locality", () => {
     placeAnchorsWithKeys([1, 0], [2, 3]);
     const before = frameProps(1);
     const captureCalls = captureAnchoredRange.mock.calls.length;
-    typeTime("Start", "00:01:00");
+    typeTime("Begin", "00:01:00");
     typeTime("End", "00:02:00");
     const afterTiming = frameProps(1);
     for (const key of ["onLineContextMenu", "onHoverLine", "onRemoveAnchor", "onSelectScene", "onRendered"]) {

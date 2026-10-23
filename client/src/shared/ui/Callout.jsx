@@ -4,7 +4,7 @@ import styles from "./Callout.module.css";
 /**
  * Inline message box with an optional text action.
  *
- * tone: info | success | warning | error | ai
+ * tone: info | success | warning | error | ai | neutral
  */
 export function Callout({ tone = "info", action, onAction, className, children }) {
   return (

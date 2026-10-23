@@ -1,32 +1,39 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Page } from "react-pdf";
 import { formatFilmTiming } from "@/entities/script-scene/model/filmTiming.js";
+import { cx } from "@/shared/lib/cx.js";
 import { findLineAtY } from "@/shared/lib/pdf-text/pageTextLines.js";
+import { sceneHeadingBoxes } from "@/shared/lib/screenplay/layoutClassifier.js";
 import { formatSecondsToHms } from "@/shared/lib/time.js";
+import { ANCHOR_NAMES } from "../model/anchorNames.js";
 import styles from "./PdfPageFrame.module.css";
 
 const OVERLAY_CONTROL = "[data-overlay-control]";
 const LETTER_ASPECT_RATIO = 11 / 8.5;
+// How far the bracket runs on, fading, from an anchor whose partner isn't placed yet.
+const OPEN_BRACKET_PX = 96;
+// Saved scenes' brackets in the right margin: how far in from the page's edge,
+// and the step between scenes that overlap on the page.
+const SCENE_INSET_PX = 6;
+const SCENE_LANE_PX = 14;
 
+/**
+ * Begin or End on the page: a dotted hairline at the edge of its line, and its
+ * name in the margin, with a button that removes it.
+ */
 function AnchorMarker({ kind, box, scale, onRemove }) {
   const y = (kind === "start" ? box.top : box.bottom) * scale;
-  const label = kind === "start" ? "Start" : "End";
+  const name = ANCHOR_NAMES[kind];
 
   return (
-    <div
-      className={`${styles.anchor} ${kind === "start" ? styles.start : styles.end}`}
-      style={{ top: y }}
-    >
+    <div className={cx(styles.anchor, kind === "start" ? styles.start : styles.end)} style={{ top: y }}>
       <span className={styles.anchorRule} />
       <span className={styles.anchorTab} data-overlay-control>
-        <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
-          <path d={kind === "start" ? "M1 2h8L5 8z" : "M1 8h8L5 2z"} fill="currentColor" />
-        </svg>
-        {label}
+        {name}
         <button
           type="button"
           className={styles.anchorRemove}
-          aria-label={`Remove ${kind} anchor`}
+          aria-label={`Remove ${name}`}
           onClick={(event) => {
             event.stopPropagation();
             onRemove(kind);
@@ -40,11 +47,16 @@ function AnchorMarker({ kind, box, scale, onRemove }) {
 }
 
 /**
- * One PDF page plus its scene overlay: anchor markers, the captured
- * range, a snap line under the pointer, and saved-scene bars in the right
- * margin. Props are primitives or stable references so only pages whose
- * overlay actually changes re-render. With `readOnly` (visitors), the page
- * keeps the scene bars but offers no anchor menu or line highlight.
+ * One PDF page plus its scene overlay: the draft's Begin and End, a bracket
+ * down the left margin from one to the other, a band on the line under the
+ * pointer, and saved scenes as brackets in the right margin. Props are
+ * primitives or stable references so only pages whose overlay actually
+ * changes re-render. With `readOnly` (visitors), the page keeps the scene
+ * brackets but offers no anchor menu or line highlight.
+ *
+ * The page shows in the visitor's page style (features/scene-text-style): the
+ * PDF recolored by --script-page-filter, its scene headings tinted by
+ * --script-heading-tint, and the marks in its --script-mark inks.
  */
 export const PdfPageFrame = memo(function PdfPageFrame({
   pageNumber,
@@ -68,11 +80,14 @@ export const PdfPageFrame = memo(function PdfPageFrame({
 }) {
   const [hoverLineIndex, setHoverLineIndex] = useState(null);
   const hoverLine = hoverLineIndex === null ? null : pageIndex?.lines[hoverLineIndex] ?? null;
-  const isActive = Boolean(activeSceneId) && sceneSegments.some((segment) => segment.scene.id === activeSceneId);
+  const headings = useMemo(() => (pageIndex ? sceneHeadingBoxes(pageIndex) : []), [pageIndex]);
   const loadingHeight = Math.round(
     pageIndex ? (pageWidth * pageIndex.height) / pageIndex.width : pageWidth * LETTER_ASPECT_RATIO
   );
   const px = (points) => points * scale;
+  const pageHeight = pageIndex ? px(pageIndex.height) : 0;
+  // Only one anchor placed: its bracket runs on, open, toward where the other will go.
+  const openFrom = showAnchorMarkers && !projection.range ? projection.start ?? projection.end : null;
 
   function lineAtPointer(event) {
     if (!scale) return null;
@@ -102,7 +117,7 @@ export const PdfPageFrame = memo(function PdfPageFrame({
     <div
       id={`script-page-${pageNumber}`}
       data-page-number={pageNumber}
-      className={[styles.frame, compact || readOnly ? "" : styles.interactive, isActive ? styles.active : ""].join(" ")}
+      className={cx(styles.frame, !compact && !readOnly && styles.interactive)}
       onMouseMove={(event) => {
         if (compact || readOnly) return;
         setHover(event.target.closest(OVERLAY_CONTROL) ? null : lineAtPointer(event));
@@ -130,19 +145,46 @@ export const PdfPageFrame = memo(function PdfPageFrame({
         <div className={styles.placeholder} style={{ width: pageWidth, height: placeholderHeight }} />
       )}
 
+      {/* Outside the overlay, which would keep the tint from blending with the page beneath. */}
+      {scale > 0 && headings.length > 0 && (
+        <div className={styles.headings} aria-hidden="true">
+          {headings.map((box) => (
+            <span
+              key={box.top}
+              className={styles.heading}
+              style={{ top: px(box.top), left: px(box.left), width: px(box.right - box.left), height: px(box.bottom - box.top) }}
+            />
+          ))}
+        </div>
+      )}
+
       {scale > 0 && (
         <div className={styles.overlay}>
-          {projection.range && (
+          {showAnchorMarkers && projection.range && (
             <div
-              className={styles.range}
+              className={cx(styles.bracket, projection.start && styles.bracketStart, projection.end && styles.bracketEnd)}
               style={{ top: px(projection.range.top), height: px(projection.range.bottom - projection.range.top) }}
+            />
+          )}
+
+          {openFrom && (
+            <div
+              className={cx(styles.openBracket, projection.start ? styles.openDown : styles.openUp)}
+              style={
+                projection.start
+                  ? { top: px(openFrom.top), height: Math.min(OPEN_BRACKET_PX, pageHeight - px(openFrom.top)) }
+                  : {
+                      top: Math.max(0, px(openFrom.bottom) - OPEN_BRACKET_PX),
+                      height: Math.min(OPEN_BRACKET_PX, px(openFrom.bottom)),
+                    }
+              }
             />
           )}
 
           {hoverLine && (
             <div
               className={styles.hoverLine}
-              style={{ top: px(hoverLine.top), height: px(hoverLine.bottom - hoverLine.top) }}
+              style={{ transform: `translateY(${px(hoverLine.top)}px)`, height: px(hoverLine.bottom - hoverLine.top) }}
             >
               <span className={styles.hoverLabel}>L{hoverLine.index + 1}</span>
             </div>
@@ -158,11 +200,13 @@ export const PdfPageFrame = memo(function PdfPageFrame({
                 key={scene.id}
                 type="button"
                 data-overlay-control
-                className={[
-                  styles.sceneBar,
-                  scene.id === activeSceneId ? styles.sceneBarActive : "",
-                ].join(" ")}
-                style={{ top, height: Math.max(10, bottom - top), right: 8 + segment.lane * 10 }}
+                className={cx(
+                  styles.sceneBracket,
+                  segment.isStart && styles.sceneBracketStart,
+                  segment.isEnd && styles.sceneBracketEnd,
+                  scene.id === activeSceneId && styles.sceneBracketActive
+                )}
+                style={{ top, height: Math.max(10, bottom - top), right: SCENE_INSET_PX + segment.lane * SCENE_LANE_PX }}
                 title={`Scene ${timing}`}
                 aria-label={`${readOnly ? "View" : "Edit"} scene ${timing}`}
                 onClick={(event) => {
@@ -170,8 +214,9 @@ export const PdfPageFrame = memo(function PdfPageFrame({
                   onSelectScene(scene);
                 }}
               >
+                <span className={styles.sceneBracketLine} />
                 {segment.isStart && (
-                  <span className={styles.sceneChip}>{formatSecondsToHms(scene.start_time_seconds)}</span>
+                  <span className={styles.sceneTime}>{formatSecondsToHms(scene.start_time_seconds)}</span>
                 )}
               </button>
             );

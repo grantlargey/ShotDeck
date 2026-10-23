@@ -51,7 +51,10 @@ function documentPosition(page, y) {
   return page * POSITION_SCALE + y;
 }
 
-/** Per-page bar segments for saved scenes, with lanes for vertically overlapping scenes. */
+/**
+ * Per-page bar segments for saved scenes, with lanes for vertically
+ * overlapping scenes. Each says whether the scene begins or ends on its page.
+ */
 export function buildSceneSegmentsByPage(scenes, pages) {
   const located = (Array.isArray(scenes) ? scenes : [])
     .map((scene) => ({
@@ -84,7 +87,13 @@ export function buildSceneSegmentsByPage(scenes, pages) {
       const projection = projectScriptLocation(location, pages.get(page));
       if (!projection.range) continue;
       if (!byPage.has(page)) byPage.set(page, []);
-      byPage.get(page).push({ scene, lane, isStart: page === location.start.page, ...projection.range });
+      byPage.get(page).push({
+        scene,
+        lane,
+        isStart: page === location.start.page,
+        isEnd: page === location.end.page,
+        ...projection.range,
+      });
     }
   }
 

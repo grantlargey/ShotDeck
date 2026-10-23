@@ -52,7 +52,13 @@
 .topActions {
   flex: none;
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+/* Begin and End's toggle, in the Midnight blue while the marks show. */
+.topActions .marksShown {
+  color: var(--color-mark);
 }
 
 /* ---------- Workspace: PDF + annotator ---------- */
@@ -103,6 +109,14 @@
   height: 1px;
 }
 
+/* The script page styles' color filters (ScriptPageFilters): defined, never drawn. */
+.pageFilters {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
 /* ---------- Saved scenes ---------- */
 
 .scenes {
@@ -145,8 +159,14 @@
 }
 
 .toastInfo {
-  border-color: var(--color-success-line);
-  color: var(--color-success);
+  border-color: var(--color-line-control);
+  color: var(--color-text);
+}
+
+.toastIcon {
+  flex: none;
+  margin-right: -4px;
+  color: var(--color-mark);
 }
 
 .toastError {
