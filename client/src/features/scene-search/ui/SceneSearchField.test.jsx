@@ -48,6 +48,20 @@ describe("the scene search field", () => {
     expect(screen.queryByRole("button", { name: "Find scenes" })).toBeNull();
   });
 
+  it("opens with the insertion point after its text, wherever the closed field is clicked", () => {
+    const { rerender } = render(<Field open={false} initialValue="a fight" />);
+    field().setSelectionRange(2, 2);
+
+    // The press only focuses the field; the browser doesn't set the insertion point from it.
+    expect(fireEvent.mouseDown(field())).toBe(false);
+    expect(document.activeElement).toBe(field());
+    expect([field().selectionStart, field().selectionEnd]).toEqual([7, 7]);
+
+    // Once open, a click sets it where it lands, as in any field.
+    rerender(<Field open initialValue="a fight" />);
+    expect(fireEvent.mouseDown(field())).toBe(true);
+  });
+
   it("searches for the example on screen from its key, and takes it with →", () => {
     const onSubmit = vi.fn();
     render(<Field onSubmit={onSubmit} />);

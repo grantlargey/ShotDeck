@@ -283,6 +283,23 @@ export function SceneSearchField({
     onFocusChange?.(next);
   }
 
+  // A click on a closed field would set the insertion point wherever it lands in
+  // the field's unseen text, so it only focuses the field.
+  function onMouseDown(event) {
+    if (open) return;
+    event.preventDefault();
+    input.current?.focus();
+  }
+
+  function onFocus(event) {
+    // Opening the field sets the insertion point after what's in it.
+    if (!open) {
+      const end = event.target.value.length;
+      event.target.setSelectionRange(end, end);
+    }
+    focusChange(true);
+  }
+
   return (
     <span
       ref={fieldRef}
@@ -311,7 +328,8 @@ export function SceneSearchField({
         value={value}
         disabled={disabled}
         onChange={(event) => change(event.target.value)}
-        onFocus={() => focusChange(true)}
+        onMouseDown={onMouseDown}
+        onFocus={onFocus}
         onBlur={() => focusChange(false)}
         onKeyDown={onKeyDown}
       />
