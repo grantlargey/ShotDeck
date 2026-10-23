@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { FILM_CREDITS } from "@/entities/film/model/filmCredits.js";
 import { filmPosterProps } from "@/entities/film/model/posterTransition.js";
+import { parseFilmMoment } from "@/entities/script-scene/model/filmTiming.js";
 import { sortStillsByTime } from "@/entities/still/model/stillTimeline.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { cx } from "@/shared/lib/cx.js";
 import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
 import { formatMinutesToHms, formatMomentToHms, normalizeTypedTime } from "@/shared/lib/time.js";
 import { Skeleton } from "@/shared/ui/Skeleton.jsx";
-import { StillTimelineGlance } from "./StillTimeline.jsx";
+import { ScriptControls, ScriptTitlePage } from "./ScriptTitlePage.jsx";
 import styles from "./FilmDetailPage.module.css";
 
 const NO_STILLS = [];
@@ -17,6 +18,10 @@ const BACKDROP_STILL_COUNT = 6;
 // How long each backdrop still holds before the next one fades in.
 const BACKDROP_HOLD_MS = 7000;
 const NO_TURNS = { source: null, ids: [], currentId: null, shownIds: new Set() };
+// A visitor's click lets the cover swing open (FilmDetailPage.module.css) before the script opens.
+const COVER_OPEN_MS = 750;
+// A whole time typed for a new still, as HH:MM:SS with or without a tenth.
+const WHOLE_TIME = /^\d{1,2}:\d{2}:\d{2}(\.\d)?$/;
 
 /**
  * The film's details as the hero sets them: the title, then the facts under
@@ -55,7 +60,7 @@ const SWEEP_STEP_MS = 40;
 
 /**
  * Up to `count` ids of stills with a viewable image, picked at random and put
- * in film order, so the caption's playhead moves forward through the film.
+ * in film order, so the timeline's mark moves forward through the film.
  */
 function pickBackdropIds(stills, count) {
   const ids = stills.filter((row) => row.image_url).map((row) => row.id);
@@ -124,7 +129,7 @@ function useBackdropTurns(stills) {
   };
 }
 
-/** The hero's backdrop stills: each slowly pushes in and then dissolves into the next. */
+/** The hero's backdrop stills: each dissolves into the next. */
 function BackdropStills({ current, mounted }) {
   const [loadedIds, setLoadedIds] = useState(() => new Set());
 
@@ -141,27 +146,6 @@ function BackdropStills({ current, mounted }) {
       onLoad={() => setLoadedIds((value) => new Set(value).add(still.id))}
     />
   ));
-}
-
-/**
- * Where the backdrop still falls in the film, on the stills timeline in
- * miniature; a click opens that still. It shows no text, so its label names
- * the still for screen readers and as a tooltip.
- */
-function BackdropTimeline({ current, stills, runtimeSeconds, onOpenStill }) {
-  const label = `Open the still at ${formatMomentToHms(current.time_seconds)}`;
-
-  return (
-    <button
-      type="button"
-      className={styles.backdropTimeline}
-      onClick={() => onOpenStill?.(current.id)}
-      aria-label={label}
-      title={label}
-    >
-      <StillTimelineGlance stills={stills} runtimeSeconds={runtimeSeconds} stillId={current.id} />
-    </button>
-  );
 }
 
 /**
@@ -222,24 +206,152 @@ function DetailField({ detail, value, edit, multiline, sweepDelayMs, caret }) {
 }
 
 /**
- * Full-width film hero. A few of the film's stills, picked at random, take
- * turns as the backdrop in film order, and the stills timeline in miniature,
- * along the hero's bottom line, marks where each falls; without any stills, a
- * blurred copy of the cover stands in. Only details that are filled in show.
- *
- * For an admin (`edit`, null for visitors) the cover is bound like a script.
- * Pointed at, it lifts off the page beneath and dotted lines sweep under the
- * title and facts, ending in a blinking caret. Clicked, it swings open: every
- * detail, filled in or not, becomes an input in place, the caret becomes the
- * last one's, and Save and Discard stand in for the timeline. Enter or a click
- * on the open cover saves; Esc discards. `edit.values` holds the details being
- * typed while the editor is open and is null while it's closed.
+ * With the cover open, a time typed after the stills count adds a still
+ * there: Enter opens the add dialog with the time filled in, and a time the
+ * film can't hold is marked on the field instead. Once a whole time is typed,
+ * `onPending` gets it in seconds so the timeline can mark where the still
+ * would go, and null when there's none. The first Esc clears the time; the
+ * next closes the cover, as it does from the other details.
  */
-export function FilmHeader({ film, coverUrl, stills = NO_STILLS, onOpenStill, edit = null }) {
+function StillTimeField({ runtimeSeconds, saving, onAdd, onPending, onDiscard }) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState("");
+
+  // The mark goes with the field.
+  useEffect(() => () => onPending?.(null), [onPending]);
+
+  function pendingSeconds(value) {
+    if (!WHOLE_TIME.test(value.trim())) return null;
+    return parseFilmMoment(value, runtimeSeconds).seconds ?? null;
+  }
+
+  function change(value) {
+    setText(value);
+    setError("");
+    onPending?.(pendingSeconds(value));
+  }
+
+  function handleKeyDown(event) {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (saving) return;
+      const { seconds, error: problem } = parseFilmMoment(text, runtimeSeconds);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+      change("");
+      onAdd(formatMomentToHms(seconds));
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      if (text) change("");
+      else if (!saving) onDiscard();
+    }
+  }
+
+  return (
+    <span className={cx(styles.stillTime, error && styles.stillTimeInvalid)}>
+      <span className={styles.stillTimePlus} aria-hidden="true">
+        +
+      </span>
+      <input
+        className={styles.stillTimeInput}
+        aria-label="Add a still at"
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? "film-still-time-error" : undefined}
+        title={error || undefined}
+        placeholder="HH:MM:SS"
+        spellCheck={false}
+        autoComplete="off"
+        value={text}
+        readOnly={saving}
+        onChange={(event) => change(event.target.value)}
+        onFocus={(event) => onPending?.(pendingSeconds(event.target.value))}
+        onBlur={() => onPending?.(null)}
+        onKeyDown={handleKeyDown}
+      />
+      {error && (
+        <span id="film-still-time-error" className={styles.visuallyHidden} role="alert">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The film's cover, bound like a script over its title page. Pointed at, it
+ * lifts off the page; opened, it swings to stand edge-on at the spine, so the
+ * title page shows whole while the cover keeps to the column. `label` names
+ * what a click does, and `tip`, when given, shows it above the cover instead
+ * of the browser's tooltip. `children` sit on the title page.
+ */
+function BoundCover({ film, poster, label, tip, disabled, onClick, children }) {
+  return (
+    <div className={styles.cover}>
+      <ScriptTitlePage film={film} />
+      <button
+        type="button"
+        className={styles.coverButton}
+        aria-label={label}
+        title={tip ? undefined : label}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        <span className={styles.coverFlap}>
+          {poster}
+          {/* The cover's inside, which faces the viewer as it stands open. */}
+          <span className={styles.coverInside} aria-hidden="true" />
+        </span>
+      </button>
+      {tip && (
+        <span className={styles.coverTip} aria-hidden="true">
+          {tip}
+        </span>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Full-width film hero. A few of the film's stills, picked at random, take
+ * turns as the backdrop in film order, and `onBackdropChange` hears which one
+ * is on screen so the stills timeline can mark it; without any stills, a
+ * blurred copy of the cover stands in. The backdrop runs on under the
+ * timeline and fades into the page there. Only details that are filled in
+ * show. The eyebrow counts the film's stills (`stillCount`, null until they
+ * load).
+ *
+ * The cover is bound like a script over the script's title page. For a
+ * visitor it opens the script (`script.onOpen`) when the film has one
+ * (`script.current`): pointed at, it lifts with a tooltip saying so, and a
+ * click swings it open on the way. Without a script it stays a picture.
+ *
+ * For an admin (`edit`, null for visitors) the cover is the editor. Pointed
+ * at, it lifts off the page beneath and dotted lines sweep under the title and
+ * facts, ending in a blinking caret. Clicked, it swings open to the title
+ * page, which holds the script's controls (`script`), and every detail, filled
+ * in or not, becomes an input in place; the caret becomes the last one's, and
+ * Save and Discard appear under the facts. A time typed after the stills count
+ * adds a still there (`edit.onAddStill`, with `edit.onPendingStill` hearing it
+ * as it's typed). Enter or a click on the open cover saves; Esc discards.
+ * `edit.values` holds the details being typed while the editor is open and is
+ * null while it's closed.
+ */
+export function FilmHeader({
+  film,
+  coverUrl,
+  stills = NO_STILLS,
+  stillCount = null,
+  script = null,
+  onBackdropChange,
+  edit = null,
+}) {
   const backdrop = useBackdropTurns(stills);
+  const backdropId = backdrop.current?.id ?? null;
   const runtimeSeconds = Number(film.runtime_minutes) * 60 || 0;
-  // The timeline needs a runtime to place the still on.
-  const showTimeline = Boolean(backdrop.current) && runtimeSeconds > 0;
   const editing = Boolean(edit?.values);
   const shownFacts = FACTS.filter((fact) => fact.format(film));
   const facts = editing ? FACTS : shownFacts;
@@ -247,9 +359,27 @@ export function FilmHeader({ film, coverUrl, stills = NO_STILLS, onOpenStill, ed
   const caretField = (shownFacts.at(-1) ?? TITLE).field;
   // The stills load after the header, so the cover fades in rather than popping when stills replace it.
   const [coverLoaded, setCoverLoaded] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
+  // A visitor's click on the cover, swinging it open on the way to the script.
+  const [opening, setOpening] = useState(false);
+  const openScriptRef = useRef(null);
   const bodyRef = useRef(null);
   const titleRef = useRef(null);
   const wasEditingRef = useRef(false);
+
+  useEffect(() => {
+    onBackdropChange?.(backdropId);
+  }, [backdropId, onBackdropChange]);
+
+  useEffect(() => {
+    openScriptRef.current = script?.onOpen;
+  });
+
+  useEffect(() => {
+    if (!opening) return undefined;
+    const timer = window.setTimeout(() => openScriptRef.current?.(), COVER_OPEN_MS);
+    return () => window.clearTimeout(timer);
+  }, [opening]);
 
   // Closing the editor takes away the input or button that had focus. Focus
   // goes to the title, which reads out what was kept, rather than back to the
@@ -270,53 +400,100 @@ export function FilmHeader({ film, coverUrl, stills = NO_STILLS, onOpenStill, ed
     input.setSelectionRange(input.value.length, input.value.length);
   }
 
+  function readScript() {
+    if (reducedMotion) script.onOpen();
+    else setOpening(true);
+  }
+
   function detailValue(detail) {
     return editing ? edit.values[detail.field] : detail.format(film);
   }
 
+  const readable = !edit && Boolean(script?.current);
   const poster = coverUrl ? (
-    <img className={styles.poster} src={coverUrl} alt={edit ? "" : `${film.title} cover`} {...filmPosterProps} />
+    <img
+      className={styles.poster}
+      src={coverUrl}
+      alt={edit || readable ? "" : `${film.title} cover`}
+      {...filmPosterProps}
+    />
   ) : (
     <span className={styles.poster} aria-hidden="true" />
   );
-  const coverLabel = editing ? "Save details" : "Edit details";
+
+  let cover = poster;
+  if (edit) {
+    cover = (
+      <BoundCover
+        film={film}
+        poster={poster}
+        label={editing ? "Save details" : "Edit details and script"}
+        disabled={edit.saving}
+        onClick={editing ? () => edit.onSave() : openEditor}
+      >
+        {editing && script && (
+          <ScriptControls
+            current={script.current}
+            file={script.file}
+            saving={script.saving}
+            onOpen={script.onOpen}
+            onFileChange={script.onFileChange}
+            onUpload={script.onUpload}
+          />
+        )}
+      </BoundCover>
+    );
+  } else if (readable) {
+    cover = (
+      <BoundCover
+        film={film}
+        poster={poster}
+        label="Read the full script"
+        tip="Read the full script"
+        disabled={opening}
+        onClick={readScript}
+      />
+    );
+  }
 
   return (
     <section className={styles.hero}>
-      {backdrop.current ? (
-        <BackdropStills current={backdrop.current} mounted={backdrop.mounted} />
-      ) : (
-        coverUrl && (
-          <img
-            className={cx(styles.backdrop, styles.backdropBlurred, coverLoaded && styles.backdropLoaded)}
-            src={coverUrl}
-            alt=""
-            onLoad={() => setCoverLoaded(true)}
-          />
-        )
-      )}
-
-      <div className={cx(styles.heroInner, editing && styles.heroEditing)}>
-        {edit ? (
-          <div className={styles.cover}>
-            <span className={styles.coverPage} aria-hidden="true" />
-            <button
-              type="button"
-              className={styles.coverButton}
-              aria-label={coverLabel}
-              title={coverLabel}
-              disabled={edit.saving}
-              onClick={editing ? () => edit.onSave() : openEditor}
-            >
-              <span className={styles.coverFlap}>{poster}</span>
-            </button>
-          </div>
+      <div className={styles.backdrops} aria-hidden="true">
+        {backdrop.current ? (
+          <BackdropStills current={backdrop.current} mounted={backdrop.mounted} />
         ) : (
-          poster
+          coverUrl && (
+            <img
+              className={cx(styles.backdrop, styles.backdropBlurred, coverLoaded && styles.backdropLoaded)}
+              src={coverUrl}
+              alt=""
+              onLoad={() => setCoverLoaded(true)}
+            />
+          )
         )}
+      </div>
+
+      <div className={cx(styles.heroInner, editing && styles.heroEditing, opening && styles.heroOpening)}>
+        {cover}
 
         <div ref={bodyRef} className={styles.heroBody}>
-          <p className={styles.eyebrow}>Film</p>
+          <p className={styles.eyebrow}>
+            Film
+            {stillCount !== null && (
+              <span className={styles.eyebrowStills}>
+                {stillCount} {stillCount === 1 ? "still" : "stills"}
+              </span>
+            )}
+            {editing && edit.onAddStill && (
+              <StillTimeField
+                runtimeSeconds={runtimeSeconds}
+                saving={edit.saving}
+                onAdd={edit.onAddStill}
+                onPending={edit.onPendingStill}
+                onDiscard={edit.onDiscard}
+              />
+            )}
+          </p>
           <h1 ref={titleRef} className={styles.heroTitle} tabIndex={edit ? -1 : undefined}>
             {edit ? (
               <DetailField
@@ -353,38 +530,26 @@ export function FilmHeader({ film, coverUrl, stills = NO_STILLS, onOpenStill, ed
               ))}
             </dl>
           )}
-          {(showTimeline || edit) && (
-            <div className={styles.heroFoot}>
-              {showTimeline && (
-                <BackdropTimeline
-                  current={backdrop.current}
-                  stills={stills}
-                  runtimeSeconds={runtimeSeconds}
-                  onOpenStill={onOpenStill}
-                />
-              )}
-              {editing && (
-                <div className={styles.editActions}>
-                  <button
-                    type="button"
-                    className={cx(styles.editAction, styles.editSave)}
-                    title="Save (Enter)"
-                    disabled={edit.saving}
-                    onClick={() => edit.onSave()}
-                  >
-                    {edit.saving ? "Saving…" : "Save"}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.editAction}
-                    title="Discard (Esc)"
-                    disabled={edit.saving}
-                    onClick={() => edit.onDiscard()}
-                  >
-                    Discard
-                  </button>
-                </div>
-              )}
+          {editing && (
+            <div className={styles.editActions}>
+              <button
+                type="button"
+                className={cx(styles.editAction, styles.editSave)}
+                title="Save (Enter)"
+                disabled={edit.saving}
+                onClick={() => edit.onSave()}
+              >
+                {edit.saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                className={styles.editAction}
+                title="Discard (Esc)"
+                disabled={edit.saving}
+                onClick={() => edit.onDiscard()}
+              >
+                Discard
+              </button>
             </div>
           )}
         </div>
@@ -402,6 +567,7 @@ export function FilmHeaderSkeleton({ posterUrl: handedUrl = "", posterKey }) {
   const posterUrl = useSignedMediaUrl(posterKey, handedUrl);
   return (
     <section className={styles.hero} aria-hidden="true">
+      <div className={styles.backdrops} />
       <div className={styles.heroInner}>
         {posterUrl ? (
           <img className={styles.poster} src={posterUrl} alt="" {...filmPosterProps} />

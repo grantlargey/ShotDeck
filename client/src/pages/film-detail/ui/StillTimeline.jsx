@@ -8,6 +8,7 @@ import {
 import { getStillThumbnail } from "@/entities/still/model/still.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
 import { formatMomentToHms, formatSecondsToHms } from "@/shared/lib/time.js";
 import styles from "./StillTimeline.module.css";
 
@@ -16,6 +17,14 @@ const PX_PER_BAR = 6;
 const MIN_BARS = 24;
 const BAR_MIN_HEIGHT = 5;
 const BAR_MAX_HEIGHT = 24;
+
+// The hero's mark steps along the bars to each new still over the 1.8s the
+// backdrop takes to dissolve (FilmDetailPage.module.css), a bar at a time.
+const HERO_STEP_MS = 1800;
+// Starting over at an earlier still, it fades out and back in instead.
+const HERO_FADE_MS = 350;
+// A release this close to the mark opens the hero's own still.
+const HERO_HIT_PX = 3;
 
 const KEY_STEPS = new Map([
   ["ArrowRight", 1],
@@ -53,8 +62,49 @@ function useStripBins(stripRef, stills, runtimeSeconds) {
 }
 
 /**
- * One bar per slice of the runtime. Drawn twice (resting and lit), so
- * memoized. Spans only, so the glance can sit inside a button.
+ * The bar the hero's mark stands on, given the bar of the hero's still
+ * (`target`, -1 for none) out of `binCount`. When the hero moves on to a
+ * later still, the mark steps there one bar at a time; when it starts over at
+ * an earlier one, the mark fades out and comes back on that bar. It jumps when
+ * the strip is measured anew or the visitor asks for less motion. `fading` is
+ * true while it is out.
+ */
+function useHeroMark(target, binCount) {
+  const reducedMotion = usePrefersReducedMotion();
+  const [mark, setMark] = useState({ bin: target, target, binCount, fading: false, stepMs: 0 });
+
+  if (mark.target !== target || mark.binCount !== binCount) {
+    const jump = mark.binCount !== binCount || mark.bin < 0 || target < 0 || reducedMotion;
+    setMark(
+      jump
+        ? { bin: target, target, binCount, fading: false, stepMs: 0 }
+        : {
+            bin: mark.bin,
+            target,
+            binCount,
+            fading: target < mark.bin,
+            stepMs: target > mark.bin ? HERO_STEP_MS / (target - mark.bin) : 0,
+          }
+    );
+  }
+
+  useEffect(() => {
+    if (mark.bin === mark.target) return undefined;
+    const timer = mark.fading
+      ? window.setTimeout(() => setMark((current) => ({ ...current, bin: current.target, fading: false })), HERO_FADE_MS)
+      : window.setTimeout(
+          () => setMark((current) => ({ ...current, bin: Math.min(current.target, current.bin + 1) })),
+          Math.max(16, mark.stepMs)
+        );
+    return () => window.clearTimeout(timer);
+  }, [mark]);
+
+  return mark;
+}
+
+/**
+ * One bar per slice of the runtime. Drawn three times (resting, lit, and in
+ * the hero's mark), so memoized.
  */
 const DensityBars = memo(function DensityBars({ bins, className }) {
   const max = Math.max(1, ...bins);
@@ -99,10 +149,18 @@ function StillPreview({ still, index, percent, total }) {
  * arrow keys preview the nearest still; clicking or Enter opens it.
  * `highlightedIndex` (the grid still under the pointer) lights up the bars
  * around that still.
+ *
+ * `heroIndex` is the still behind the film hero: the bar nearest it turns
+ * blue, and steps along the bars to the next still when the hero moves on.
+ * `showHero` false fades the mark out, for when the hero is out of sight.
+ * `pendingSeconds` marks where a still being added would go.
  */
 export function StillTimeline({
   stills,
   highlightedIndex = -1,
+  heroIndex = -1,
+  showHero = true,
+  pendingSeconds = null,
   onSelect,
   runtimeSeconds,
   selectedIndex = -1,
@@ -121,6 +179,14 @@ export function StillTimeline({
   const previewActive = cursor.previewPercent !== null;
   const valueIndex = clampIndex(cursor.index, count);
 
+  // The same slices getTimelineBins counts the hero's still into.
+  const heroBin =
+    heroIndex >= 0 && heroIndex < count && bins.length
+      ? Math.min(bins.length - 1, Math.floor((percentOf(heroIndex) / 100) * bins.length))
+      : -1;
+  const heroMark = useHeroMark(heroBin, bins.length);
+  const heroPercent = heroMark.bin >= 0 ? ((heroMark.bin + 0.5) / bins.length) * 100 : null;
+
   function showStill(index, percent) {
     const next = clampIndex(index, count);
     if (next < 0) return;
@@ -138,6 +204,15 @@ export function StillTimeline({
     const rect = event.currentTarget.getBoundingClientRect();
     if (!rect.width) return 0;
     return Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100));
+  }
+
+  /** The hero's still when a release lands on its mark, or the still nearest the release. */
+  function releasedIndex(event) {
+    const percent = pointerPercent(event);
+    const width = event.currentTarget.getBoundingClientRect().width;
+    const onHero =
+      heroPercent !== null && showHero && heroIndex < count && (Math.abs(percent - heroPercent) / 100) * width <= HERO_HIT_PX;
+    return onHero ? heroIndex : findNearestStillIndex(stills, runtimeSeconds, percent);
   }
 
   function previewAtPointer(event) {
@@ -159,7 +234,7 @@ export function StillTimeline({
   function handlePointerUp(event) {
     if (!draggingRef.current) return;
     draggingRef.current = false;
-    const index = findNearestStillIndex(stills, runtimeSeconds, pointerPercent(event));
+    const index = releasedIndex(event);
     if (event.pointerType !== "mouse") hidePreview();
     if (index >= 0) onSelect(index);
   }
@@ -202,14 +277,19 @@ export function StillTimeline({
   if (liveSpot !== null && liveSpot !== restingSpot) setRestingSpot(liveSpot);
   const spot = liveSpot ?? restingSpot;
 
+  const style = {};
+  if (spot !== null) style["--spot"] = `${spot}%`;
+  if (heroPercent !== null) style["--hero-spot"] = `${heroPercent}%`;
+
   return (
     <div
       className={cx(
         styles.timeline,
         previewStill && styles.previewing,
-        !previewStill && highlightedIndex >= 0 && styles.linked
+        !previewStill && highlightedIndex >= 0 && styles.linked,
+        heroPercent !== null && showHero && !heroMark.fading && styles.heroShown
       )}
-      style={spot === null ? undefined : { "--spot": `${spot}%` }}
+      style={Object.keys(style).length ? style : undefined}
     >
       <div
         ref={stripRef}
@@ -232,11 +312,20 @@ export function StillTimeline({
       >
         <DensityBars bins={bins} className={styles.bars} />
         <DensityBars bins={bins} className={cx(styles.bars, styles.barsLit)} />
+        {heroPercent !== null && <DensityBars bins={bins} className={cx(styles.bars, styles.barsHero)} />}
         {selectedIndex >= 0 && (
           <span className={cx(styles.mark, styles.selectedMark)} style={{ left: `${percentOf(selectedIndex)}%` }} />
         )}
         {previewStill && (
           <span className={cx(styles.mark, styles.playhead)} style={{ left: `${percentOf(cursor.index)}%` }} />
+        )}
+        {pendingSeconds !== null && (
+          <span
+            className={cx(styles.mark, styles.pendingMark)}
+            style={{ left: `${getTimelinePositionPercent({ time_seconds: pendingSeconds }, runtimeSeconds)}%` }}
+          >
+            <span className={styles.pendingLabel}>+ {formatMomentToHms(pendingSeconds)}</span>
+          </span>
         )}
       </div>
 
@@ -271,33 +360,5 @@ export function StillTimeline({
         <span className={cx(styles.label, styles.labelEnd)}>{formatSecondsToHms(runtimeSeconds)}</span>
       </div>
     </div>
-  );
-}
-
-/**
- * The timeline's strip in miniature, to look at rather than use: the same
- * density bars, lit around one still with the playhead on it. When `stillId`
- * changes, the light and the playhead glide to the new still. The film hero
- * shows it along its bottom line.
- */
-export function StillTimelineGlance({ stills, runtimeSeconds, stillId, className }) {
-  const stripRef = useRef(null);
-  const bins = useStripBins(stripRef, stills, runtimeSeconds);
-  const spot = getTimelinePositionPercent(
-    stills.find((row) => row.id === stillId),
-    runtimeSeconds
-  );
-
-  return (
-    <span
-      ref={stripRef}
-      className={cx(styles.strip, styles.glance, className)}
-      style={{ "--spot": `${spot}%` }}
-      aria-hidden="true"
-    >
-      <DensityBars bins={bins} className={styles.bars} />
-      <DensityBars bins={bins} className={cx(styles.bars, styles.barsLit)} />
-      <span className={cx(styles.mark, styles.playhead)} />
-    </span>
   );
 }

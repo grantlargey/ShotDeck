@@ -14,7 +14,7 @@ import styles from "./AddStillDialog.module.css";
 /**
  * Adding a still to the film. The dialog owns its form, its validation, its
  * busy and error state, and the save; the page decides only when it is open.
- * Mount it to open it: each mount starts an empty form on a fresh still save,
+ * Mount it to open it: each mount starts a new form on a fresh still save,
  * and a retry after a failure reuses that save, so the image goes up once and
  * the still keeps the identity the first attempt sent.
  *
@@ -24,9 +24,10 @@ import styles from "./AddStillDialog.module.css";
  * reports into it.
  *
  * `runtimeSeconds` plus one minute caps the timestamp; 0 means it is unknown.
+ * `initialTime` starts the timestamp, as typed in the film hero.
  */
-export function AddStillDialog({ filmId, runtimeSeconds, onAdded, onClose }) {
-  const [time, setTime] = useState("");
+export function AddStillDialog({ filmId, runtimeSeconds, initialTime = "", onAdded, onClose }) {
+  const [time, setTime] = useState(initialTime);
   const [file, setFile] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

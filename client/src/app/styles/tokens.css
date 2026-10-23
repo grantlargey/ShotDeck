@@ -72,6 +72,11 @@
   --anchor-start: #e879f9;
   --anchor-end: #5cd0ff;
 
+  /* The stills timeline's mark for the still behind the film hero: the
+     Midnight page style's heading blue, apart from the white hover light
+     and the accent of the still open in the viewer. */
+  --color-hero-still: #8bb6ff;
+
   /* Type */
   /* Everything else that's read: navigation, instructions, buttons and fields. */
   --font-text: "Newsreader", Georgia, serif;

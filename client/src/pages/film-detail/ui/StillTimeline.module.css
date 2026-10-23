@@ -47,13 +47,6 @@
   background: var(--color-line);
 }
 
-/* A registered percentage, so the glance can glide the band from one still to the next. */
-@property --spot {
-  syntax: "<percentage>";
-  inherits: true;
-  initial-value: 0%;
-}
-
 /* The same bars in full white, masked to a soft band around --spot. */
 .barsLit {
   opacity: 0;
@@ -90,6 +83,37 @@
   opacity: 0.7;
 }
 
+/* The still behind the film hero: the same bars in its blue, masked to a
+   window a bar wide around --hero-spot, so only the nearest bar shows. It
+   sits over the white light and stays while the pointer previews. */
+.barsHero {
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent calc(var(--hero-spot, 0%) - 4px),
+    #000 calc(var(--hero-spot, 0%) - 2px),
+    #000 calc(var(--hero-spot, 0%) + 2px),
+    transparent calc(var(--hero-spot, 0%) + 4px)
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent calc(var(--hero-spot, 0%) - 4px),
+    #000 calc(var(--hero-spot, 0%) - 2px),
+    #000 calc(var(--hero-spot, 0%) + 2px),
+    transparent calc(var(--hero-spot, 0%) + 4px)
+  );
+}
+
+.barsHero .bar,
+.barsHero .barEmpty {
+  background: var(--color-hero-still);
+}
+
+.heroShown .barsHero {
+  opacity: 0.8;
+}
+
 .mark {
   position: absolute;
   pointer-events: none;
@@ -115,6 +139,34 @@
   border-radius: 2px;
   background: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+/* Where a still being added would go, while its time is typed in the hero. */
+.pendingMark {
+  top: -8px;
+  bottom: -4px;
+  z-index: 4;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--color-accent);
+}
+
+.pendingLabel {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  padding: 3px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-family: var(--font-slate);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
 }
 
 /* Opens below the timeline, since the timeline pins under the site header. */
@@ -233,36 +285,6 @@
   transform: none;
 }
 
-/*
- * The glance: the strip at the same scale over a shorter width, to look at
- * rather than use. Its bars stay lit around --spot, which glides when the
- * still changes.
- */
-.glance {
-  --band-core: 8px;
-  --band-reach: 56px;
-  display: block;
-  cursor: inherit;
-  transition: --spot 1.4s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-
-.glance .barsLit {
-  opacity: 1;
-}
-
-.glance .playhead {
-  left: var(--spot);
-}
-
-.glance .bar {
-  transition: background-color var(--transition-fast);
-}
-
-/* Pointed at, the resting bars brighten a step. */
-.glance:hover .bars:not(.barsLit) .bar:not(.barEmpty) {
-  background: var(--color-text-muted);
-}
-
 @media (max-width: 560px) {
   .timeline {
     --preview-width: 168px;
@@ -275,7 +297,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .barsLit,
-  .glance {
+  .barsHero {
     transition: none;
   }
 

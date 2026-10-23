@@ -20,12 +20,10 @@ import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
 import { PlusIcon } from "@/shared/ui/icons.jsx";
-import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
 import { Skeleton } from "@/shared/ui/Skeleton.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
 import { StillTimeline } from "./StillTimeline.jsx";
 import { FilmHeader, FilmHeaderSkeleton } from "./FilmHeader.jsx";
-import { FilmScriptPanel } from "./FilmScriptPanel.jsx";
 import { AddStillDialog } from "./AddStillDialog.jsx";
 import { useStillEdit } from "./useStillEdit.jsx";
 import styles from "./FilmDetailPage.module.css";
@@ -56,18 +54,19 @@ const StillFrameButton = memo(function StillFrameButton({ still, onHover, onOpen
 });
 
 /**
- * The grid still under the pointer or keyboard focus, kept outside React
- * state: hovering re-renders only the timeline that marks it, not the page
- * and its hundreds of stills.
+ * Something the stills timeline marks (the grid still under the pointer or
+ * keyboard focus, the still behind the hero, the time of a still being
+ * added), kept outside React state: a change re-renders only the timeline,
+ * not the page and its hundreds of stills.
  */
-function createHoveredStill() {
-  let stillId = null;
+function createMark() {
+  let value = null;
   const listeners = new Set();
   return {
-    get: () => stillId,
-    set: (nextId) => {
-      if (nextId === stillId) return;
-      stillId = nextId;
+    get: () => value,
+    set: (next) => {
+      if (next === value) return;
+      value = next;
       listeners.forEach((listener) => listener());
     },
     subscribe: (listener) => {
@@ -77,16 +76,54 @@ function createHoveredStill() {
   };
 }
 
-/** The stills timeline, lit around whichever grid still is hovered. */
-function HoverLinkedTimeline({ hoveredStill, stills, ...props }) {
+/**
+ * The stills timeline, lit around whichever grid still is hovered, marking the
+ * still behind the hero and where a still being added would go.
+ */
+function LinkedTimeline({ hoveredStill, heroStill, pendingStill, stills, ...props }) {
   const hoveredId = useSyncExternalStore(hoveredStill.subscribe, hoveredStill.get);
+  const heroId = useSyncExternalStore(heroStill.subscribe, heroStill.get);
+  const pendingSeconds = useSyncExternalStore(pendingStill.subscribe, pendingStill.get);
   return (
     <StillTimeline
       stills={stills}
       highlightedIndex={hoveredId ? stills.findIndex((row) => row.id === hoveredId) : -1}
+      heroIndex={heroId ? stills.findIndex((row) => row.id === heroId) : -1}
+      pendingSeconds={pendingSeconds}
       {...props}
     />
   );
+}
+
+/**
+ * Whether a sticky element is pinned: scrolled up to its sticky offset rather
+ * than sitting where the page puts it. Checked on scroll and resize.
+ */
+function usePinned(element) {
+  const [pinned, setPinned] = useState(false);
+
+  useEffect(() => {
+    if (!element) return undefined;
+    let frame = 0;
+    function check() {
+      frame = 0;
+      const top = Number.parseFloat(getComputedStyle(element).top) || 0;
+      setPinned(element.getBoundingClientRect().top <= top + 0.5);
+    }
+    function schedule() {
+      if (!frame) frame = window.requestAnimationFrame(check);
+    }
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [element]);
+
+  return pinned;
 }
 
 const NO_STILLS = [];
@@ -124,10 +161,17 @@ export default function FilmDetailPage() {
 
   // The still the scene viewer opened on; null while it's closed.
   const [viewerStillId, setViewerStillId] = useState(null);
-  // The grid still under the pointer or keyboard focus, marked on the timeline.
-  const [hoveredStill] = useState(createHoveredStill);
-  // Mounting the add dialog opens it on an empty form; unmounting discards it.
-  const [addingStill, setAddingStill] = useState(false);
+  // What the timeline marks: the grid still under the pointer or keyboard
+  // focus, the still behind the hero, and the time typed for a new still.
+  const [hoveredStill] = useState(createMark);
+  const [heroStill] = useState(createMark);
+  const [pendingStill] = useState(createMark);
+  // The add dialog's starting timestamp, as typed in the hero or empty.
+  // Mounting the dialog opens it on that; unmounting discards it.
+  const [addingStill, setAddingStill] = useState(null);
+  // The pinned timeline gets the page's color; at rest the hero's fade shows through it.
+  const [timelineDock, setTimelineDock] = useState(null);
+  const timelinePinned = usePinned(timelineDock);
 
   const [scriptFile, setScriptFile] = useState(null);
 
@@ -145,7 +189,7 @@ export default function FilmDetailPage() {
 
   /**
    * Reloads the film. The details and the stills list are applied as each
-   * arrives, so the header and script panel don't wait for the slower stills.
+   * arrives, so the header and its script don't wait for the slower stills.
    * Only the latest load's responses apply.
    * The scene viewer stays open across reloads (moving to the nearest still if
    * its still was deleted) and closes once no stills remain.
@@ -205,18 +249,10 @@ export default function FilmDetailPage() {
     stillEdit.reset();
   }
 
+  // The title page asks before a replacement, which deletes every scene
+  // captured from the old PDF and the tags on them.
   async function saveScriptPdf() {
     if (!scriptFile) return;
-    // Scene anchors point into the PDF they were captured from, so replacing it
-    // deletes the script's captured scenes and the tagging on them.
-    if (
-      script &&
-      !window.confirm(
-        "Replace this script? Every scene captured from it, and the tags on those scenes, will be deleted. This can't be undone."
-      )
-    ) {
-      return;
-    }
     setErr("");
 
     try {
@@ -287,7 +323,22 @@ export default function FilmDetailPage() {
         film={film}
         coverUrl={coverUrl}
         stills={stills}
-        onOpenStill={setViewerStillId}
+        stillCount={stillsLoading ? null : stills.length}
+        onBackdropChange={heroStill.set}
+        script={
+          canEdit
+            ? {
+                current: script,
+                file: scriptFile,
+                saving: filmSave.saving,
+                onOpen: openScript,
+                onFileChange: (file) => {
+                  if (file || leaveFilmSave()) setScriptFile(file);
+                },
+                onUpload: saveScriptPdf,
+              }
+            : { current: script, onOpen: openScript }
+        }
         edit={
           canEdit
             ? {
@@ -297,6 +348,8 @@ export default function FilmDetailPage() {
                 onChange: (field, value) => setDetailsDraft((draft) => ({ ...draft, [field]: value })),
                 onSave: submitFilmEdits,
                 onDiscard: cancelFilmEdits,
+                onAddStill: (time) => setAddingStill({ time }),
+                onPendingStill: pendingStill.set,
               }
             : null
         }
@@ -311,34 +364,7 @@ export default function FilmDetailPage() {
           </Callout>
         )}
 
-        <FilmScriptPanel
-          currentScript={script}
-          onOpenScript={openScript}
-          canEdit={canEdit}
-          scriptFile={scriptFile}
-          savingScript={filmSave.saving}
-          onScriptFileChange={(file) => {
-            if (file || leaveFilmSave()) setScriptFile(file);
-          }}
-          onSaveScript={saveScriptPdf}
-        />
-
-        <section aria-labelledby="film-stills-heading" aria-busy={stillsLoading}>
-          <SectionHeading
-            id="film-stills-heading"
-            title="Film stills"
-            count={stillsLoading ? undefined : stills.length}
-            actions={
-              canEdit &&
-              stills.length > 0 && (
-                <Button size="sm" onClick={() => setAddingStill(true)}>
-                  <PlusIcon size={14} />
-                  Add still
-                </Button>
-              )
-            }
-          />
-
+        <section aria-label="Film stills" aria-busy={stillsLoading}>
           {stillsLoading ? (
             !err && <StillsSkeleton />
           ) : stills.length === 0 ? (
@@ -347,7 +373,7 @@ export default function FilmDetailPage() {
               title="No stills yet"
               action={
                 canEdit && (
-                  <Button size="sm" variant="primary" onClick={() => setAddingStill(true)}>
+                  <Button size="sm" variant="primary" onClick={() => setAddingStill({ time: "" })}>
                     <PlusIcon size={14} />
                     Add the first still
                   </Button>
@@ -361,13 +387,17 @@ export default function FilmDetailPage() {
           ) : (
             <>
               {/* Pins under the header while the grid scrolls past. */}
-              <div className={styles.timelineDock}>
-                <HoverLinkedTimeline
+              <div ref={setTimelineDock} className={cx(styles.timelineDock, timelinePinned && styles.timelinePinned)}>
+                <LinkedTimeline
                   hoveredStill={hoveredStill}
+                  heroStill={heroStill}
+                  pendingStill={pendingStill}
                   stills={stills}
                   onSelect={(index) => setViewerStillId(stills[index]?.id ?? null)}
                   runtimeSeconds={runtimeSeconds}
                   selectedIndex={stills.findIndex((row) => row.id === viewerStillId)}
+                  // Once the timeline pins, the hero is out of sight; so is its still's mark.
+                  showHero={!timelinePinned}
                 />
               </div>
               {/* Leaving the grid, not each still, clears the highlight, so it holds across the gaps. */}
@@ -405,8 +435,9 @@ export default function FilmDetailPage() {
         <AddStillDialog
           filmId={id}
           runtimeSeconds={runtimeSeconds}
+          initialTime={addingStill.time}
           onAdded={load}
-          onClose={() => setAddingStill(false)}
+          onClose={() => setAddingStill(null)}
         />
       )}
     </div>

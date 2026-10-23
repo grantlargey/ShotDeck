@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StillTimeline, StillTimelineGlance } from "./StillTimeline.jsx";
+import { StillTimeline } from "./StillTimeline.jsx";
 import styles from "./StillTimeline.module.css";
 
 function stillsAt(...times) {
@@ -322,9 +322,11 @@ describe("still timeline when its still list changes", () => {
   });
 });
 
-describe("still timeline glance", () => {
-  // The glance counts its bars from its width, so this observer reports 360px at once.
+describe("the hero's still on the timeline", () => {
+  // The bars are counted from the strip's width: this observer reports 360px
+  // at once, so the strip has 60 bars, each 1/60 of the runtime.
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -343,33 +345,108 @@ describe("still timeline glance", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+    delete window.matchMedia;
   });
 
-  function renderGlance(stillId) {
-    const view = render(<StillTimelineGlance stills={STILLS} runtimeSeconds={100} stillId={stillId} />);
-    return {
-      glance: view.container.firstChild,
-      rerender: (nextId) => view.rerender(<StillTimelineGlance stills={STILLS} runtimeSeconds={100} stillId={nextId} />),
-    };
+  /** The centre of bar `n` of 60, where the mark stands on it. */
+  const barCentre = (n) => `${((n + 0.5) / 60) * 100}%`;
+  const heroSpot = (timeline) => timeline.style.getPropertyValue("--hero-spot");
+  const heroShown = (timeline) => timeline.classList.contains(styles.heroShown);
+
+  function wait(ms) {
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
   }
 
-  it("draws only the bars, lit around one still, and its playhead, for looking at", () => {
-    const { glance } = renderGlance("still-2");
+  it("stands on the bar the hero's still falls in", () => {
+    const { timeline } = renderTimeline({ heroIndex: 2 });
 
-    expect(glance.getAttribute("aria-hidden")).toBe("true");
-    expect(glance.style.getPropertyValue("--spot")).toBe("60%");
-    expect(glance.querySelectorAll(`.${styles.barsLit} .${styles.bar}`)).toHaveLength(60);
-    expect(glance.querySelector(`.${styles.playhead}`)).not.toBeNull();
-    expect(glance.textContent).toBe("");
-    expect(screen.queryByRole("slider")).toBeNull();
+    expect(heroSpot(timeline)).toBe(barCentre(36));
+    expect(heroShown(timeline)).toBe(true);
+    expect(timeline.querySelector(`.${styles.barsHero}`)).not.toBeNull();
   });
 
-  it("moves its light and playhead to the still it is given", () => {
-    const { glance, rerender } = renderGlance("still-1");
-    expect(glance.style.getPropertyValue("--spot")).toBe("20%");
+  it("draws nothing without a hero still", () => {
+    const { timeline } = renderTimeline();
 
-    rerender("still-3");
-    expect(glance.style.getPropertyValue("--spot")).toBe("100%");
+    expect(heroSpot(timeline)).toBe("");
+    expect(timeline.querySelector(`.${styles.barsHero}`)).toBeNull();
+  });
+
+  it("steps one bar at a time to a later still, over the backdrop's dissolve", () => {
+    const { timeline, rerender } = renderTimeline({ heroIndex: 1 });
+    expect(heroSpot(timeline)).toBe(barCentre(12));
+
+    // 24 bars to go, a step every 1800 / 24 ms.
+    rerender({ heroIndex: 2 });
+    expect(heroSpot(timeline)).toBe(barCentre(12));
+    wait(75);
+    expect(heroSpot(timeline)).toBe(barCentre(13));
+    for (let bar = 14; bar <= 36; bar += 1) wait(75);
+    expect(heroSpot(timeline)).toBe(barCentre(36));
+    wait(75);
+    expect(heroSpot(timeline)).toBe(barCentre(36));
+    expect(heroShown(timeline)).toBe(true);
+  });
+
+  it("fades out and back in on an earlier still, instead of running back across the film", () => {
+    const { timeline, rerender } = renderTimeline({ heroIndex: 3 });
+    expect(heroSpot(timeline)).toBe(barCentre(59));
+
+    rerender({ heroIndex: 1 });
+    expect(heroShown(timeline)).toBe(false);
+    expect(heroSpot(timeline)).toBe(barCentre(59));
+    wait(350);
+    expect(heroSpot(timeline)).toBe(barCentre(12));
+    expect(heroShown(timeline)).toBe(true);
+  });
+
+  it("jumps to the next still when the visitor asks for less motion", () => {
+    window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
+    const { timeline, rerender } = renderTimeline({ heroIndex: 1 });
+
+    rerender({ heroIndex: 2 });
+    expect(heroSpot(timeline)).toBe(barCentre(36));
+  });
+
+  it("goes out of sight with the hero, and stays put", () => {
+    const { timeline, rerender } = renderTimeline({ heroIndex: 2 });
+
+    rerender({ heroIndex: 2, showHero: false });
+    expect(heroShown(timeline)).toBe(false);
+    expect(heroSpot(timeline)).toBe(barCentre(36));
+  });
+
+  it("opens the hero's own still from a click on its mark, even with another still nearer", () => {
+    // The hero's still at 59.9 falls in bar 35, centred at 59.17%, nearer the still at 59.2.
+    const stills = stillsAt(0, 59.2, 59.9, 100);
+    const { strip, onSelect } = renderTimeline({ stills, heroIndex: 2 });
+
+    fireEvent.pointerDown(strip, { pointerType: "mouse", pointerId: 1, clientX: 159.17 });
+    fireEvent.pointerUp(strip, { pointerType: "mouse", pointerId: 1, clientX: 159.17 });
+    expect(onSelect).toHaveBeenLastCalledWith(2);
+
+    fireEvent.pointerDown(strip, { pointerType: "mouse", pointerId: 1, clientX: 158.5 });
+    fireEvent.pointerUp(strip, { pointerType: "mouse", pointerId: 1, clientX: 155 });
+    expect(onSelect).toHaveBeenLastCalledWith(1);
+  });
+});
+
+describe("a still being added", () => {
+  it("marks where it would go, with its time", () => {
+    const { timeline } = renderTimeline({ pendingSeconds: 50.5 });
+
+    const mark = timeline.querySelector(`.${styles.pendingMark}`);
+    expect(mark.style.left).toBe("50.5%");
+    expect(mark.textContent).toBe("+ 00:00:50.5");
+  });
+
+  it("marks nothing while no time is typed", () => {
+    const { timeline } = renderTimeline({ pendingSeconds: null });
+
+    expect(timeline.querySelector(`.${styles.pendingMark}`)).toBeNull();
   });
 });

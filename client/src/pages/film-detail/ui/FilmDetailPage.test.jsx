@@ -107,7 +107,21 @@ async function renderPage({ admin = true } = {}) {
     </MemoryRouter>
   );
   await screen.findByRole("heading", { name: "Night Diner", level: 1 });
-  await waitFor(() => expect(screen.getByRole("heading", { name: /Film stills/ }).closest("section").getAttribute("aria-busy")).toBe("false"));
+  await waitFor(() => expect(screen.getByRole("region", { name: "Film stills" }).getAttribute("aria-busy")).toBe("false"));
+}
+
+/** Opens the hero's cover: the details become inputs and its title page holds the script. */
+function openCover() {
+  fireEvent.click(screen.getByRole("button", { name: "Edit details and script" }));
+}
+
+/** The script's controls, on the title page the open cover shows. */
+function scriptPage() {
+  return screen.getByRole("group", { name: "Script" });
+}
+
+function pdfFile(name = "script.pdf") {
+  return new File(["%PDF"], name, { type: "application/pdf" });
 }
 
 function viewer() {
@@ -184,8 +198,12 @@ function startHeldRequest(kind) {
   return request;
 }
 
-async function openAddDialog() {
-  fireEvent.click(screen.getByRole("button", { name: "Add still" }));
+/** Types a time after the hero's stills count, with its cover open, and presses Enter. */
+async function openAddDialog(time = "00:01:00") {
+  if (!screen.queryByRole("textbox", { name: "Add a still at" })) openCover();
+  const field = screen.getByRole("textbox", { name: "Add a still at" });
+  fireEvent.change(field, { target: { value: time } });
+  fireEvent.keyDown(field, { key: "Enter" });
   return addDialog();
 }
 
@@ -219,14 +237,13 @@ describe("loading the film's script", () => {
     api.uploadMediaFile.mockResolvedValue("scripts/m1/canceled.pdf");
     api.saveScript.mockRejectedValueOnce(new Error("attachment failed"));
     await renderPage();
-    const section = screen.getByRole("region", { name: /^Script/ });
-    chooseFile(section, new File(["replacement"], "replacement.pdf", { type: "application/pdf" }));
-    fireEvent.click(within(section).getByRole("button", { name: "Upload PDF" }));
+    openCover();
+    chooseFile(scriptPage(), pdfFile("replacement.pdf"));
+    fireEvent.click(within(scriptPage()).getByRole("button", { name: "Upload PDF" }));
     await screen.findByText("Failed to save script PDF.");
     window.confirm.mockReturnValue(true);
-    fireEvent.click(within(section).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(scriptPage()).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("link", { name: "Resume film save" })).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
     fireEvent.change(screen.getByRole("textbox", { name: /^Title/ }), { target: { value: "Updated title" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateFilm).toHaveBeenCalledTimes(1));
@@ -237,7 +254,7 @@ describe("loading the film's script", () => {
   it("does not replay canceled film details when later uploading a script", async () => {
     api.updateFilm.mockRejectedValueOnce(new Error("details failed"));
     await renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
+    openCover();
     fireEvent.change(screen.getByRole("textbox", { name: /^Title/ }), { target: { value: "Canceled title" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("Failed to save film details.");
@@ -245,9 +262,9 @@ describe("loading the film's script", () => {
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     api.uploadMediaFile.mockResolvedValue("scripts/m1/replacement.pdf");
     api.saveScript.mockResolvedValue(SCRIPT);
-    const section = screen.getByRole("region", { name: /^Script/ });
-    chooseFile(section, new File(["replacement"], "replacement.pdf", { type: "application/pdf" }));
-    fireEvent.click(within(section).getByRole("button", { name: "Upload PDF" }));
+    openCover();
+    chooseFile(scriptPage(), pdfFile("replacement.pdf"));
+    fireEvent.click(within(scriptPage()).getByRole("button", { name: "Upload PDF" }));
     expect(await screen.findByRole("button", { name: "Open script" })).toBeTruthy();
     expect(api.updateFilm).toHaveBeenCalledTimes(1);
     expect(api.saveScript).toHaveBeenCalledTimes(1);
@@ -257,35 +274,54 @@ describe("loading the film's script", () => {
     api.uploadMediaFile.mockResolvedValue("scripts/m1/upload.pdf");
     api.saveScript.mockRejectedValueOnce(new Error("attachment failed")).mockResolvedValueOnce(SCRIPT);
     await renderPage();
-    const section = screen.getByRole("region", { name: /^Script/ });
-    chooseFile(section, new File(["script"], "script.pdf", { type: "application/pdf" }));
-    fireEvent.click(within(section).getByRole("button", { name: "Upload PDF" }));
+    openCover();
+    chooseFile(scriptPage(), pdfFile());
+    fireEvent.click(within(scriptPage()).getByRole("button", { name: "Upload PDF" }));
     expect(await screen.findByText("Failed to save script PDF.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Resume film save" }).getAttribute("href")).toBe("/films/m1/edit");
-    fireEvent.click(within(section).getByRole("button", { name: "Upload PDF" }));
+    fireEvent.click(within(scriptPage()).getByRole("button", { name: "Upload PDF" }));
     expect(await screen.findByRole("button", { name: "Open script" })).toBeTruthy();
     expect(api.uploadMediaFile).toHaveBeenCalledTimes(1);
     expect(api.saveScript).toHaveBeenCalledTimes(2);
     expect(api.saveScript).toHaveBeenLastCalledWith({ filmId: "m1", key: "scripts/m1/upload.pdf" });
   });
 
-  it("consumes the one script object and opens it from the script section", async () => {
+  it("asks on the title page before a new PDF replaces the script, and sends nothing until asked", async () => {
+    api.getFilmScript.mockImplementation(async () => ({ ...SCRIPT }));
+    api.uploadMediaFile.mockResolvedValue("scripts/m1/revised.pdf");
+    api.saveScript.mockResolvedValue({ ...SCRIPT, id: "s2" });
+    await renderPage();
+    openCover();
+    chooseFile(scriptPage(), pdfFile("revised.pdf"));
+
+    fireEvent.click(within(scriptPage()).getByRole("button", { name: "Upload PDF" }));
+    expect(within(scriptPage()).getByRole("alert").textContent).toMatch(/^Replace this script\?/);
+    expect(api.uploadMediaFile).not.toHaveBeenCalled();
+
+    fireEvent.click(within(scriptPage()).getByRole("button", { name: "Replace" }));
+    await waitFor(() => expect(api.saveScript).toHaveBeenCalledTimes(1));
+    expect(await within(scriptPage()).findByRole("button", { name: "Replace PDF" })).toBeTruthy();
+    expect(window.confirm).not.toHaveBeenCalled();
+  });
+
+  it("consumes the one script object and opens it from the open cover's title page", async () => {
     api.getFilmScript.mockResolvedValueOnce({ ...SCRIPT });
 
     await renderPage();
+    openCover();
 
     expect(api.getFilmScript).toHaveBeenCalledWith("m1");
-    expect(screen.getByText("Uploaded")).toBeTruthy();
-    const section = screen.getByRole("region", { name: /^Script/ });
-    fireEvent.click(within(section).getByRole("button", { name: "Open script" }));
+    expect(within(scriptPage()).getByText("Script uploaded")).toBeTruthy();
+    fireEvent.click(within(scriptPage()).getByRole("button", { name: "Open script" }));
     expect(await screen.findByText("Opened script")).toBeTruthy();
   });
 
   it("consumes null without keeping a script selection", async () => {
     await renderPage();
+    openCover();
 
     expect(api.getFilmScript).toHaveBeenCalledWith("m1");
-    expect(screen.getByText("Not uploaded")).toBeTruthy();
+    expect(within(scriptPage()).getByText("No script yet")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open script" })).toBeNull();
   });
 });
@@ -293,10 +329,6 @@ describe("loading the film's script", () => {
 describe("editing film details in the hero", () => {
   function detail(name) {
     return screen.getByRole("textbox", { name });
-  }
-
-  function openCover() {
-    fireEvent.click(screen.getByRole("button", { name: "Edit details" }));
   }
 
   /** The film as the API holds it; saving details changes what the next load returns. */
@@ -600,17 +632,30 @@ describe("adding a still", () => {
     expect(queryAddDialog()).toBeNull();
   });
 
-  it("opens with an empty form each time", async () => {
+  it("opens on the time typed in the hero, with a fresh form each time", async () => {
     await renderPage();
-    let dialog = await openAddDialog();
+    let dialog = await openAddDialog("20:00");
+    expect(within(dialog).getByPlaceholderText("HH:MM:SS").value).toBe("00:20:00");
     typeTime(dialog, "12:ab");
     submitAdd();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(queryAddDialog()).toBeNull();
 
-    dialog = await openAddDialog();
-    expect(within(dialog).getByPlaceholderText("HH:MM:SS").value).toBe("");
+    dialog = await openAddDialog("00:21:00.5");
+    expect(within(dialog).getByPlaceholderText("HH:MM:SS").value).toBe("00:21:00.5");
     expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+
+  it("marks the typed time on the timeline until the cover closes", async () => {
+    await renderPage();
+    openCover();
+    const field = screen.getByRole("textbox", { name: "Add a still at" });
+
+    fireEvent.change(field, { target: { value: "00:30:00" } });
+    expect(screen.getByText("+ 00:30:00")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.queryByText("+ 00:30:00")).toBeNull();
   });
 });
 
@@ -949,18 +994,39 @@ describe("visitors", () => {
   it("see the film's details with no way to edit them", async () => {
     await renderPage({ admin: false });
 
-    expect(screen.queryByRole("button", { name: "Edit details" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit details and script" })).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getByText("Runtime").nextElementSibling.textContent).toBe("02:00:00");
+  });
+
+  it("see how many stills the film has, in the hero", async () => {
+    await renderPage({ admin: false });
+
+    expect(screen.getByText("2 stills")).toBeTruthy();
   });
 
   it("get no still editing controls", async () => {
     await renderPage({ admin: false });
 
-    expect(screen.queryByRole("button", { name: "Add still" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Add a still at" })).toBeNull();
     openStill("00:05:00");
     expect(within(viewer()).queryByRole("button", { name: "Edit" })).toBeNull();
     expect(within(viewer()).queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("can't open the cover while the film has no script", async () => {
+    await renderPage({ admin: false });
+
+    expect(screen.queryByRole("button", { name: "Read the full script" })).toBeNull();
+  });
+
+  it("open the film's script from its cover", async () => {
+    api.getFilmScript.mockResolvedValueOnce({ ...SCRIPT });
+    await renderPage({ admin: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "Read the full script" }));
+
+    expect(await screen.findByText("Opened script")).toBeTruthy();
   });
 });
 import { webcrypto } from "node:crypto";

@@ -1,15 +1,32 @@
+/* The hero's backdrop runs on under the stills timeline (see .backdrops); the
+   page is its stacking context, so it stays above the page's own background. */
 .page {
+  position: relative;
+  z-index: 0;
   padding-bottom: 64px;
 }
 
 /* ---------- Hero ---------- */
 
+/* --fade-under: how far the backdrop runs on below the hero, under the stills
+   timeline, finishing its fade into the page just past the timeline's scale. */
 .hero {
+  --fade-under: 150px;
   position: relative;
-  overflow: hidden;
-  border-bottom: 1px solid var(--color-line);
-  background: var(--color-bg-deep);
   padding-top: 70px;
+}
+
+/* The film's stills taking turns, or a blurred cover. It sits under the whole
+   page so it can fade out beneath the timeline instead of ending at a line. */
+.backdrops {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: 0;
+  bottom: calc(-1 * var(--fade-under));
+  left: 0;
+  overflow: hidden;
+  background: var(--color-bg-deep);
 }
 
 .backdrop {
@@ -36,37 +53,41 @@
   opacity: 0.4;
 }
 
-/* The stills take turns: each dissolves in and pushes in slowly while it holds, and eases back as it fades out. */
+/* The stills take turns, each dissolving into the next. */
 .backdropStill {
-  transform: scale(1.02);
-  transition:
-    opacity 1.8s ease,
-    transform 9s linear;
+  transition: opacity 1.8s ease;
 }
 
-.backdropStill.backdropLoaded {
-  transform: scale(1.12);
-}
-
-/* Darkens the side the text sits on and fades the bottom into the page. */
-.hero::after {
+/* Darkens behind the header and the side the text sits on, then fades into the
+   page's own color just below the timeline, like the home hero. */
+.backdrops::after {
   content: "";
   position: absolute;
   inset: 0;
   background:
+    linear-gradient(
+      0deg,
+      var(--color-bg) 0,
+      var(--color-bg) 8px,
+      color-mix(in srgb, var(--color-bg) 82%, transparent) 96px,
+      color-mix(in srgb, var(--color-bg) 46%, transparent) 280px,
+      transparent 470px
+    ),
     linear-gradient(
       90deg,
       color-mix(in srgb, var(--color-bg-deep) 92%, transparent) 0%,
       color-mix(in srgb, var(--color-bg-deep) 60%, transparent) 55%,
       color-mix(in srgb, var(--color-bg-deep) 25%, transparent) 100%
     ),
-    linear-gradient(180deg, transparent 55%, var(--color-bg) 100%);
+    linear-gradient(180deg, color-mix(in srgb, var(--color-bg-deep) 55%, transparent) 0, transparent 190px);
 }
 
 /* Tall enough that a good slice of the backdrop shows above the poster. The
    site header floats over the hero's top, so the hero runs up behind it by its
-   height and the poster and details stay below it. */
+   height and the poster and details stay below it. --cover-width sizes the
+   poster and the bound cover. */
 .heroInner {
+  --cover-width: 240px;
   position: relative;
   z-index: 1;
   max-width: var(--page-max-width);
@@ -81,16 +102,18 @@
 .poster {
   flex: none;
   display: block;
-  width: 240px;
+  width: var(--cover-width);
   aspect-ratio: 2 / 3;
   border: 1px solid var(--color-line-strong);
   border-radius: var(--radius-md);
   background: linear-gradient(145deg, var(--color-surface-raised), var(--color-surface));
   object-fit: cover;
   box-shadow: var(--shadow-modal);
+  transition: width 0.5s ease;
 }
 
 .heroBody {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: grid;
@@ -105,6 +128,12 @@
   font-weight: 700;
   letter-spacing: var(--tracking-slate);
   text-transform: uppercase;
+}
+
+/* "Film · 531 stills" */
+.eyebrowStills::before {
+  content: "\00b7";
+  margin: 0 0.7em;
 }
 
 .heroTitle {
@@ -155,43 +184,11 @@
   font-family: var(--font-slate);
 }
 
-/* The stills timeline in miniature, standing on the hero's bottom line. Save
-   and Discard take its place while the details are open, so an admin's row
-   keeps its height even without a timeline. */
-.heroFoot {
-  position: relative;
-  min-height: 28px;
-  margin-top: 6px;
-  display: flex;
-}
-
-.backdropTimeline {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  transition:
-    opacity 0.3s ease 0.2s,
-    visibility 0s;
-}
-
-.backdropTimeline:focus-visible {
-  outline-offset: 8px;
-}
-
-.heroEditing .backdropTimeline {
-  opacity: 0;
-  visibility: hidden;
-  transition:
-    opacity 0.2s ease,
-    visibility 0s 0.2s;
-}
-
+/* Save and Discard: small capitals in the room under the facts, so opening the
+   cover moves nothing. */
 .editActions {
   position: absolute;
-  top: 0;
+  top: calc(100% + 6px);
   left: 0;
   height: 28px;
   display: flex;
@@ -245,25 +242,151 @@
   color: var(--color-info);
 }
 
-/* ---------- Editing the details in place ---------- */
+/* A time typed after the stills count, to add a still there; set like the eyebrow it sits in. */
+.stillTime {
+  position: relative;
+  margin-left: 16px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  animation: edit-actions-in 0.3s ease 0.45s both;
+}
 
-/* The cover is bound like a script, over its title page. */
+.stillTime::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -6px;
+  left: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--color-accent) 82%, #000);
+  pointer-events: none;
+}
+
+.stillTime:focus-within::after {
+  height: 2px;
+  background: var(--color-accent);
+}
+
+.stillTimeInvalid::after,
+.stillTimeInvalid:focus-within::after {
+  height: 2px;
+  background: var(--color-danger);
+}
+
+.stillTimePlus {
+  color: var(--color-accent);
+}
+
+.stillTimeInput {
+  width: 10.6ch;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  letter-spacing: inherit;
+  caret-color: var(--color-accent);
+  outline: none;
+}
+
+.stillTimeInput::placeholder {
+  color: var(--color-text-subtle);
+  opacity: 1;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- The bound cover ---------- */
+
+/* The cover is bound like a script over its title page. */
 .cover {
   position: relative;
   flex: none;
 }
 
-/* The title page under the cover, with the script's pages behind it at the edge. */
-.coverPage {
+/* The title page under the cover, on the paper of the visitor's page style
+   (--color-paper and the scene type tokens), with the script's pages behind
+   it at the edge. Its type scales with the cover. */
+.titlePage {
   position: absolute;
+  z-index: 0;
   inset: 3px 3px 3px 6px;
+  padding: 17% 9% 0;
+  overflow: hidden;
   border-radius: 3px;
-  background: linear-gradient(90deg, #e4e3de, #f3f2ee 70%, #e9e8e3);
+  background: var(--color-paper);
   box-shadow:
-    1px 0 0 #b9b8b2,
-    2px 0 0 #dcdbd5,
-    3px 0 0 #a9a8a2,
-    4px 0 0 #cfcec8;
+    inset 0 0 0 1px var(--scene-paper-edge),
+    1px 0 0 color-mix(in srgb, var(--color-paper) 72%, var(--color-ink)),
+    2px 0 0 color-mix(in srgb, var(--color-paper) 88%, var(--color-ink)),
+    3px 0 0 color-mix(in srgb, var(--color-paper) 64%, var(--color-ink)),
+    4px 0 0 color-mix(in srgb, var(--color-paper) 82%, var(--color-ink));
+  color: var(--color-ink);
+  font-size: calc(var(--cover-width) / 15);
+  line-height: 1.3;
+  text-align: center;
+}
+
+/* Standing open, the cover shades the page beside the spine. */
+.titlePage::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-bg-deep) 34%, transparent),
+    color-mix(in srgb, var(--color-bg-deep) 10%, transparent) 20%,
+    transparent 42%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.heroEditing .titlePage::before,
+.heroOpening .titlePage::before {
+  opacity: 1;
+  transition-delay: 0.35s;
+}
+
+.titlePage p {
+  margin: 0;
+}
+
+.titlePageTitle {
+  color: var(--scene-heading-color);
+  font-family: var(--scene-heading-font);
+  font-size: 1.5em;
+  font-weight: var(--scene-heading-weight);
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  text-transform: var(--scene-caps);
+  overflow-wrap: anywhere;
+}
+
+.titlePage .titlePageBy {
+  margin-top: 1.15em;
+  color: var(--color-ink-muted);
+  font-family: var(--scene-font);
+  font-size: 0.76em;
+  font-style: italic;
+}
+
+.titlePage .titlePageNames {
+  margin-top: 0.4em;
+  font-family: var(--scene-font);
+  font-size: 0.84em;
+  line-height: 1.35;
 }
 
 /* The button itself never turns, so the whole cover answers the pointer while it lifts. */
@@ -287,9 +410,33 @@
 }
 
 .coverFlap {
+  position: relative;
   display: block;
   transform-origin: left center;
+  transform-style: preserve-3d;
   transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The poster faces out; the cover's inside, a little lighter than the page,
+   faces in and catches the light as the cover stands open. */
+.coverFlap .poster {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.coverInside {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-paper) 75%, var(--color-ink)),
+    color-mix(in srgb, var(--color-paper) 92%, var(--color-bg-deep))
+  );
+  box-shadow: inset 0 0 0 1px var(--scene-paper-edge);
+  transform: rotateY(180deg);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 .coverButton:hover .coverFlap,
@@ -297,11 +444,199 @@
   transform: rotateY(-16deg);
 }
 
+/* Opened, the cover swings to stand edge-on at the spine: the title page shows
+   whole, and the cover keeps to the column at any width. */
 .heroEditing .coverFlap,
 .heroEditing .coverButton:hover .coverFlap,
-.heroEditing .coverButton:focus-visible .coverFlap {
-  transform: rotateY(-34deg);
+.heroEditing .coverButton:focus-visible .coverFlap,
+.heroOpening .coverFlap,
+.heroOpening .coverButton:hover .coverFlap,
+.heroOpening .coverButton:focus-visible .coverFlap {
+  transform: rotateY(-90deg);
+  transition-duration: 0.85s;
+  transition-timing-function: cubic-bezier(0.45, 0.05, 0.2, 1);
 }
+
+/* The open cover's button no longer covers the title page's controls; the
+   standing cover itself still saves. */
+.heroEditing .coverButton {
+  pointer-events: none;
+}
+
+.heroEditing .coverFlap {
+  pointer-events: auto;
+}
+
+/* For visitors, a tooltip above the cover says where it goes. */
+.coverTip {
+  position: absolute;
+  bottom: calc(100% + 22px);
+  left: 50%;
+  z-index: 2;
+  padding: 7px 11px;
+  border: 1px solid var(--color-line-control);
+  border-radius: var(--radius-sm);
+  background: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+  pointer-events: none;
+}
+
+.coverTip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  border-right: 1px solid var(--color-line-control);
+  border-bottom: 1px solid var(--color-line-control);
+  background: var(--color-popover);
+  transform: rotate(45deg);
+}
+
+.cover:has(.coverButton:hover) .coverTip,
+.cover:has(.coverButton:focus-visible) .coverTip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-delay: 0.2s;
+}
+
+.heroOpening .cover .coverTip {
+  opacity: 0;
+  transition-delay: 0s;
+}
+
+/* The script, on the title page while the cover stands open. */
+.scriptControls {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  left: 6px;
+  z-index: 1;
+  padding: 0 9% 9%;
+  display: grid;
+  gap: 0.55em;
+  color: var(--color-ink);
+  font-size: calc(var(--cover-width) / 15);
+  line-height: 1.3;
+  text-align: center;
+  animation: edit-actions-in 0.35s ease 0.55s both;
+}
+
+.scriptControls p {
+  margin: 0;
+}
+
+.scriptStatus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55em;
+  color: var(--color-ink-muted);
+  font-family: var(--font-slate);
+  font-size: 0.64em;
+  font-weight: 700;
+  letter-spacing: var(--tracking-slate);
+  text-transform: uppercase;
+}
+
+.scriptDot {
+  flex: none;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 0.22em var(--color-success-soft);
+}
+
+.scriptDotEmpty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--color-ink-muted);
+}
+
+.scriptDotBusy {
+  background: var(--color-accent);
+  box-shadow: 0 0 0 0.22em var(--color-accent-soft);
+  animation: script-busy 1s ease-in-out infinite;
+}
+
+@keyframes script-busy {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.scriptFile {
+  overflow: hidden;
+  font-size: 0.74em;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scriptWarning {
+  font-size: 0.7em;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.scriptDrop {
+  padding: 0.7em 0.5em;
+  border: 1px dashed color-mix(in srgb, var(--color-ink) 34%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-muted);
+  font-family: var(--scene-font);
+  font-size: 0.74em;
+  font-style: italic;
+}
+
+.scriptRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45em;
+}
+
+/* Buttons on the paper: as wide as the page, sized with it, in its ink. */
+.scriptControls .pageButton {
+  width: 100%;
+  height: 2.05em;
+  padding: 0 0.6em;
+  font-size: 0.8em;
+}
+
+.scriptControls .pagePlain {
+  border-color: color-mix(in srgb, var(--color-ink) 30%, transparent);
+  background: transparent;
+  color: var(--color-ink);
+}
+
+.scriptControls .pagePlain:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+  background: color-mix(in srgb, var(--color-ink) 7%, transparent);
+}
+
+.scriptControls .pageDanger {
+  border-color: color-mix(in srgb, var(--color-btn-danger) 60%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--color-btn-danger) 55%, var(--color-ink));
+}
+
+.fileNative {
+  display: none;
+}
+
+/* ---------- Editing the details in place ---------- */
 
 .field {
   position: relative;
@@ -464,14 +799,15 @@
   height: 28px;
 }
 
-/* ---------- Content sections ---------- */
+/* ---------- Below the hero ---------- */
 
+/* The stills timeline starts right under the hero, on the tail of its fade. */
 .content {
   max-width: var(--page-max-width);
   margin: 0 auto;
-  padding: 32px var(--page-gutter) 0;
+  padding: 0 var(--page-gutter);
   display: grid;
-  gap: 44px;
+  gap: 16px;
 }
 
 /* A film that didn't load has no hero, so its message starts below the header. */
@@ -479,51 +815,28 @@
   padding-top: calc(var(--sd-nav-height) + 32px);
 }
 
-.scriptRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px 20px;
-}
-
-.scriptStatus {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
-
-.scriptActions {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.fileName {
-  max-width: 260px;
-  overflow: hidden;
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---------- Film stills ---------- */
 
 /* The timeline pins under the site header (or the window top while a phone's
-   header is slid away) and stays until the stills section ends. */
+   header is slid away) and stays until the stills section ends. At rest it lets
+   the hero's fade show through; pinned, it takes the page's color so stills
+   slip under it. */
 .timelineDock {
   position: sticky;
   top: var(--sd-header-offset);
   z-index: 2;
   margin: 0 calc(-1 * var(--page-gutter));
   padding: 14px var(--page-gutter) 0;
-  background: var(--color-bg);
-  transition: top 0.22s ease;
+  transition:
+    top 0.22s ease,
+    background-color 0.2s ease;
 }
 
-/* A short fade so stills slip under the timeline rather than cut off at a line. */
+.timelinePinned {
+  background: var(--color-bg);
+}
+
+/* A short fade so stills slip under the pinned timeline rather than cut off at a line. */
 .timelineDock::after {
   content: "";
   position: absolute;
@@ -532,7 +845,13 @@
   left: 0;
   height: 14px;
   background: linear-gradient(var(--color-bg), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
   pointer-events: none;
+}
+
+.timelinePinned::after {
+  opacity: 1;
 }
 
 .stillGrid {
@@ -610,7 +929,7 @@
 /* Same footprint as the timeline strip and its scale. */
 .skeletonTimeline {
   height: 28px;
-  margin: 4px 0 34px;
+  margin: 18px 0 34px;
 }
 
 .skeletonFrame {
@@ -622,6 +941,7 @@
 
 @media (max-width: 600px) {
   .heroInner {
+    --cover-width: 120px;
     min-height: 0;
     padding: calc(var(--sd-nav-height) + 28px) var(--page-gutter) 28px;
     flex-direction: column;
@@ -629,13 +949,14 @@
     gap: 20px;
   }
 
-  .poster {
-    width: 120px;
+  /* Opened, the cover grows so the script's controls fit on its title page. */
+  .heroEditing {
+    --cover-width: 176px;
   }
 
-  .content {
-    padding-top: 24px;
-    gap: 36px;
+  .editActions {
+    position: static;
+    margin-top: 2px;
   }
 
   .stillGrid {
@@ -645,26 +966,29 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .timelineDock {
+  .timelineDock,
+  .timelineDock::after {
     transition: none;
   }
 
-  .backdropStill,
-  .backdropStill.backdropLoaded {
-    transform: none;
+  .backdropStill {
     transition: opacity 0.4s ease;
   }
 
   /* The cover still opens and the lines still show, without the motion; the caret holds still. */
   .coverFlap,
+  .poster,
+  .titlePage::before,
+  .coverTip,
   .field::before,
-  .field::after,
-  .backdropTimeline,
-  .heroEditing .backdropTimeline {
+  .field::after {
     transition: none;
   }
 
-  .editActions {
+  .editActions,
+  .stillTime,
+  .scriptControls,
+  .scriptDotBusy {
     animation: none;
   }
 
