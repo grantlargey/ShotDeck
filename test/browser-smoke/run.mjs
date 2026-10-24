@@ -373,7 +373,7 @@ try {
   await recoveryPage.getByRole("textbox", { name: /^Title/ }).fill("Recoverable smoke film");
   await recoveryPage.getByRole("textbox", { name: /^Director/ }).fill("Synthetic Director");
   await recoveryPage.getByRole("spinbutton", { name: /^Release year/ }).fill("2026");
-  await recoveryPage.getByPlaceholder("00:00:00").fill("02:00:00");
+  await recoveryPage.getByRole("textbox", { name: /^Runtime/ }).fill("02:00:00");
   await recoveryPage.getByRole("button", { name: "Add film", exact: true }).click();
   await recoveryPage.getByRole("button", { name: "Retry save", exact: true }).waitFor();
   await recoveryPage.reload();
