@@ -169,14 +169,14 @@
   .slot .box {
     position: absolute;
     top: 50%;
-    right: var(--page-gutter);
+    right: var(--search-inset, var(--page-gutter));
     z-index: 1;
     transform: translateY(-50%);
   }
 
   /* Spanning the row, a spring past its width would run off the screen's edge. */
   .slot .open {
-    width: calc(100% - 2 * var(--page-gutter));
+    width: calc(100% - 2 * var(--search-inset, var(--page-gutter)));
     transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1), ease;
   }
 }

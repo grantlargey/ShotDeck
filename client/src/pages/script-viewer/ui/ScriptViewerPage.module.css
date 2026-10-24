@@ -120,23 +120,7 @@
 /* ---------- Saved scenes ---------- */
 
 .scenes {
-  padding: 28px 28px 64px;
   scroll-margin-top: calc(var(--viewer-bar-height) + 8px);
-}
-
-.scenesHint {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
-
-.sceneGrid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
 }
 
 /* ---------- Toast ---------- */
@@ -217,10 +201,6 @@
   .pagesWrap {
     padding: 10px 8px 16px;
     overflow: visible;
-  }
-
-  .scenes {
-    padding: 20px 12px 48px;
   }
 
   .toast {

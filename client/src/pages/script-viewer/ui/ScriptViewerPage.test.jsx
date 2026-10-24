@@ -682,7 +682,7 @@ describe("overlap, request races and navigation", () => {
       script_location: scriptLocation(page1, 0, page1, 4),
     });
     await renderViewer(ScriptViewerRoute, { scenes: [later, earlier] });
-    const cards = within(savedScenesGrid()).getAllByRole("button");
+    const cards = within(savedScenesGrid()).getAllByRole("button", { name: /^Night Diner,/ });
     expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
       "Night Diner, EARLIER LOCATION",
       "Night Diner, LATER LOCATION",

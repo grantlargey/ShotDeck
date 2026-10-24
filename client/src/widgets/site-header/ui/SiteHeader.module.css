@@ -270,7 +270,7 @@
   background: var(--color-surface-raised);
 }
 
-/* The search tag's size of Slate (pages/script-search/ui/SearchTag.module.css). */
+/* The search tag's size of Slate (widgets/scene-browser/ui/SearchTag.module.css). */
 .accountRole {
   color: var(--color-text-soft);
   font-family: var(--font-slate);

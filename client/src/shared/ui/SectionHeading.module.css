@@ -23,6 +23,31 @@
   text-transform: uppercase;
 }
 
+.heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.description {
+  margin: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--color-line-strong);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+@media (max-width: 1400px) {
+  .description {
+    flex-basis: 100%;
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
 .count {
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;

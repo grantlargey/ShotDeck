@@ -203,7 +203,7 @@ async function placeAnchor(page, pageNumber, lineNumber, baseline, key) {
 
 async function setTiming(panel, start, end) {
   throwIfShuttingDown();
-  await panel.getByRole("textbox", { name: "Start", exact: true }).fill(start);
+  await panel.getByRole("textbox", { name: "Begin", exact: true }).fill(start);
   await panel.getByRole("textbox", { name: "End", exact: true }).fill(end);
   throwIfShuttingDown();
 }
@@ -470,11 +470,11 @@ try {
 
   await page.reload();
   await ready();
-  const grid = page.getByRole("region", { name: /^Scenes in this script/ });
+  const grid = page.getByRole("region", { name: /^Scenes captured/ });
   await grid.getByText("00:10:00 – 00:11:00", { exact: true }).click();
-  assert.equal(await panel.getByRole("textbox", { name: "Start", exact: true }).inputValue(), "00:10:00");
-  await panel.getByText("Start anchor", { exact: true }).locator("..").getByText("Page 1", { exact: true }).waitFor();
-  await panel.getByText("End anchor", { exact: true }).locator("..").getByText("Page 1", { exact: true }).waitFor();
+  assert.equal(await panel.getByRole("textbox", { name: "Begin", exact: true }).inputValue(), "00:10:00");
+  await panel.getByText(/^Begin · Page 1 · Line /).waitFor();
+  await panel.getByText(/^End · Page 1 · Line /).waitFor();
   pass("reload restores canonical text, timing, and script location from the real API");
 
   await panel.getByRole("textbox", { name: "End", exact: true }).fill("00:11:06");

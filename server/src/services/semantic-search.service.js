@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { validate as isUuid } from "uuid";
 import { withTransaction } from "../db.js";
 import { getScriptTagLabel } from "../domain/script-tags.js";
 import { HttpError } from "../utils/http-error.js";
@@ -10,7 +11,7 @@ import { listScenesByIds } from "./script-scenes.service.js";
  * routes/script-scenes.routes.js.
  *
  * A search runs in three steps. Two retrievers pick candidates under the same
- * tag filters: one by meaning (the description's embedding against the
+ * script scope and tag filters: one by meaning (the description's embedding against the
  * scenes'), one by words (Postgres full-text search over scene text). Their
  * rankings are merged by reciprocal rank fusion and capped. One OpenAI call then
  * reads the description and every candidate and grades each 0–3, and only
@@ -273,10 +274,11 @@ export function fuseRankings(rankings) {
 /**
  * The scenes the grader accepts for the description, best grade first, each
  * stitched to its movie title. `ip` is the visitor's address, which bounds how
- * often they can search.
+ * often they can search. `scriptId`, when supplied, scopes both retrievers
+ * before ranking and grading, so other scripts cannot displace its scenes.
  */
-export async function searchScenesSemantically(pool, { query, limit, tags = [], match = "all", ip }) {
-    const request = readSearchRequest({ query, limit });
+export async function searchScenesSemantically(pool, { query, limit, scriptId, tags = [], match = "all", ip }) {
+    const request = readSearchRequest({ query, limit, scriptId });
     const geminiKey = geminiApiKey();
     const openaiKey = openaiApiKey();
     if (!geminiKey || !openaiKey) {
@@ -293,9 +295,9 @@ export async function searchScenesSemantically(pool, { query, limit, tags = [], 
 
     const [[vector], byWords] = await Promise.all([
         embedTexts([request.query], geminiKey, QUERY_TASK),
-        rankScenesByWords(pool, { query: request.query, tags, match }),
+        rankScenesByWords(pool, { query: request.query, tags, match, scriptId: request.scriptId }),
     ]);
-    const byMeaning = await rankScenesByMeaning(pool, { vector, tags, match });
+    const byMeaning = await rankScenesByMeaning(pool, { vector, tags, match, scriptId: request.scriptId });
     const candidateIds = fuseRankings([byMeaning, byWords.ids]).slice(0, MAX_GRADED_SCENES);
     const scenesById = new Map((await listScenesByIds(pool, candidateIds)).map((scene) => [scene.id, scene]));
     const candidates = candidateIds.flatMap((id) => (scenesById.has(id) ? [scenesById.get(id)] : []));
@@ -437,23 +439,30 @@ export function sceneEmbeddingsSettled() {
     return draining ?? Promise.resolve();
 }
 
-/** The tag filter both retrievers share, as an AND clause; its parameter is pushed onto `values`. */
-function sceneTagFilter(tags, match, values) {
-    if (tags.length === 0) return "";
-    const anyTag = match === "any";
-    values.push(anyTag ? tags : JSON.stringify(tags));
-    return anyTag ? `AND sc.tags ?| $${values.length}::text[]` : `AND sc.tags @> $${values.length}::jsonb`;
+/** Both retrievers apply the same scope and tags before their candidate limits. */
+function sceneFilter({ tags, match, scriptId }, values) {
+    const clauses = [];
+    if (scriptId) {
+        values.push(scriptId);
+        clauses.push(`AND sc.script_id = $${values.length}::uuid`);
+    }
+    if (tags.length > 0) {
+        const anyTag = match === "any";
+        values.push(anyTag ? tags : JSON.stringify(tags));
+        clauses.push(anyTag ? `AND sc.tags ?| $${values.length}::text[]` : `AND sc.tags @> $${values.length}::jsonb`);
+    }
+    return clauses.join(" ");
 }
 
 /** Ids of the scenes closest in meaning to the query vector, closest first; a scene scores as its closest chunk. */
-async function rankScenesByMeaning(pool, { vector, tags, match }) {
+async function rankScenesByMeaning(pool, { vector, tags, match, scriptId }) {
     const values = [MODEL];
-    const tagFilter = sceneTagFilter(tags, match, values);
+    const filter = sceneFilter({ tags, match, scriptId }, values);
     const result = await pool.query(
         `SELECT e.scene_id AS id, e.embedding
          FROM scene_chunk_embeddings e
          JOIN captured_scenes sc ON sc.id = e.scene_id
-         WHERE e.model = $1 ${tagFilter}
+         WHERE e.model = $1 ${filter}
          ORDER BY e.scene_id, e.chunk
          LIMIT ${MAX_RANKED_CHUNKS}`,
         values
@@ -475,16 +484,16 @@ async function rankScenesByMeaning(pool, { vector, tags, match }) {
  * Ids of the scenes sharing words with the description, best text match first,
  * and which of them contain the whole description as a phrase.
  */
-async function rankScenesByWords(pool, { query, tags, match }) {
+async function rankScenesByWords(pool, { query, tags, match, scriptId }) {
     const values = [query];
-    const tagFilter = sceneTagFilter(tags, match, values);
+    const filter = sceneFilter({ tags, match, scriptId }, values);
     const result = await pool.query(
         `WITH description AS (
            SELECT ${WORDS_QUERY_SQL} AS words, phraseto_tsquery('english', $1) AS phrase
          )
          SELECT sc.id, to_tsvector('english', sc.scene_text) @@ d.phrase AS has_phrase
          FROM captured_scenes sc, description d
-         WHERE to_tsvector('english', sc.scene_text) @@ d.words ${tagFilter}
+         WHERE to_tsvector('english', sc.scene_text) @@ d.words ${filter}
          ORDER BY ts_rank(to_tsvector('english', sc.scene_text), d.words, 1) DESC, sc.id
          LIMIT ${RETRIEVER_DEPTH}`,
         values
@@ -576,7 +585,7 @@ async function countIndexState(pool) {
     };
 }
 
-function readSearchRequest({ query, limit }) {
+function readSearchRequest({ query, limit, scriptId }) {
     if (typeof query !== "string" || query.trim() === "") {
         throw new HttpError(400, "Invalid query. q must be a non-empty string.");
     }
@@ -597,7 +606,11 @@ function readSearchRequest({ query, limit }) {
         }
     }
 
-    return { query: query.trim(), limit: requested };
+    if (scriptId !== undefined && (typeof scriptId !== "string" || !isUuid(scriptId))) {
+        throw new HttpError(400, "Invalid scriptId. Expected a script UUID.");
+    }
+
+    return { query: query.trim(), limit: requested, scriptId };
 }
 
 /** One Gemini batchEmbedContents request for `inputs`, in input order. */

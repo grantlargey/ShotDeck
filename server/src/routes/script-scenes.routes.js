@@ -76,6 +76,7 @@ router.get("/script-scenes/semantic", async (req, res) => {
         await semanticSearch.searchScenesSemantically(pool, {
             query: req.query.q,
             limit: req.query.limit,
+            scriptId: req.query.scriptId,
             tags: tagsFromQuery(req.query.tags),
             match: req.query.match === "any" ? "any" : "all",
             ip: req.ip,

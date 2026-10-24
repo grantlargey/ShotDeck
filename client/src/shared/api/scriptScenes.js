@@ -54,16 +54,17 @@ export function sampleScriptScenes() {
 
 /**
  * The scenes that match `query`, best match first, optionally narrowed to the
- * same tag filters. Answers `{ scenes }`, which is empty when nothing matches;
+ * same tag filters and, optionally, one script (`scriptId`). Answers `{ scenes }`, which is empty when nothing matches;
  * the API answers 503 until GEMINI_API_KEY and OPENAI_API_KEY are configured on
  * the server.
  */
-export function searchScriptScenesSemantically({ query, tags, match, limit }) {
+export function searchScriptScenesSemantically({ query, tags, match, limit, scriptId }) {
   const params = new URLSearchParams({ q: query });
   const tagList = normalizeTags(tags);
   if (tagList.length) params.set("tags", tagList.join(","));
   if (match === "any") params.set("match", "any");
   if (limit) params.set("limit", String(limit));
+  if (scriptId) params.set("scriptId", scriptId);
   return req(`/script-scenes/semantic?${params.toString()}`);
 }
 

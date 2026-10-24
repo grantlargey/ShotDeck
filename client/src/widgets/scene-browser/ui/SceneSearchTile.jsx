@@ -26,7 +26,7 @@ function paceFor(width) {
  * The room the toolbar leaves the tile's slot, measured whenever the slot's
  * size changes: `width` is the slot's own, `span` runs from the start of the
  * toolbar's content to the slot's end, and `right` from the slot's end to the
- * toolbar's. The toolbar is the slot's positioned ancestor (Script Search pins
+ * toolbar's. The toolbar is the slot's positioned ancestor (SceneBrowser pins
  * it). Null until measured, and where nothing is laid out.
  */
 function useSlotRoom(slotRef) {
@@ -61,7 +61,7 @@ function useSlotRoom(slotRef) {
 }
 
 /**
- * Script Search's semantic search: a 36px viewfinder tile beside the card
+ * The scene browser's description search: a 36px viewfinder tile beside the card
  * switches. Opening it (a click, a tap, or "/") widens it across the room
  * beside the heading into the scene search field as its corners pull focus,
  * and example descriptions type themselves out until you type. Where that room

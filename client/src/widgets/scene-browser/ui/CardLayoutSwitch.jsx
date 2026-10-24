@@ -34,7 +34,7 @@ function LayoutCard({ layout, stillUrl, alive }) {
 }
 
 /**
- * Script Search's card preview switch: two little cards, script only and a
+ * The scene browser's card preview switch: two little cards, script only and a
  * still over the script, both in sight. The chosen card sits forward and
  * comes alive each time it's picked.
  */

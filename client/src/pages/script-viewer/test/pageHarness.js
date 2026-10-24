@@ -51,6 +51,9 @@ export const fakeApi = {
   getFilm: vi.fn(),
   getScript: vi.fn(),
   listScriptScenes: vi.fn(),
+  getSemanticSearchStatus: vi.fn(),
+  searchScriptScenes: vi.fn(),
+  searchScriptScenesSemantically: vi.fn(),
   createScriptScene: vi.fn(),
   updateScriptScene: vi.fn(),
   deleteScriptScene: vi.fn(),
@@ -66,6 +69,9 @@ export const apiModules = {
   screenplayFormat: { formatScreenplaySelection: fakeApi.formatScreenplaySelection },
   scriptScenes: {
     listScriptScenes: fakeApi.listScriptScenes,
+    getSemanticSearchStatus: fakeApi.getSemanticSearchStatus,
+    searchScriptScenes: fakeApi.searchScriptScenes,
+    searchScriptScenesSemantically: fakeApi.searchScriptScenesSemantically,
     createScriptScene: fakeApi.createScriptScene,
     updateScriptScene: fakeApi.updateScriptScene,
     deleteScriptScene: fakeApi.deleteScriptScene,
@@ -78,6 +84,9 @@ function installApi() {
   fakeApi.getFilm.mockImplementation(async () => ({ ...FILM }));
   fakeApi.getScript.mockImplementation(async () => ({ ...SCRIPT }));
   fakeApi.listScriptScenes.mockImplementation(async () => scenario.scenes);
+  fakeApi.getSemanticSearchStatus.mockResolvedValue({ configured: true });
+  fakeApi.searchScriptScenes.mockResolvedValue([]);
+  fakeApi.searchScriptScenesSemantically.mockImplementation(async () => ({ scenes: scenario.scenes }));
   fakeApi.createScriptScene.mockImplementation((filmId, scriptId, payload) => {
     const id = `scene-new-${scenario.nextSceneNumber++}`;
     return track(pending.saves, [filmId, scriptId, payload], sceneRowFromPayload(id, payload));
@@ -345,7 +354,7 @@ export function editorBlock(number = 1) {
 }
 
 export function savedScenesGrid() {
-  return screen.getByRole("region", { name: /^Scenes in this script/ });
+  return screen.getByRole("region", { name: /^Scenes captured/ });
 }
 
 /** A saved scene card, found by its film timing ("00:10:00 – 00:11:00"). */

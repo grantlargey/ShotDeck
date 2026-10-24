@@ -158,6 +158,16 @@ before(async () => {
 });
 
 describe("semantic search request contract", () => {
+    test("rejects malformed script scopes before contacting a provider", async () => {
+        for (const scriptId of ["", "not-a-script", "123"]) {
+            const response = await search({ q: "a tense scene", scriptId });
+            assert.equal(response.status, 400, response.text);
+            assert.deepEqual(response.body, { error: "Invalid scriptId. Expected a script UUID." });
+        }
+        const repeated = await api.get(`${SEARCH_PATH}?q=harbor&scriptId=${place.script.id}&scriptId=${place.script.id}`);
+        assert.equal(repeated.status, 400, repeated.text);
+    });
+
     test("requires a non-blank query and a whole limit in range", async () => {
         for (const query of [{}, { q: "" }, { q: "   " }]) {
             const response = await search(query);
@@ -484,6 +494,40 @@ describe("semantic search with Gemini and OpenAI keys", () => {
         assert.equal(response.status, 200, response.text);
         assert.deepEqual(response.body, { scenes: [] });
         assert.equal(sent.gradings.length, 0);
+    });
+
+    test("scopes both retrievers before ranking and grading, together with tag filters", async (t) => {
+        useKeys(t);
+        const sent = mockModels(t);
+        const other = await createFilmWithScript(api, cookie, { title: "Another Harbor" });
+        // Remove the extra film so subsequent unscoped searches keep their fixtures.
+        t.after(async () => {
+            await sceneEmbeddingsSettled();
+            await pool.query("DELETE FROM movies WHERE id = $1", [other.film.id]);
+        });
+        const elsewhere = await createScene(api, cookie, other, {
+            scene_text: "## EXT. ANOTHER HARBOR - DAY\n\nA harbor beside an alley, in another film.",
+            tags: [TAGS.protagonist, TAGS.revelation],
+        });
+        await sceneEmbeddingsSettled();
+        assert.equal(await hasEmbedding(elsewhere.id), true);
+
+        for (const [tags, match, expected] of [
+            ["", "all", [harbor.id, alley.id]],
+            [TAGS.protagonist, "all", [harbor.id]],
+            [`${TAGS.protagonist},${TAGS.revelation}`, "any", [harbor.id, alley.id]],
+            [`${TAGS.protagonist},${TAGS.revelation}`, "all", []],
+        ]) {
+            const response = await search({ q: "harbor alley", scriptId: place.script.id, tags, match, limit: "50" });
+            assert.equal(response.status, 200, response.text);
+            assert.deepEqual(new Set(response.body.scenes.map((scene) => scene.id)), new Set(expected));
+        }
+        for (const request of sent.gradings) {
+            assert.ok(!request.body.input.includes(elsewhere.scene_text), "out-of-scope scenes never reach grading");
+        }
+
+        const isolated = await search({ q: "harbor alley", scriptId: other.script.id, limit: "1" });
+        assert.deepEqual(isolated.body.scenes.map((scene) => scene.id), [elsewhere.id]);
     });
 
     test("respects the requested result limit", async (t) => {

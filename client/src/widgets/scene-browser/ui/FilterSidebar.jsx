@@ -3,7 +3,7 @@ import { Button } from "@/shared/ui/Button.jsx";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { CloseIcon } from "@/shared/ui/icons.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
-import styles from "./ScriptSearchPage.module.css";
+import styles from "./SceneBrowser.module.css";
 
 const MATCH_OPTIONS = [
   { value: "all", label: "Match all" },

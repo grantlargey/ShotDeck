@@ -15,3 +15,14 @@ export function countSceneTags(scenes) {
 export function buildFilterGroups() {
   return SCRIPT_TAG_CATEGORIES;
 }
+
+/** Tag browsing over the viewer's live collection, preserving script order. */
+export function filterSceneTags(scenes, selectedTags, match) {
+  if (selectedTags.length === 0) return scenes;
+  return scenes.filter((scene) => {
+    const tags = safeScriptSceneTags(scene.tags);
+    return match === "any"
+      ? selectedTags.some((tag) => tags.includes(tag))
+      : selectedTags.every((tag) => tags.includes(tag));
+  });
+}

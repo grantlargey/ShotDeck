@@ -89,7 +89,7 @@ export default function ScriptViewerRoute() {
 function ScriptViewerPage() {
   const nav = useNavigate();
   const { filmId, scriptId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const sceneIdFromQuery = searchParams.get("sceneId") || searchParams.get("annotationId") || "";
   // Visitors read the script and open scenes; only admins capture and edit.
   const { ready: sessionReady, isAdmin: canEdit } = useSession();
@@ -306,8 +306,14 @@ function ScriptViewerPage() {
   }
 
   function showScenesWithTag(tag) {
-    if (!confirmDiscardChanges()) return;
-    nav(`/script-search?tag=${encodeURIComponent(tag)}`);
+    setModal(null);
+    setSearchParams((previous) => {
+      const params = new URLSearchParams(previous);
+      params.delete("tag");
+      params.append("tag", tag);
+      return params;
+    }, { replace: true });
+    jumpToScenes();
   }
 
   function jumpToScenes() {
@@ -540,6 +546,7 @@ function ScriptViewerPage() {
 
       <SavedScenesGrid
         ref={scenesSectionRef}
+        scriptId={scriptId}
         scenes={scenes.list}
         selectedSceneId={activeSceneId}
         title={title}
