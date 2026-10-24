@@ -426,7 +426,7 @@ describe("editing film details in the hero", () => {
     await renderPage();
     openCover();
 
-    fireEvent.change(detail("Runtime"), { target: { value: "2:5:0" } });
+    fireEvent.change(detail("Runtime"), { target: { value: "20500" } });
     fireEvent.blur(detail("Runtime"));
 
     expect(detail("Runtime").value).toBe("02:05:00");
@@ -435,13 +435,13 @@ describe("editing film details in the hero", () => {
   it("shows the shared runtime validation message without sending a request", async () => {
     await renderPage();
     openCover();
-    fireEvent.change(detail("Runtime"), { target: { value: "not a runtime" } });
+    fireEvent.change(detail("Runtime"), { target: { value: "00:60:00" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(BAD_RUNTIME)).toBeTruthy();
     expect(api.updateFilm).not.toHaveBeenCalled();
-    expect(detail("Runtime").value).toBe("not a runtime");
+    expect(detail("Runtime").value).toBe("00:60:00");
   });
 
   it("shows its entry-point failure message and keeps the editor open", async () => {
@@ -493,7 +493,7 @@ describe("adding a still", () => {
     const dialog = await openAddDialog();
     chooseFile(dialog, imageFile());
 
-    typeTime(dialog, "12:ab");
+    typeTime(dialog, "00:00:75");
     submitAdd();
     expect(within(addDialog()).getByRole("alert").textContent).toBe(BAD_TIME);
 
@@ -531,7 +531,7 @@ describe("adding a still", () => {
 
     expect(typeTime(dialog, "10:00").value).toBe("00:10:00");
     expect(typeTime(dialog, "10:00.5").value).toBe("00:10:00.5");
-    expect(typeTime(dialog, "1:2:3:4").value).toBe("1:2:3:4");
+    expect(typeTime(dialog, "10:75").value).toBe("00:10:75");
     expect(
       within(dialog).getByText(
         `Between 00:00:00 and ${SHOT_LIMIT_LABEL} (includes one-minute allowance). Add a tenth, like 00:10:00.5, for a second shot in the same second.`
@@ -636,7 +636,7 @@ describe("adding a still", () => {
     await renderPage();
     let dialog = await openAddDialog("20:00");
     expect(within(dialog).getByPlaceholderText("HH:MM:SS").value).toBe("00:20:00");
-    typeTime(dialog, "12:ab");
+    typeTime(dialog, "00:00:75");
     submitAdd();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(queryAddDialog()).toBeNull();

@@ -1,4 +1,4 @@
-import { normalizeTypedTime } from "@/shared/lib/time.js";
+import { TimeInput } from "@/shared/ui/TimeInput.jsx";
 import { Field } from "@/shared/ui/Field.jsx";
 import { Input } from "@/shared/ui/Input.jsx";
 import { FILM_CREDITS } from "../model/filmCredits.js";
@@ -39,16 +39,9 @@ export function FilmDetailsFields({ values, onChange }) {
       </Field>
 
       <Field label="Runtime" hint="Format: HH:MM:SS" required className={styles.half}>
-        <Input
-          numeric
+        <TimeInput
           value={values.runtime_hms}
-          placeholder="00:00:00"
-          onChange={(event) => onChange("runtime_hms", event.target.value)}
-          onBlur={(event) => {
-            const typed = event.target.value;
-            const normalized = normalizeTypedTime(typed);
-            if (normalized !== typed) onChange("runtime_hms", normalized);
-          }}
+          onValueChange={(value) => onChange("runtime_hms", value)}
           required
         />
       </Field>

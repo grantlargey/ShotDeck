@@ -7,8 +7,9 @@ import { sortStillsByTime } from "@/entities/still/model/stillTimeline.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { cx } from "@/shared/lib/cx.js";
 import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
-import { formatMinutesToHms, formatMomentToHms, normalizeTypedTime } from "@/shared/lib/time.js";
+import { formatMinutesToHms, formatMomentToHms } from "@/shared/lib/time.js";
 import { Skeleton } from "@/shared/ui/Skeleton.jsx";
+import { TimeInput } from "@/shared/ui/TimeInput.jsx";
 import { ScriptControls, ScriptTitlePage } from "./ScriptTitlePage.jsx";
 import styles from "./FilmDetailPage.module.css";
 
@@ -44,7 +45,6 @@ const FACTS = [
     label: "Runtime",
     placeholder: "HH:MM:SS",
     numeric: true,
-    normalize: normalizeTypedTime,
     format: (film) => (film.runtime_minutes ? formatMinutesToHms(film.runtime_minutes) : ""),
   },
   ...FILM_CREDITS.map(({ field, label, required }) => ({
@@ -177,7 +177,18 @@ function DetailField({ detail, value, edit, multiline, sweepDelayMs, caret }) {
         {/* Blinks at the end of the last detail while the cover is pointed at. */}
         {caret && <span className={styles.fieldCaret} aria-hidden="true" />}
       </span>
-      {editing && (
+      {editing && (detail.field === "runtime_hms" ? (
+        <TimeInput
+          inline
+          className={styles.fieldInput}
+          name={detail.field}
+          aria-label={detail.label}
+          value={value}
+          readOnly={edit.saving}
+          onValueChange={(typed) => edit.onChange(detail.field, typed)}
+          onKeyDown={handleKeyDown}
+        />
+      ) : (
         <Control
           className={styles.fieldInput}
           name={detail.field}
@@ -194,13 +205,9 @@ function DetailField({ detail, value, edit, multiline, sweepDelayMs, caret }) {
             const typed = multiline ? event.target.value.replace(/[\r\n]+/g, " ") : event.target.value;
             edit.onChange(detail.field, typed);
           }}
-          onBlur={(event) => {
-            const normalized = detail.normalize?.(event.target.value);
-            if (normalized !== undefined && normalized !== event.target.value) edit.onChange(detail.field, normalized);
-          }}
           onKeyDown={handleKeyDown}
         />
-      )}
+      ))}
     </span>
   );
 }
@@ -255,19 +262,18 @@ function StillTimeField({ runtimeSeconds, saving, onAdd, onPending, onDiscard })
       <span className={styles.stillTimePlus} aria-hidden="true">
         +
       </span>
-      <input
+      <TimeInput
+        inline
+        tenths
         className={styles.stillTimeInput}
         aria-label="Add a still at"
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "film-still-time-error" : undefined}
         title={error || undefined}
-        placeholder="HH:MM:SS"
-        spellCheck={false}
-        autoComplete="off"
         value={text}
         readOnly={saving}
-        onChange={(event) => change(event.target.value)}
-        onFocus={(event) => onPending?.(pendingSeconds(event.target.value))}
+        onValueChange={change}
+        onFocus={() => onPending?.(pendingSeconds(text))}
         onBlur={() => onPending?.(null)}
         onKeyDown={handleKeyDown}
       />

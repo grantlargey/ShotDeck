@@ -85,7 +85,7 @@ function fillDetails() {
   fireEvent.change(screen.getByRole("textbox", { name: /^Title/ }), { target: { value: "Night Diner" } });
   fireEvent.change(screen.getByRole("textbox", { name: /^Director/ }), { target: { value: "Ada Park" } });
   fireEvent.change(screen.getByRole("spinbutton", { name: /^Release year/ }), { target: { value: "2024" } });
-  fireEvent.change(screen.getByPlaceholderText("00:00:00"), { target: { value: "02:00:00" } });
+  fireEvent.change(screen.getByPlaceholderText("HH:MM:SS"), { target: { value: "02:00:00" } });
 }
 
 describe("FilmFormPage creation recovery", () => {
@@ -128,7 +128,7 @@ describe("FilmFormPage creation recovery", () => {
 describe("FilmFormPage film editing", () => {
   it("shows the shared runtime validation message without sending a request", async () => {
     await renderEditPage();
-    fireEvent.change(screen.getByPlaceholderText("00:00:00"), { target: { value: "not a runtime" } });
+    fireEvent.change(screen.getByPlaceholderText("HH:MM:SS"), { target: { value: "00:60:00" } });
 
     submit();
 

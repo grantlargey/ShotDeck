@@ -11,15 +11,14 @@ import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
-import { Field } from "@/shared/ui/Field.jsx";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { CloseIcon, PlusIcon } from "@/shared/ui/icons.jsx";
-import { Input } from "@/shared/ui/Input.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import { undoShortcutLabel } from "../lib/platform.js";
 import { ANCHOR_KEYS, ANCHOR_NAMES } from "../model/anchorNames.js";
 import { scriptLocationOverlapError } from "../model/sceneDraft.js";
 import { AnchorGlyph } from "./AnchorGlyph.jsx";
+import { TimeField } from "./TimeField.jsx";
 import styles from "./AnnotatorPanel.module.css";
 
 // Where the draft's text came from, said quietly beside its heading.
@@ -98,21 +97,6 @@ function AnchorRow({ kind, anchor, line, onJump, onRemove }) {
         </IconButton>
       </span>
     </div>
-  );
-}
-
-function TimeField({ label, value, onChange, onBlur }) {
-  return (
-    <Field label={label}>
-      <Input
-        numeric
-        value={value}
-        placeholder="00:00:00"
-        autoComplete="off"
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={onBlur}
-      />
-    </Field>
   );
 }
 

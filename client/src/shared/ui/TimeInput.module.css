@@ -1,0 +1,59 @@
+.control {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+  font-family: var(--font-slate);
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.control .input {
+  display: block;
+  color: transparent;
+  caret-color: var(--color-text);
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.control .input::placeholder {
+  color: transparent;
+}
+
+.mask {
+  position: absolute;
+  inset: 1px 13px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--color-text);
+}
+
+.dim {
+  opacity: 0.3;
+}
+
+.inline {
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.inline .input {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  outline: none;
+  caret-color: var(--color-accent);
+}
+
+.inline .mask {
+  inset: 0;
+}
+
+.control:has(:disabled) .mask {
+  color: var(--color-text-muted);
+}

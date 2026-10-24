@@ -279,22 +279,8 @@
 }
 
 .stillTimeInput {
-  width: 10.6ch;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--color-text);
-  font: inherit;
-  letter-spacing: inherit;
-  caret-color: var(--color-accent);
-  outline: none;
-}
-
-.stillTimeInput::placeholder {
-  color: var(--color-text-subtle);
-  opacity: 1;
+  /* Ten timecode characters including tenths, their tracking, and the caret. */
+  width: calc(10.6ch + 10 * var(--tracking-slate));
 }
 
 .visuallyHidden {

@@ -2,12 +2,12 @@ import { useRef, useState } from "react";
 import { createStillSave } from "@/entities/still/model/stillSave.js";
 import { deleteStill } from "@/shared/api/stills.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
-import { formatMomentToHms, normalizeTypedMoment } from "@/shared/lib/time.js";
+import { formatMomentToHms } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Field } from "@/shared/ui/Field.jsx";
 import { FileInput } from "@/shared/ui/FileInput.jsx";
-import { Input } from "@/shared/ui/Input.jsx";
+import { TimeInput } from "@/shared/ui/TimeInput.jsx";
 import { readStillSeconds } from "./stillTimestamp.js";
 import styles from "./useStillEdit.module.css";
 
@@ -136,19 +136,11 @@ export function useStillEdit({ filmId, runtimeSeconds, onChange }) {
         {edit?.stillId === still.id && (
           <div className={styles.editRow}>
             <Field label="Timestamp" required className={styles.timeField}>
-              <Input
-                numeric
+              <TimeInput
+                tenths
                 disabled={busy}
-                placeholder="HH:MM:SS"
                 value={edit.time}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setEdit((current) => ({ ...current, time: value }));
-                }}
-                onBlur={(e) => {
-                  const value = normalizeTypedMoment(e.target.value);
-                  setEdit((current) => ({ ...current, time: value }));
-                }}
+                onValueChange={(value) => setEdit((current) => ({ ...current, time: value }))}
               />
             </Field>
             <Field as="div" label="Replace image" className={styles.imageField}>

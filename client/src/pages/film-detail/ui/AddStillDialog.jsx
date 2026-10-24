@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { createStillSave } from "@/entities/still/model/stillSave.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { useFilePreviewUrl } from "@/shared/lib/media/useFilePreviewUrl.js";
-import { formatSecondsToHms, normalizeTypedMoment } from "@/shared/lib/time.js";
+import { formatSecondsToHms } from "@/shared/lib/time.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Dialog } from "@/shared/ui/Dialog.jsx";
 import { Field } from "@/shared/ui/Field.jsx";
 import { FileDropzone } from "@/shared/ui/FileDropzone.jsx";
-import { Input } from "@/shared/ui/Input.jsx";
+import { TimeInput } from "@/shared/ui/TimeInput.jsx";
 import { readStillSeconds } from "./stillTimestamp.js";
 import styles from "./AddStillDialog.module.css";
 
@@ -100,13 +100,11 @@ export function AddStillDialog({ filmId, runtimeSeconds, initialTime = "", onAdd
           required
           hint={`${hint}. Add a tenth, like 00:10:00.5, for a second shot in the same second.`}
         >
-          <Input
-            numeric
+          <TimeInput
+            tenths
             disabled={busy}
-            placeholder="HH:MM:SS"
             value={time}
-            onChange={(e) => setTime(e.target.value)}
-            onBlur={(e) => setTime(normalizeTypedMoment(e.target.value))}
+            onValueChange={setTime}
             required
           />
         </Field>

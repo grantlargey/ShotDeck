@@ -319,8 +319,8 @@ describe("adding a still from the hero", () => {
     render(<EditableHeader onAddStill={onAddStill} onPendingStill={onPendingStill} />);
     openCover();
 
-    fireEvent.change(stillTime(), { target: { value: "01:3" } });
-    expect(onPendingStill).toHaveBeenLastCalledWith(null);
+    fireEvent.change(stillTime(), { target: { value: "13" } });
+    expect(onPendingStill).toHaveBeenLastCalledWith(13);
     fireEvent.change(stillTime(), { target: { value: "01:30:05.5" } });
     expect(onPendingStill).toHaveBeenLastCalledWith(5405.5);
 
