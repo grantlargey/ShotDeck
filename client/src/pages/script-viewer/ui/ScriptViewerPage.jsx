@@ -282,6 +282,11 @@ function ScriptViewerPage() {
     if (target) scrollToPoint(target.page, target.offsetPt);
   }
 
+  function jumpToDraftScene() {
+    const target = sceneScrollTarget(draft.previewScene, textIndex.pages);
+    if (target) scrollToPoint(target.page, target.offsetPt);
+  }
+
   function startNewScene() {
     if (!confirmDiscardChanges()) return;
     draftActions.reset();
@@ -532,6 +537,7 @@ function ScriptViewerPage() {
             onNewScene={startNewScene}
             anchorLines={anchorLines}
             onJumpToAnchor={jumpToAnchor}
+            onJumpToScene={jumpToDraftScene}
             onRecapture={recapture}
             onExpandDraft={() => setModal({ kind: "draft" })}
             onRequestAi={requestAiFormat}

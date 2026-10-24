@@ -128,6 +128,7 @@ function CaptureTab({
   filmTitle,
   onRecapture,
   onExpandDraft,
+  onJumpToScene,
   onRequestAi,
   onReviewProposal,
 }) {
@@ -238,7 +239,8 @@ function CaptureTab({
           <SceneCard
             scene={draft.previewScene}
             title={filmTitle}
-            tooltip="Double-click to expand and edit"
+            tooltip="Click to scroll to scene · Double-click to expand and edit"
+            onClick={onJumpToScene}
             onDoubleClick={onExpandDraft}
             onKeyActivate={onExpandDraft}
           />
@@ -360,6 +362,7 @@ export function AnnotatorPanel({
   onNewScene,
   anchorLines,
   onJumpToAnchor,
+  onJumpToScene,
   onRecapture,
   onExpandDraft,
   onRequestAi,
@@ -443,6 +446,7 @@ export function AnnotatorPanel({
             onEditOverlapScene={onEditOverlapScene}
             anchorLines={anchorLines}
             onJumpToAnchor={onJumpToAnchor}
+            onJumpToScene={onJumpToScene}
             runtimeSeconds={runtimeSeconds}
             filmTitle={filmTitle}
             onRecapture={onRecapture}
