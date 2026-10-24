@@ -311,7 +311,6 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
           {tags.map((tag) => (
             <li key={tag}>
               <Chip
-                className={styles.tagChip}
                 onRemove={() => onToggleTag(tag)}
                 removeLabel={`Remove ${getScriptTagLabel(tag)}`}
               >

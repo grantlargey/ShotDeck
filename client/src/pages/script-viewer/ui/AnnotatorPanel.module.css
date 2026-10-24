@@ -246,15 +246,6 @@
   gap: 6px;
 }
 
-.chipList .tagChip {
-  border-color: var(--color-line-control);
-  background: var(--color-surface);
-}
-
-.chipList .tagChip:hover {
-  border-color: var(--color-line-strong);
-}
-
 .sectionHeader .clearTags {
   color: var(--color-text-muted);
 }

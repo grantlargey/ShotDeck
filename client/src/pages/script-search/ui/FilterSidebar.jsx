@@ -37,7 +37,13 @@ export default function FilterSidebar({
 
         <div className={styles.filterHeader}>
           <h2 className={styles.filterHeading}>Filter results</h2>
-          <Button variant="link" size="sm" onClick={onClear} disabled={selectedTags.length === 0}>
+          <Button
+            variant="link"
+            size="sm"
+            className={styles.clearFilters}
+            onClick={onClear}
+            disabled={selectedTags.length === 0}
+          >
             Clear all
           </Button>
         </div>
@@ -52,6 +58,7 @@ export default function FilterSidebar({
         />
 
         <TagCategoryList
+          look="quiet"
           groups={groups}
           selectedTags={selectedTags}
           onToggleTag={onToggleTag}

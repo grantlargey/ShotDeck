@@ -4,9 +4,9 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  border: 1px solid var(--color-accent-line);
+  border: 1px solid var(--color-line-control);
   border-radius: var(--radius-pill);
-  background: var(--color-accent-soft);
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: var(--text-xs);
   cursor: pointer;
@@ -14,7 +14,7 @@
 }
 
 .chip:hover {
-  border-color: var(--color-accent);
+  border-color: var(--color-line-strong);
 }
 
 .remove {

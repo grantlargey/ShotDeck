@@ -45,6 +45,14 @@
   justify-content: space-between;
 }
 
+.filterHeader .clearFilters {
+  color: var(--color-text-muted);
+}
+
+.filterHeader .clearFilters:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
 .filterHeading {
   margin: 0;
   color: var(--color-text-muted);
@@ -109,7 +117,7 @@
   margin: -6px 0 18px;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 /* A long description shortens with an ellipsis rather than widening the row. */
