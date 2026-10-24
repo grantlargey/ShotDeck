@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildPageTextLines } from "../pdf-text/pageTextLines.js";
 import { estimateActionMargin, sceneHeadingBoxes, screenplayElementsFromLayout } from "./layoutClassifier.js";
+import { jokerDualDialoguePage, jokerDualDialogueTextContent, jokerDualDialogueViewport } from "./fixtures/dualDialogue.js";
 
 /*
  * Synthetic screenplay pages for the layout classifier: pdf.js-like text runs
@@ -149,6 +150,95 @@ describe("column zones", () => {
       { type: "centered", text: "THE END" },
       { type: "transition", text: "CUT TO:" },
     ]);
+  });
+});
+
+describe("simultaneous dialogue", () => {
+  const expected = [
+    { type: "character", text: "JOKER" },
+    { type: "dialogue", text: "How about another joke, Murray?" },
+    { type: "dualDialogue", columns: [
+      [
+        { type: "character", text: "MURRAY FRANKLIN" },
+        { type: "dialogue", text: "No, I think we've had enough of your jokes--" },
+      ],
+      [
+        { type: "character", text: "JOKER" },
+        { type: "dialogue", text: "What do you get when you cross a mentally-ill loner with a system that abandons him and treats him like trash?" },
+      ],
+    ] },
+  ];
+
+  it("keeps each speaker's complete speech from the reported final Joker PDF", () => {
+    expect(classify([jokerDualDialoguePage])).toEqual(expected);
+    expect(screenplayElementsFromLayout([jokerDualDialoguePage])).toEqual(expected);
+    expect(estimateActionMargin([jokerDualDialoguePage])).toBeNull();
+  });
+
+  it("also recognizes columns when PDF runs are individual words", () => {
+    const items = jokerDualDialogueTextContent.items.flatMap((item) => {
+      const advance = item.width / item.str.length;
+      return [...item.str.matchAll(/\S+/g)].map((match) => ({
+        ...item,
+        str: match[0],
+        width: match[0].length * advance,
+        transform: [...item.transform.slice(0, 4), item.transform[4] + match.index * advance, item.transform[5]],
+      }));
+    });
+    const page = buildPageTextLines({ items }, jokerDualDialogueViewport, 97);
+    expect(classify([page])).toEqual(expected);
+  });
+
+  it("recognizes columns embedded in space-padded PDF runs", () => {
+    const page = positionedPage(1, [
+      line(120, [159, "MAYA                              SAM"]),
+      line(132, [108, "Stop!                          I can't."]),
+    ]);
+    expect(classify([page])).toEqual([{ type: "dualDialogue", columns: [
+      [{ type: "character", text: "MAYA" }, { type: "dialogue", text: "Stop!" }],
+      [{ type: "character", text: "SAM" }, { type: "dialogue", text: "I can't." }],
+    ] }]);
+  });
+
+  it("keeps parentheticals and wrapped lines independent, then resumes ordinary action", () => {
+    const page = positionedPage(1, [
+      line(120, [159, "MAYA (V.O.)"], [419, "SAM"]),
+      line(132, [126, "(quietly,"], [351, "(shouting)"]),
+      line(144, [126, "to herself)"], [333, "Let me finish."]),
+      line(156, [108, "Don't interrupt--"], [333, "I'm still talking."]),
+      line(180, [108, "They both fall silent."]),
+      line(204, [CUE_X, "SAM"]),
+      line(216, [DIALOGUE_X, "Sorry."]),
+    ]);
+    expect(classify([page])).toEqual([
+      { type: "dualDialogue", columns: [
+        [
+          { type: "character", text: "MAYA (V.O.)" },
+          { type: "parenthetical", text: "(quietly, to herself)" },
+          { type: "dialogue", text: "Don't interrupt--" },
+        ],
+        [
+          { type: "character", text: "SAM" },
+          { type: "parenthetical", text: "(shouting)" },
+          { type: "dialogue", text: "Let me finish. I'm still talking." },
+        ],
+      ] },
+      { type: "action", text: "They both fall silent." },
+      { type: "character", text: "SAM" },
+      { type: "dialogue", text: "Sorry." },
+    ]);
+  });
+
+  it("does not infer simultaneous speech from spaced uppercase action or ordinary cues", () => {
+    const page = positionedPage(1, [
+      line(120, [108, "MAYA"], [333, "SAM"]),
+      line(132, [108, "Two names on a long sign above the entrance to the diner."]),
+      line(156, [CUE_X, "MAYA"]),
+      line(168, [DIALOGUE_X, "STOP!"], [250, "WAIT!"]),
+      line(192, [CUE_X, "SAM"]),
+      line(204, [DIALOGUE_X, "Yes?"]),
+    ]);
+    expect(classify([page]).some((element) => element.type === "dualDialogue")).toBe(false);
   });
 });
 

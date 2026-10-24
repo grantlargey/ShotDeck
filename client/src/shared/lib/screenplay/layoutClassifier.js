@@ -59,6 +59,110 @@ function columnZone(offsetFromMargin) {
   return "right";
 }
 
+// Keep the gaps that separate simultaneous speeches. PDF producers may emit
+// one run per word, one per column, or both columns in a space-padded run.
+function positionedTextRuns(items, fontSize) {
+  return items.flatMap((item) => {
+    const advance = (item.right - item.x) / item.str.length || fontSize * CHAR_WIDTH_RATIO;
+    return [...item.str.matchAll(/\S(?:.*?\S)?(?=\s{3,}|\s*$)/g)].map((match) => ({
+      str: match[0],
+      x: item.x + match.index * advance,
+      right: item.x + (match.index + match[0].length) * advance,
+    }));
+  });
+}
+
+function textClusters(items, fontSize) {
+  const clusters = [];
+  for (const item of positionedTextRuns(items, fontSize)) {
+    const previous = clusters.at(-1);
+    if (previous && item.x - previous.right < fontSize * 1.5) {
+      previous.items.push(item);
+      previous.right = Math.max(previous.right, item.right);
+    } else {
+      clusters.push({ left: item.x, right: item.right, items: [item] });
+    }
+  }
+  return clusters.map((cluster) => ({ ...cluster, text: assembleLineText(cluster.items, fontSize) }));
+}
+
+/**
+ * Finds two simultaneous speeches before same-baseline text is flattened.
+ * Require two separated cues and two speech columns immediately below them;
+ * ordinary indents, uppercase action, and widely spaced words alone do not
+ * establish dual dialogue. A common empty gutter must survive every row.
+ */
+function dualDialogueGroups(lines) {
+  const groups = new Map();
+  for (let i = 0; i + 1 < lines.length; i += 1) {
+    const cue = lines[i];
+    const cues = textClusters(cue.items, cue.fontSize);
+    if (cues.length !== 2 || cues[1].left - cues[0].right < cue.fontSize * 4) continue;
+    if (!cues.every(({ text }) => isCueText(text) && !SCENE_HEADING.test(text) &&
+      !SHOT_PREFIX.test(text) && !TRANSITION_TEXT.test(text))) continue;
+
+    const first = lines[i + 1];
+    if (first.baseline - cue.baseline > cue.fontSize * 1.75) continue;
+    const speeches = textClusters(first.items, first.fontSize);
+    if (speeches.length !== 2 || speeches.some((speech, column) => speech.left > cues[column].left + cue.fontSize)) continue;
+
+    let gutterLeft = Math.max(cues[0].right, speeches[0].right);
+    let gutterRight = Math.min(cues[1].left, speeches[1].left);
+    if (gutterRight - gutterLeft < cue.fontSize) continue;
+
+    const rows = [cue, first];
+    for (let j = i + 2; j < lines.length; j += 1) {
+      const line = lines[j];
+      if (line.baseline - rows.at(-1).baseline > Math.max(line.fontSize, rows.at(-1).fontSize) * 1.6) break;
+      const runs = positionedTextRuns(line.items, line.fontSize);
+      // Include outside gaps: one speaker can finish before the other.
+      const gaps = runs.map((run, index) => [index ? runs[index - 1].right : -Infinity, run.x]);
+      gaps.push([runs.at(-1)?.right ?? -Infinity, Infinity]);
+      const gap = gaps.map(([left, right]) => [Math.max(left, gutterLeft), Math.min(right, gutterRight)])
+        .find(([left, right]) => right - left >= line.fontSize * CHAR_WIDTH_RATIO);
+      if (!gap) break;
+      [gutterLeft, gutterRight] = gap;
+      rows.push(line);
+    }
+
+    const divider = (gutterLeft + gutterRight) / 2;
+    const previousTypes = [null, null];
+    const parenTexts = ["", ""];
+    const group = rows.map((line, rowIndex) => ({
+      ...line,
+      columns: [0, 1].map((column) => {
+        const runs = positionedTextRuns(line.items, line.fontSize)
+          .filter((run) => (run.x < divider ? 0 : 1) === column);
+        const text = assembleLineText(runs, line.fontSize);
+        if (!text || MORE_MARKER.test(text)) return null;
+        const continuesParen = previousTypes[column] === "parenthetical" && !isParenClosed(parenTexts[column]);
+        const type = rowIndex === 0 ? "character" : text.startsWith("(") || continuesParen ? "parenthetical" : "dialogue";
+        parenTexts[column] = type === "parenthetical" ? (continuesParen ? `${parenTexts[column]} ${text}` : text) : "";
+        previousTypes[column] = type;
+        return { type, text };
+      }),
+    }));
+    for (const row of rows) groups.set(row.baseline, group);
+    i += rows.length - 1;
+  }
+  return groups;
+}
+
+function selectedDualDialogue(group, selectedBaselines) {
+  const columns = [[], []];
+  const rows = group.filter((line) => selectedBaselines.has(line.baseline));
+  for (const row of rows) {
+    row.columns.forEach((element, column) => {
+      if (!element) return;
+      const previous = columns[column].at(-1);
+      if (previous && previous.type === element.type && element.type !== "character") {
+        previous.text = joinWrappedLine(previous.text, element.text);
+      } else columns[column].push({ ...element });
+    });
+  }
+  return { type: "dualDialogue", columns, page: rows[0].page, baseline: rows[0].baseline, endBaseline: rows.at(-1).baseline };
+}
+
 /**
  * Estimates the action margin as the most common left edge of long lines;
  * dialogue columns are too narrow to produce lines this long.
@@ -72,6 +176,9 @@ export function estimateActionMargin(pages) {
       const items = line.items || [];
       const first = items[0]?.str.trim();
       const left = first && SCENE_NUMBER.test(first) && items[1] ? items[1].x : line.left;
+      // Two narrow speeches on one baseline are not one long action line.
+      if (!textClusters(items.filter((item) => item.x >= left), line.fontSize)
+        .some((cluster) => cluster.text.length >= 45)) continue;
       const key = Math.round(left);
       counts.set(key, (counts.get(key) || 0) + 1);
     }
@@ -140,6 +247,7 @@ function cleanLayoutLine(line, page, margin) {
 
   return {
     text,
+    items,
     left,
     right,
     baseline: line.baseline,
@@ -173,15 +281,28 @@ export function sceneHeadingBoxes(page, actionMargin = estimateActionMargin([pag
  * @param pages Pages in reading order: `{ pageNumber, width, height, lines }`
  *   where `lines` come from buildPageTextLines (optionally limited to a range).
  * @param options.actionMargin Document-level action margin in points.
+ * @param options.contextPages Untrimmed pages used only to recognize dual
+ *   dialogue when an anchor starts or ends inside one of its speeches.
  */
 export function screenplayElementsFromLayout(pages, options = {}) {
   const margin = options.actionMargin ?? estimateActionMargin(pages) ?? DEFAULT_ACTION_MARGIN;
 
   const lines = [];
+  const contextPages = new Map((options.contextPages || []).map((page) => [page.pageNumber, page]));
   for (const page of pages || []) {
-    for (const line of page.lines || []) {
-      const cleaned = cleanLayoutLine(line, page, margin);
-      if (cleaned) lines.push(cleaned);
+    const clean = (source) => (source.lines || []).map((line) => cleanLayoutLine(line, source, margin)).filter(Boolean);
+    const selected = clean(page);
+    const context = contextPages.get(page.pageNumber);
+    const groups = dualDialogueGroups(context ? clean(context) : selected);
+    const selectedBaselines = new Set(selected.map((line) => line.baseline));
+    const emitted = new Set();
+    for (const line of selected) {
+      const group = groups.get(line.baseline);
+      if (!group) lines.push(line);
+      else if (!emitted.has(group)) {
+        lines.push(selectedDualDialogue(group, selectedBaselines));
+        emitted.add(group);
+      }
     }
   }
 
@@ -207,6 +328,15 @@ export function screenplayElementsFromLayout(pages, options = {}) {
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
+    if (line.type === "dualDialogue") {
+      elements.push({ type: line.type, columns: line.columns });
+      current = null;
+      previous = { ...line, baseline: line.endBaseline };
+      inSpeech = false;
+      lastCue = "";
+      pendingMore = false;
+      continue;
+    }
     if (line.more) {
       pendingMore = true;
       continue;

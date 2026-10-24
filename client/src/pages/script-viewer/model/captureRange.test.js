@@ -10,6 +10,8 @@ import {
   textIndexFrom,
 } from "../test/textIndexFixtures.js";
 import { captureAnchoredRange } from "./captureRange.js";
+import { jokerDualDialoguePage } from "@/shared/lib/screenplay/fixtures/dualDialogue.js";
+import { parseScreenplayMarkdown, screenplayToPlainText } from "@/shared/lib/screenplay/grammar.js";
 
 /*
  * The capture-or-reason interface. Every case asserts the whole result, because
@@ -47,6 +49,46 @@ describe("captured text", () => {
 
     expect(captured.capture.plainText).toBe("MAYA\n\nKitchen closed an hour ago. Coffee is all I can do.\n\nSAM");
     expect(captured.capture).toMatchObject({ pageStart: 1, pageEnd: 2 });
+  });
+});
+
+describe("capturing simultaneous dialogue", () => {
+  const page = jokerDualDialoguePage;
+  const index = textIndexFrom([page], { complete: true });
+
+  it("carries both speeches through stored markdown and plain text in column order", () => {
+    const { capture } = captureAnchoredRange(index, scriptLocation(page, 0, page, 7));
+    const elements = parseScreenplayMarkdown(capture.markdown);
+    expect(elements.map((element) => element.type)).toEqual(["character", "dialogue", "dualDialogue"]);
+    expect(elements[2].columns[0][1].text).toBe("No, I think we've had enough of your jokes--");
+    expect(elements[2].columns[1][1].text).toBe("What do you get when you cross a mentally-ill loner with a system that abandons him and treats him like trash?");
+    expect(screenplayToPlainText(capture.markdown)).toBe(capture.plainText);
+    expect(capture.plainText).not.toContain(":::");
+  });
+
+  it("uses cues outside the selected range only to identify columns, without capturing their words", () => {
+    const { capture } = captureAnchoredRange(index, scriptLocation(page, 3, page, 4));
+    expect(parseScreenplayMarkdown(capture.markdown)).toEqual([{ type: "dualDialogue", columns: [
+      [{ type: "dialogue", text: "No, I think we've had enough of your jokes--" }],
+      [{ type: "dialogue", text: "What do you get when you cross a mentally-ill loner" }],
+    ] }]);
+    expect(capture.plainText).not.toMatch(/MURRAY|JOKER|abandons/);
+  });
+
+  it("retains the right-hand column when the range starts after the left speaker finishes", () => {
+    const { capture } = captureAnchoredRange(index, scriptLocation(page, 5, page, 7));
+    expect(parseScreenplayMarkdown(capture.markdown)).toEqual([{ type: "dualDialogue", columns: [
+      [],
+      [{ type: "dialogue", text: "with a system that abandons him and treats him like trash?" }],
+    ] }]);
+  });
+
+  it("captures exactly the cues when the end anchor excludes the speeches below them", () => {
+    const { capture } = captureAnchoredRange(index, scriptLocation(page, 2, page, 2));
+    expect(parseScreenplayMarkdown(capture.markdown)).toEqual([{ type: "dualDialogue", columns: [
+      [{ type: "character", text: "MURRAY FRANKLIN" }],
+      [{ type: "character", text: "JOKER" }],
+    ] }]);
   });
 });
 

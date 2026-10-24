@@ -47,8 +47,44 @@
   margin-top: 0;
 }
 
-.sheet > .block:first-child {
+.sheet > :first-child {
   margin-top: 0;
+}
+
+.dualDialogue {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: max(40px, 6cqi);
+  margin-top: 1em;
+}
+
+.dialogueColumn {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.dialogueColumn > .block {
+  --x: 0cqi;
+  --w: 100cqi;
+}
+
+.dialogueColumn > .block:first-child {
+  margin-top: 0;
+}
+
+.dialogueColumn > .parenthetical {
+  --x: 15cqi;
+  --w: 85cqi;
+}
+
+.dialogueColumn > .character .input {
+  text-align: center;
+}
+
+.dialogueColumn:last-child .typeMenu {
+  left: auto;
+  right: 0;
 }
 
 .input {
@@ -170,6 +206,10 @@
 }
 
 @media (max-width: 600px) {
+  .dualDialogue {
+    gap: max(24px, 6cqi);
+  }
+
   .gutter {
     left: -20px;
   }

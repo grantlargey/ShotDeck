@@ -91,6 +91,7 @@ const SYSTEM_PROMPT = [
     "- Character cue: ### NAME, keeping extensions such as (V.O.), (O.S.), (PRE-LAP).",
     '- Dialogue: the speech under a cue, written as a quote block ("> text"), with wrapped lines joined into one paragraph.',
     '- Parenthetical: inside the speech\'s quote block as "> > (text)", separated from neighboring dialogue paragraphs by a line containing only ">".',
+    '- Simultaneous dialogue: preserve two adjacent speeches as a group using a line "::: dual-dialogue", then the entire left speech in cue/quote grammar, a line "::: column", then the entire right speech, and a closing line ":::". Keep each speaker\'s words together in column reading order; never interleave their lines. Each column may contain only character cues, dialogue, and parentheticals. For partial selections, omit missing cues or leave a column empty; never invent the missing words.',
     "- Shot: #### CLOSE ON JOKER, only for a camera direction set on its own line.",
     '- Transition: <p align="right">CUT TO:</p> for right-aligned transitions such as FADE IN:, CUT TO:, SMASH CUT TO:.',
     '- Centered text (titles, THE END): <p align="center">TEXT</p>',
@@ -99,6 +100,9 @@ const SYSTEM_PROMPT = [
     "",
     "EXAMPLE",
     EXAMPLE,
+    "",
+    "SIMULTANEOUS DIALOGUE EXAMPLE",
+    "::: dual-dialogue\n### MAYA\n\n> Wait!\n::: column\n### ARTHUR\n\n> > (overlapping)\n>\n> Go!\n:::",
 ].join("\n");
 
 function extractResponseOutputText(payload) {

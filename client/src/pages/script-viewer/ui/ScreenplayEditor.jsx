@@ -14,6 +14,9 @@ import { elementShortcutLabel } from "../lib/platform.js";
 import styles from "./ScreenplayEditor.module.css";
 
 const SHORTCUT_TYPES = new Map(SCREENPLAY_ELEMENTS.map((element) => [`Digit${element.shortcut}`, element.type]));
+const SPEECH_ELEMENTS = SCREENPLAY_ELEMENTS.filter((element) =>
+  ["character", "parenthetical", "dialogue"].includes(element.type),
+);
 const TYPE_BUTTON = "[data-element-type-button]";
 let blockCounter = 0;
 
@@ -23,17 +26,58 @@ function createBlock(type, text = "") {
 }
 
 function blocksFromMarkdown(markdown) {
-  const blocks = parseScreenplayMarkdown(markdown).map((element) => createBlock(element.type, element.text));
+  const blocks = parseScreenplayMarkdown(markdown).map((element) => {
+    if (element.type !== "dualDialogue") return createBlock(element.type, element.text);
+    return {
+      ...createBlock(element.type),
+      columns: element.columns.map((column) =>
+        column.length > 0
+          ? column.map((speech) => createBlock(speech.type, speech.text))
+          : [createBlock("dialogue")],
+      ),
+    };
+  });
   return blocks.length > 0 ? blocks : [createBlock("action")];
 }
 
+// A column is its own editable sequence. Splits and merges never cross into
+// another speaker or consume a neighboring dual-dialogue group.
+function editableBlocks(blocks) {
+  return blocks.flatMap((block, index) =>
+    block.type === "dualDialogue"
+      ? block.columns.flatMap((column, columnIndex) =>
+          column.map((speech, speechIndex) => ({
+            block: speech,
+            siblings: column,
+            index: speechIndex,
+            groupIndex: index,
+            columnIndex,
+          })),
+        )
+      : [{ block, siblings: blocks, index }],
+  );
+}
+
+function replaceSequence(blocks, location, nextSequence) {
+  if (location.groupIndex === undefined) return nextSequence;
+  return blocks.map((block, index) =>
+    index === location.groupIndex
+      ? {
+          ...block,
+          columns: block.columns.map((column, columnIndex) =>
+            columnIndex === location.columnIndex ? nextSequence : column,
+          ),
+        }
+      : block,
+  );
+}
+
 // Each edit keeps the document change and its caret destination together.
-function splitBlock(blocks, index, { value, selectionStart, selectionEnd }) {
+function splitBlock(blocks, index, { value, selectionStart, selectionEnd }, nextType) {
   const block = blocks[index];
   const before = { ...block, text: value.slice(0, selectionStart) };
   const remainingText = value.slice(selectionEnd);
-  const nextType = remainingText ? block.type : NEXT_SCREENPLAY_TYPE[block.type];
-  const created = createBlock(nextType, remainingText);
+  const created = createBlock(remainingText ? block.type : nextType, remainingText);
   const nextBlocks = [...blocks];
   nextBlocks.splice(index, 1, before, created);
   return { blocks: nextBlocks, focus: { id: created.id, caret: 0 } };
@@ -77,7 +121,7 @@ function focusInput(input, caret) {
   input.setSelectionRange(position, position);
 }
 
-function ElementTypeMenu({ currentType, onSelect, onClose }) {
+function ElementTypeMenu({ currentType, elements, onSelect, onClose }) {
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -96,7 +140,7 @@ function ElementTypeMenu({ currentType, onSelect, onClose }) {
       onSelect(currentType);
       return;
     }
-    const byDigit = SCREENPLAY_ELEMENTS.find((element) => element.shortcut === event.key);
+    const byDigit = elements.find((element) => element.shortcut === event.key);
     if (byDigit) {
       event.preventDefault();
       onSelect(byDigit.type);
@@ -112,7 +156,7 @@ function ElementTypeMenu({ currentType, onSelect, onClose }) {
 
   return (
     <div ref={menuRef} role="menu" aria-label="Element type" className={styles.typeMenu} onKeyDown={handleKeyDown}>
-      {SCREENPLAY_ELEMENTS.map((element) => (
+      {elements.map((element) => (
         <button
           key={element.type}
           type="button"
@@ -158,7 +202,9 @@ function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
   const sheetRef = useRef(null);
   const inputsRef = useRef(new Map());
   const pendingFocusRef = useRef(null);
-  const layoutSignature = blocks.map((block) => `${block.id}:${block.type}`).join("|");
+  const fields = editableBlocks(blocks);
+  const locations = new Map(fields.map((location, index) => [location.block.id, { ...location, fieldIndex: index }]));
+  const layoutSignature = fields.map(({ block }) => `${block.id}:${block.type}`).join("|");
 
   useLayoutEffect(() => {
     for (const input of inputsRef.current.values()) autosize(input);
@@ -212,18 +258,23 @@ function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
     setMenuBlockId(null);
     const input = inputsRef.current.get(blockId);
     const caret = input?.selectionStart ?? 0;
-    const block = blocks.find((item) => item.id === blockId);
-    if (!block || block.type === type) {
+    const location = locations.get(blockId);
+    const block = location?.block;
+    const allowed = location?.groupIndex === undefined ? SCREENPLAY_ELEMENTS : SPEECH_ELEMENTS;
+    if (!block || block.type === type || !allowed.some((element) => element.type === type)) {
       focusInput(input, caret);
       return;
     }
     commit({
-      blocks: blocks.map((item) => (item.id === blockId ? { ...item, type } : item)),
+      blocks: replaceSequence(blocks, location, location.siblings.map((item) =>
+        item.id === blockId ? { ...item, type } : item,
+      )),
       focus: { id: blockId, caret },
     });
   }
 
-  function handleKeyDown(event, block, index) {
+  function handleKeyDown(event, location) {
+    const { block, siblings, index, fieldIndex, groupIndex } = location;
     const input = event.currentTarget;
     const { selectionStart, selectionEnd, value } = input;
     const collapsed = selectionStart === selectionEnd;
@@ -237,7 +288,12 @@ function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
 
     if (event.key === "Tab" && !modifier && !event.altKey) {
       event.preventDefault();
-      setBlockType(block.id, cycleScreenplayType(block.type, event.shiftKey ? -1 : 1));
+      const step = event.shiftKey ? -1 : 1;
+      const speechIndex = SPEECH_ELEMENTS.findIndex((element) => element.type === block.type);
+      const nextType = groupIndex === undefined
+        ? cycleScreenplayType(block.type, step)
+        : SPEECH_ELEMENTS[(speechIndex + step + SPEECH_ELEMENTS.length) % SPEECH_ELEMENTS.length].type;
+      setBlockType(block.id, nextType);
       return;
     }
 
@@ -250,89 +306,107 @@ function ScreenplayBlocks({ initialMarkdown, onChange, focusHandoffRef }) {
 
     if (event.key === "Enter" && !event.shiftKey && !modifier && !event.altKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      commit(splitBlock(blocks, index, input));
+      const nextType = groupIndex === undefined ? NEXT_SCREENPLAY_TYPE[block.type] : "dialogue";
+      const edit = splitBlock(siblings, index, input, nextType);
+      commit({ ...edit, blocks: replaceSequence(blocks, location, edit.blocks) });
       return;
     }
 
-    if (event.key === "Backspace" && collapsed && selectionStart === 0 && index > 0) {
+    if (event.key === "Backspace" && collapsed && selectionStart === 0 && index > 0 && siblings[index - 1].type !== "dualDialogue") {
       event.preventDefault();
-      commit(mergeBlockBackward(blocks, index, value));
+      const edit = mergeBlockBackward(siblings, index, value);
+      commit({ ...edit, blocks: replaceSequence(blocks, location, edit.blocks) });
       return;
     }
 
-    if (event.key === "Delete" && collapsed && selectionStart === value.length && index < blocks.length - 1) {
+    if (event.key === "Delete" && collapsed && selectionStart === value.length && index < siblings.length - 1 && siblings[index + 1].type !== "dualDialogue") {
       event.preventDefault();
-      commit(mergeBlockForward(blocks, index, value));
+      const edit = mergeBlockForward(siblings, index, value);
+      commit({ ...edit, blocks: replaceSequence(blocks, location, edit.blocks) });
       return;
     }
 
     if (event.shiftKey || !collapsed) return;
-    if (event.key === "ArrowUp" && selectionStart === 0 && index > 0) {
+    if (event.key === "ArrowUp" && selectionStart === 0 && fieldIndex > 0) {
       event.preventDefault();
-      focusInput(inputsRef.current.get(blocks[index - 1].id), "end");
-    } else if (event.key === "ArrowDown" && selectionStart === value.length && index < blocks.length - 1) {
+      focusInput(inputsRef.current.get(fields[fieldIndex - 1].block.id), "end");
+    } else if (event.key === "ArrowDown" && selectionStart === value.length && fieldIndex < fields.length - 1) {
       event.preventDefault();
-      focusInput(inputsRef.current.get(blocks[index + 1].id), 0);
+      focusInput(inputsRef.current.get(fields[fieldIndex + 1].block.id), 0);
     }
+  }
+
+  function renderBlock(block) {
+    const location = locations.get(block.id);
+    const element = getScreenplayElement(block.type);
+    return (
+      <div
+        key={block.id}
+        className={[styles.block, styles[block.type], focusedId === block.id ? styles.focused : ""].join(" ")}
+      >
+        <div className={styles.gutter}>
+          <button
+            type="button"
+            tabIndex={-1}
+            data-element-type-button
+            className={styles.typeButton}
+            title={`${element.label} · click to change`}
+            aria-label={`Change element type (currently ${element.label})`}
+            aria-haspopup="menu"
+            aria-expanded={menuBlockId === block.id}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setMenuBlockId((current) => (current === block.id ? null : block.id))}
+          >
+            <ScreenplayElementIcon type={block.type} size={14} />
+          </button>
+          {menuBlockId === block.id && (
+            <ElementTypeMenu
+              currentType={block.type}
+              elements={location.groupIndex === undefined ? SCREENPLAY_ELEMENTS : SPEECH_ELEMENTS}
+              onSelect={(type) => setBlockType(block.id, type)}
+              onClose={closeMenu}
+            />
+          )}
+        </div>
+        <textarea
+          ref={(node) => {
+            if (node) inputsRef.current.set(block.id, node);
+            else inputsRef.current.delete(block.id);
+          }}
+          className={styles.input}
+          rows={1}
+          value={block.text}
+          spellCheck={false}
+          placeholder={element.label}
+          aria-label={`${element.label}, block ${location.fieldIndex + 1}`}
+          onChange={(event) => {
+            autosize(event.currentTarget);
+            commit({
+              blocks: replaceSequence(blocks, location, location.siblings.map((item) =>
+                item.id === block.id ? { ...item, text: event.target.value } : item,
+              )),
+            });
+          }}
+          onFocus={() => setFocusedId(block.id)}
+          onBlur={() => setFocusedId((current) => (current === block.id ? null : current))}
+          onKeyDown={(event) => handleKeyDown(event, location)}
+        />
+      </div>
+    );
   }
 
   return (
     <div className={styles.editor}>
       <div ref={sheetRef} className={styles.sheet}>
-        {blocks.map((block, index) => {
-          const element = getScreenplayElement(block.type);
-          return (
-            <div
-              key={block.id}
-              className={[styles.block, styles[block.type], focusedId === block.id ? styles.focused : ""].join(" ")}
-            >
-              <div className={styles.gutter}>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-element-type-button
-                  className={styles.typeButton}
-                  title={`${element.label} · click to change`}
-                  aria-label={`Change element type (currently ${element.label})`}
-                  aria-haspopup="menu"
-                  aria-expanded={menuBlockId === block.id}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => setMenuBlockId((current) => (current === block.id ? null : block.id))}
-                >
-                  <ScreenplayElementIcon type={block.type} size={14} />
-                </button>
-                {menuBlockId === block.id && (
-                  <ElementTypeMenu
-                    currentType={block.type}
-                    onSelect={(type) => setBlockType(block.id, type)}
-                    onClose={closeMenu}
-                  />
-                )}
+        {blocks.map((block) => block.type === "dualDialogue" ? (
+          <div key={block.id} className={styles.dualDialogue} role="group" aria-label="Simultaneous dialogue">
+            {block.columns.map((column, columnIndex) => (
+              <div key={columnIndex} className={styles.dialogueColumn} role="group" aria-label={`Speaker ${columnIndex + 1}`}>
+                {column.map(renderBlock)}
               </div>
-              <textarea
-                ref={(node) => {
-                  if (node) inputsRef.current.set(block.id, node);
-                  else inputsRef.current.delete(block.id);
-                }}
-                className={styles.input}
-                rows={1}
-                value={block.text}
-                spellCheck={false}
-                placeholder={element.label}
-                aria-label={`${element.label}, block ${index + 1}`}
-                onChange={(event) => {
-                  autosize(event.currentTarget);
-                  commit({
-                    blocks: blocks.map((item) => (item.id === block.id ? { ...item, text: event.target.value } : item)),
-                  });
-                }}
-                onFocus={() => setFocusedId(block.id)}
-                onBlur={() => setFocusedId((current) => (current === block.id ? null : current))}
-                onKeyDown={(event) => handleKeyDown(event, block, index)}
-              />
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        ) : renderBlock(block))}
       </div>
     </div>
   );

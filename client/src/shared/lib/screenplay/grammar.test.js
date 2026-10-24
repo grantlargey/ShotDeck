@@ -189,3 +189,84 @@ describe("screenplayToPlainText", () => {
     expect(screenplayToPlainText(parseScreenplayMarkdown(markdown))).toBe(screenplayToPlainText(markdown));
   });
 });
+
+describe("simultaneous dialogue", () => {
+  const columns = [
+    [
+      { type: "character", text: "MURRAY FRANKLIN" },
+      { type: "dialogue", text: "No, I think we've had enough of your jokes--" },
+    ],
+    [
+      { type: "character", text: "JOKER" },
+      { type: "parenthetical", text: "(overlapping)" },
+      { type: "dialogue", text: "What do you get when you cross a mentally-ill loner\nwith a system that abandons him?" },
+    ],
+  ];
+  const dual = { type: "dualDialogue", columns };
+  const markdown = [
+    "::: dual-dialogue",
+    "### MURRAY FRANKLIN",
+    "",
+    "> No, I think we've had enough of your jokes--",
+    "::: column",
+    "### JOKER",
+    "",
+    "> > (overlapping)",
+    ">",
+    "> What do you get when you cross a mentally-ill loner",
+    "> with a system that abandons him?",
+    ":::",
+  ].join("\n");
+
+  it("round-trips both speeches, including parentheticals and unequal line counts", () => {
+    expectRoundTrip(markdown, [dual]);
+  });
+
+  it("keeps surrounding speeches outside the simultaneous group", () => {
+    expectRoundTrip(`### JOKER\n\n> How about another joke, Murray?\n\n${markdown}\n\nThe audience gasps.`, [
+      { type: "character", text: "JOKER" },
+      { type: "dialogue", text: "How about another joke, Murray?" },
+      dual,
+      { type: "action", text: "The audience gasps." },
+    ]);
+  });
+
+  it("exports every word in left-column then right-column reading order", () => {
+    const expected = columns.flat().map((element) => element.text).join("\n\n");
+    expect(screenplayToPlainText(markdown)).toBe(expected);
+    expect(screenplayToPlainText([dual])).toBe(expected);
+  });
+
+  it("supports partial captures without character cues", () => {
+    expectRoundTrip("::: dual-dialogue\n> enough of your jokes--\n::: column\n> cross a mentally-ill loner\n:::", [
+      { type: "dualDialogue", columns: [
+        [{ type: "dialogue", text: "enough of your jokes--" }],
+        [{ type: "dialogue", text: "cross a mentally-ill loner" }],
+      ] },
+    ]);
+  });
+
+  it("preserves empty columns while an excerpt is being edited", () => {
+    for (const emptyColumns of [[[], []], [[], columns[1]], [columns[0], []]]) {
+      const element = { type: "dualDialogue", columns: emptyColumns };
+      expect(parseScreenplayMarkdown(serializeScreenplayMarkdown([element]))).toEqual([element]);
+    }
+  });
+
+  it.each([
+    "::: dual-dialogue\n### MAYA\n\n> Wait!\n::: column\n> Go!",
+    "::: dual-dialogue\n> Wait!\n:::",
+    "::: dual-dialogue\n> Wait!\n::: column\n> Go!\n::: column\n> Stop!\n:::",
+    "::: dual-dialogue\nAn action paragraph.\n::: column\n> Go!\n:::",
+    "::: dual-dialogue\n::: dual-dialogue\n> Wait!\n::: column\n> Go!\n:::\n::: column\n> Stop!\n:::",
+  ])("retains malformed group source as ordinary text: %s", (source) => {
+    expect(parseScreenplayMarkdown(source)).toEqual([{ type: "action", text: source }]);
+    expect(screenplayToPlainText(source)).toBe(source);
+    expect(screenplayToPlainText(serializeScreenplayMarkdown(parseScreenplayMarkdown(source)))).toBe(source);
+  });
+
+  it("escapes literal fence markers in action text", () => {
+    const action = { type: "action", text: "The sign says:\n::: dual-dialogue\n::: column\n:::" };
+    expectRoundTrip("The sign says:\n\\::: dual-dialogue\n\\::: column\n\\:::", [action]);
+  });
+});

@@ -3,8 +3,9 @@ import { normalizeScreenplayType } from "./elements.js";
 /*
  * ScriptDeck screenplay markdown
  * ------------------------------
- * A small, GitHub-renderable subset of markdown where every block is one
- * screenplay element. Blocks are separated by a blank line.
+ * A small markdown-based format where every block is one screenplay element.
+ * Blocks are separated by a blank line; simultaneous speeches use a custom
+ * two-column fence around ordinary speech blocks.
  *
  *   ## INT. DEPT. OF HEALTH, OFFICE - MORNING      scene heading
  *   Plain paragraph                                action
@@ -26,6 +27,19 @@ import { normalizeScreenplayType } from "./elements.js";
  *   >
  *   > How 'bout you.
  *
+ * Simultaneous speeches use two columns, each containing cues, dialogue and
+ * parentheticals in reading order. Cues may be absent in partial captures:
+ *
+ *   ::: dual-dialogue
+ *   ### MAYA
+ *
+ *   > Wait!
+ *   ::: column
+ *   ### ARTHUR
+ *
+ *   > Go!
+ *   :::
+ *
  * The server formatter prompt describes the same grammar
  * (server/src/services/screenplay-format.service.js); keep them in sync.
  */
@@ -34,7 +48,15 @@ const QUOTE_LINE = /^ {0,3}>/;
 const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*)$/;
 const ALIGNED_BLOCK_OPEN = /^ {0,3}<(p|div|h[1-6])\b[^>]*?\balign\s*=\s*["']?(left|right|center)["']?[^>]*>/i;
 const BLOCK_START = /^ {0,3}(?:#{1,6}[ \t]|>|<(?:p|div|h[1-6])\b[^>]*?\balign)/i;
-const ESCAPED_LINE_START = /^\\(?=[#><])/;
+const ESCAPED_LINE_START = /^\\(?=[#><]|:::)/;
+const DUAL_START = /^ {0,3}:::[ \t]+dual-dialogue[ \t]*$/;
+const DUAL_COLUMN = /^ {0,3}:::[ \t]+column[ \t]*$/;
+const DUAL_END = /^ {0,3}:::[ \t]*$/;
+const SPEECH_TYPES = new Set(["character", "dialogue", "parenthetical"]);
+
+function isBlockStart(line) {
+  return BLOCK_START.test(line) || DUAL_START.test(line) || DUAL_COLUMN.test(line) || DUAL_END.test(line);
+}
 
 const HEADING_LEVEL_TYPES = {
   1: "centered",
@@ -102,8 +124,46 @@ function pushQuotedElements(elements, quotedLines) {
   flush();
 }
 
+function readDualDialogue(lines, start) {
+  let depth = 1;
+  let nested = false;
+  let end = lines.length;
+  const separators = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (DUAL_START.test(lines[index])) {
+      depth += 1;
+      nested = true;
+    } else if (DUAL_END.test(lines[index])) {
+      depth -= 1;
+      if (depth === 0) {
+        end = index;
+        break;
+      }
+    } else if (DUAL_COLUMN.test(lines[index]) && depth === 1) {
+      separators.push(index);
+    }
+  }
+
+  if (!nested && end < lines.length && separators.length === 1) {
+    const separator = separators[0];
+    const columns = [lines.slice(start + 1, separator), lines.slice(separator + 1, end)]
+      .map((column) => parseScreenplayMarkdown(column.join("\n")));
+    if (columns.every((column) => column.every((element) => SPEECH_TYPES.has(element.type)))) {
+      return { element: { type: "dualDialogue", columns }, next: end + 1 };
+    }
+  }
+
+  // A damaged fence must retain its complete source, including headings and
+  // quote markers, rather than silently consuming words or one of its columns.
+  return {
+    element: { type: "action", text: lines.slice(start, end + 1).join("\n").trim() },
+    next: Math.min(end + 1, lines.length),
+  };
+}
+
 /**
- * Parses screenplay markdown into `{ type, text }` elements. Text with no
+ * Parses screenplay markdown into `{ type, text }` elements and nested
+ * `{ type: "dualDialogue", columns: [leftElements, rightElements] }` groups. Text with no
  * grammar markers is valid too: each paragraph, separated by a blank line, is
  * one action element, and its line breaks are kept as written.
  */
@@ -117,6 +177,13 @@ export function parseScreenplayMarkdown(source) {
     const line = lines[i];
     if (!line.trim()) {
       i += 1;
+      continue;
+    }
+
+    if (DUAL_START.test(line)) {
+      const { element, next } = readDualDialogue(lines, i);
+      elements.push(element);
+      i = next;
       continue;
     }
 
@@ -152,14 +219,14 @@ export function parseScreenplayMarkdown(source) {
     }
 
     const paragraph = [];
-    while (i < lines.length && lines[i].trim() && (paragraph.length === 0 || !BLOCK_START.test(lines[i]))) {
+    while (i < lines.length && lines[i].trim() && (paragraph.length === 0 || !isBlockStart(lines[i]))) {
       paragraph.push(lines[i].replace(ESCAPED_LINE_START, "").trimEnd());
       i += 1;
     }
     elements.push({ type: "action", text: paragraph.join("\n").trim() });
   }
 
-  return elements.filter((element) => element.text);
+  return elements.filter((element) => element.type === "dualDialogue" || element.text);
 }
 
 function serializeBlock(type, text) {
@@ -177,7 +244,7 @@ function serializeBlock(type, text) {
     default:
       return text
         .split("\n")
-        .map((line) => (BLOCK_START.test(line) ? `\\${line.trimStart()}` : line))
+        .map((line) => (isBlockStart(line) ? `\\${line.trimStart()}` : line))
         .join("\n");
   }
 }
@@ -197,6 +264,13 @@ export function serializeScreenplayMarkdown(elements) {
   };
 
   for (const element of Array.isArray(elements) ? elements : []) {
+    if (element?.type === "dualDialogue" && Array.isArray(element.columns)) {
+      flushQuote();
+      const columns = element.columns.map((column) => serializeScreenplayMarkdown(column));
+      blocks.push(`::: dual-dialogue\n${columns.join("\n::: column\n")}\n:::`);
+      continue;
+    }
+
     const type = normalizeScreenplayType(element?.type);
     const text = String(element?.text ?? "")
       .replace(/\r\n?/g, "\n")
@@ -229,7 +303,9 @@ export function serializeScreenplayMarkdown(elements) {
 export function screenplayToPlainText(input) {
   const elements = Array.isArray(input) ? input : parseScreenplayMarkdown(input);
   return elements
-    .map((element) => String(element.text || "").trim())
+    .map((element) => element.type === "dualDialogue" && Array.isArray(element.columns)
+      ? element.columns.map((column) => screenplayToPlainText(column)).filter(Boolean).join("\n\n")
+      : String(element.text || "").trim())
     .filter(Boolean)
     .join("\n\n");
 }

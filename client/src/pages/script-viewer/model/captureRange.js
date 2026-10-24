@@ -85,6 +85,7 @@ export function captureAnchoredRange(textIndex, anchors) {
 
   const elements = screenplayElementsFromLayout(segments, {
     actionMargin: textIndex.actionMargin ?? estimateActionMargin(pages),
+    contextPages: pages,
   });
   const plainText = screenplayToPlainText(elements);
   // A range can hold indexed lines and still capture nothing: a page number on

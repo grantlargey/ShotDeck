@@ -2,6 +2,22 @@ import { useMemo } from "react";
 import { parseScreenplayMarkdown } from "@/shared/lib/screenplay/grammar.js";
 import styles from "./ScreenplayView.module.css";
 
+function ScreenplayElement({ element }) {
+  if (element.type === "dualDialogue") {
+    return (
+      <div className={`${styles.element} ${styles.dualDialogue}`} role="group" aria-label="Simultaneous dialogue">
+        {element.columns.map((column, index) => (
+          <div key={index} className={styles.dualColumn}>
+            {column.map((child, childIndex) => <ScreenplayElement key={childIndex} element={child} />)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return <p className={`${styles.element} ${styles[element.type] || ""}`}>{element.text}</p>;
+}
+
 /**
  * Renders screenplay markdown with screenplay page layout: bold scene
  * headings, indented character cues, dialogue and parentheticals, and
@@ -33,9 +49,7 @@ export function ScreenplayView({ source, variant = "page", maxElements, emptyTex
           <p className={styles.empty}>{emptyText}</p>
         ) : (
           visible.map((element, index) => (
-            <p key={index} className={`${styles.element} ${styles[element.type] || ""}`}>
-              {element.text}
-            </p>
+            <ScreenplayElement key={index} element={element} />
           ))
         )}
       </div>
