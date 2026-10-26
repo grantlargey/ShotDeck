@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getSemanticSearchStatus, searchScriptScenes, searchScriptScenesSemantically } from "@/shared/api/scriptScenes.js";
+import { setFiltersFolded } from "../model/filterFold.js";
 import { SceneBrowser } from "./SceneBrowser.jsx";
 
 vi.mock("@/shared/api/scriptScenes.js", () => ({
@@ -59,6 +60,7 @@ function deferred() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setFiltersFolded(false);
   getSemanticSearchStatus.mockResolvedValue({ configured: true });
   searchScriptScenes.mockResolvedValue(SCENES);
   searchScriptScenesSemantically.mockResolvedValue({ scenes: [] });
@@ -192,6 +194,49 @@ describe("script-scoped scene browsing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
     expect(cards()).toHaveLength(3);
     expect(screen.queryByText("Search failed.")).toBeNull();
+  });
+});
+
+describe("folding the filters away", () => {
+  const panel = () => screen.getByRole("complementary", { name: "Scene filters" });
+  const foldButton = () => screen.getByRole("button", { name: "Fold the filters away" });
+
+  it("swings the panel onto a spine that counts the selected tags, and brings it back", async () => {
+    render(<Browser />);
+    fireEvent.click(screen.getByRole("button", { name: "Character Focus" }));
+    toggle("Protagonist");
+    fireEvent.click(foldButton());
+    expect(panel().hasAttribute("inert")).toBe(true);
+    const spine = screen.getByRole("button", { name: "Show filters, 1 selected" });
+    expect(spine.getAttribute("aria-expanded")).toBe("false");
+    expect(spine.getAttribute("aria-controls")).toBe(panel().id);
+    expect(cards()).toEqual(["First scene", "Second scene"]);
+    fireEvent.click(spine);
+    expect(panel().hasAttribute("inert")).toBe(false);
+    expect(screen.queryByRole("button", { name: /^Show filters/ })).toBeNull();
+    expect(foldButton().getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() => expect(getSemanticSearchStatus).toHaveBeenCalledOnce());
+  });
+
+  it("remembers the folded filters for both pages", async () => {
+    const { unmount } = render(<Browser />);
+    fireEvent.click(foldButton());
+    expect(window.localStorage.getItem("scriptdeck:scene-filters-folded")).toBe("true");
+    unmount();
+    render(<Browser scoped={false} />);
+    expect(screen.getByRole("button", { name: "Show filters" })).toBeTruthy();
+    expect(panel().hasAttribute("inert")).toBe(true);
+    await waitFor(() => expect(cards()).toHaveLength(3));
+  });
+
+  it("hands focus from the fold button to the spine and back", async () => {
+    render(<Browser />);
+    act(() => foldButton().focus());
+    fireEvent.click(foldButton());
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Show filters" }));
+    fireEvent.click(document.activeElement);
+    expect(document.activeElement).toBe(foldButton());
+    await waitFor(() => expect(getSemanticSearchStatus).toHaveBeenCalledOnce());
   });
 });
 

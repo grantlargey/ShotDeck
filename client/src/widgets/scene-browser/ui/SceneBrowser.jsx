@@ -14,12 +14,14 @@ import {
 import { cx } from "@/shared/lib/cx.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { useMediaQuery } from "@/shared/lib/useMediaQuery.js";
 import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
 import { SectionHeading } from "@/shared/ui/SectionHeading.jsx";
+import { FOLD_MS, GLIDE_EASING, glideKeyframes, useFiltersFolded } from "../model/filterFold.js";
 import { buildFilterGroups, countSceneTags, filterSceneTags } from "../model/sceneBrowse.js";
 import { sweepDelays } from "../model/stillSweep.js";
 import { CardLayoutSwitch } from "./CardLayoutSwitch.jsx";
@@ -30,6 +32,8 @@ import styles from "./SceneBrowser.module.css";
 
 const SKELETON_CARDS = 6;
 const SEMANTIC_RESULT_LIMIT = 24;
+// At this width and below the filters open as a drawer; wider, they dock beside the grid and can fold away.
+const DRAWER_QUERY = "(max-width: 900px)";
 // Joins tag values into one stable string for memo dependencies.
 const TAG_SEPARATOR = " ";
 
@@ -85,6 +89,15 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
   const [loadedCatalog, setCatalog] = useState([]);
   const catalog = scopedScenes ?? loadedCatalog;
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const docked = !useMediaQuery(DRAWER_QUERY);
+  const [filtersFolded, setFiltersFolded] = useFiltersFolded();
+  const filtersAway = docked && filtersFolded;
+  // The filter panel swinging shut or open: "folding" | "unfolding" | null.
+  const [foldMotion, setFoldMotion] = useState(null);
+  const toolbarRef = useRef(null);
+  const activeFiltersRef = useRef(null);
+  // Where things sat before the filter column changed width, for them to glide from: [element, box] pairs.
+  const glideFromRef = useRef(null);
   // What the API reports about semantic search, including whether it is configured.
   const [semanticStatus, setSemanticStatus] = useState(null);
   const openedWithFiltersRef = useRef(selectedTags.length > 0 || Boolean(query));
@@ -170,6 +183,31 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
     const timer = setTimeout(() => setStillMotion(null), stillMotion.duration);
     return () => clearTimeout(timer);
   }, [stillMotion]);
+
+  useEffect(() => {
+    if (!foldMotion) return undefined;
+    const timer = setTimeout(() => setFoldMotion(null), FOLD_MS);
+    return () => clearTimeout(timer);
+  }, [foldMotion]);
+
+  // Once the filter column has changed width, the Scenes heading, the active
+  // filters and the cards glide from where they were to where they now sit.
+  useLayoutEffect(() => {
+    const from = glideFromRef.current;
+    glideFromRef.current = null;
+    if (!from) return;
+    const viewportHeight = window.innerHeight;
+    for (const [element, before] of from) {
+      if (!element.isConnected || typeof element.animate !== "function") continue;
+      // Measured where it now rests, not where an unfinished glide has it.
+      element.getAnimations().forEach((animation) => animation.cancel());
+      const after = element.getBoundingClientRect();
+      const offScreen = (box) => box.bottom < 0 || box.top > viewportHeight;
+      if (offScreen(before) && offScreen(after)) continue;
+      const keyframes = glideKeyframes(before, after);
+      if (keyframes) element.animate(keyframes, { duration: FOLD_MS, easing: GLIDE_EASING });
+    }
+  }, [filtersAway]);
   const tagCounts = useMemo(() => countSceneTags(catalog), [catalog]);
   const filterGroups = buildFilterGroups();
   const titleCount = useMemo(() => new Set(results.map((row) => row.movie_id)).size, [results]);
@@ -200,6 +238,18 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
       if (nextLayout === "split") params.set("preview", "stills");
       else params.delete("preview");
     });
+  }
+
+  /** Folds the filters away onto their spine, or brings them back, as the cards glide to make or take the room. */
+  function foldFilters(next) {
+    if (!reducedMotion) {
+      // The Scenes heading is the first thing in its row (SectionHeading).
+      const heading = toolbarRef.current?.firstElementChild;
+      const elements = [heading, activeFiltersRef.current, ...(gridRef.current?.children ?? [])].filter(Boolean);
+      glideFromRef.current = elements.map((element) => [element, element.getBoundingClientRect()]);
+      setFoldMotion(next ? "folding" : "unfolding");
+    }
+    setFiltersFolded(next);
   }
 
   function toggleTag(tag) {
@@ -255,14 +305,19 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
     : "Loading scenes…";
 
   return (
-    <div className={cx(styles.page, scope && styles.scoped)}>
+    <div className={cx(styles.page, scope && styles.scoped, filtersAway && styles.pageFolded)}>
       <FilterSidebar
         groups={filterGroups}
         tagCounts={tagCounts}
         selectedTags={selectedTags}
         match={match}
         open={filtersOpen}
+        docked={docked}
+        folded={filtersFolded}
+        motion={foldMotion}
         onClose={() => setFiltersOpen(false)}
+        onFold={() => foldFilters(true)}
+        onUnfold={() => foldFilters(false)}
         onToggleTag={toggleTag}
         onMatchChange={setMatch}
         onClear={() => setSelectedTags([])}
@@ -276,6 +331,7 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
         )}
 
         <SectionHeading
+          ref={toolbarRef}
           id={headingId}
           className={styles.toolbar}
           actionsClassName={styles.toolbarActions}
@@ -314,7 +370,7 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
         </p>
 
         {(query || selectedTags.length > 0) && (
-          <ul className={styles.activeFilters} aria-label="Active filters">
+          <ul ref={activeFiltersRef} className={styles.activeFilters} aria-label="Active filters">
             {query && (
               <li className={styles.searchTagItem}>
                 <SearchTag

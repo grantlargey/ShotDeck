@@ -5,9 +5,9 @@ import styles from "./SectionHeading.module.css";
  * Section title row used on content pages: a small uppercase label (with an
  * optional count or badge) and actions, over a hairline.
  */
-export function SectionHeading({ id, title, count, badge, description, actions, className, actionsClassName }) {
+export function SectionHeading({ ref, id, title, count, badge, description, actions, className, actionsClassName }) {
   return (
-    <div className={cx(styles.header, className)}>
+    <div ref={ref} className={cx(styles.header, className)}>
       <div className={styles.heading}>
         <h2 id={id} className={styles.title}>
           {title}
