@@ -331,7 +331,8 @@ function TagsTab({ tags, openGroups, onToggleGroup, onToggleTag, onClearTags }) 
  * It reads the scene draft and calls `draftActions` itself. The page passes
  * what it owns: the tab, the film's title and runtime, indexing progress, the
  * overlapping scene, the lines Begin and End sit on, request state, and the
- * handlers that prompt or send a request.
+ * handlers that prompt or send a request. `inert` and `className` let the page
+ * set the panel aside in focused reading.
  */
 export function AnnotatorPanel({
   draft,
@@ -355,6 +356,8 @@ export function AnnotatorPanel({
   deleting,
   onSave,
   onDelete,
+  inert,
+  className,
 }) {
   const editing = Boolean(draft.savedScene?.id);
   const sceneLabel = draft.savedScene ? formatFilmTiming(draft.savedScene) : "Untitled scene";
@@ -374,7 +377,7 @@ export function AnnotatorPanel({
   }
 
   return (
-    <aside className={styles.panel} aria-label="Scene annotator">
+    <aside className={cx(styles.panel, className)} aria-label="Scene annotator" inert={inert}>
       <header className={styles.header}>
         <div className={styles.headerText}>
           <p className={styles.eyebrow}>{editing ? "Editing saved scene" : "New scene"}</p>

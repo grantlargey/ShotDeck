@@ -3,6 +3,19 @@
   background: var(--color-bg-deep);
 }
 
+/*
+ * Reading the script in focus (ScriptViewerPage, data-focused-reading): out of
+ * reach behind the reading pane, and on a phone, where the window scrolls the
+ * pages, gone, so the pages end the page.
+ */
+:global(html[data-focused-reading]) .footer {
+  visibility: hidden;
+}
+
+:global(html[data-focused-reading="window"]) .footer {
+  display: none;
+}
+
 /* Full width with the header's gutter, so the two logos line up on every page. */
 .inner {
   padding: 22px var(--page-gutter);

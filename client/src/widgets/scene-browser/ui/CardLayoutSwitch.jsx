@@ -38,7 +38,7 @@ function LayoutCard({ layout, stillUrl, alive }) {
  * still over the script, both in sight. The chosen card sits forward and
  * comes alive each time it's picked.
  */
-export function CardLayoutSwitch({ value, onChange, stillUrl }) {
+export function CardLayoutSwitch({ value, onChange, stillUrl, className }) {
   // Counts picks, so the chosen card plays in again each time.
   const [picks, setPicks] = useState(0);
   const options = LAYOUTS.map((layout) => ({
@@ -59,6 +59,7 @@ export function CardLayoutSwitch({ value, onChange, stillUrl }) {
   return (
     <SegmentedControl
       label="Card preview"
+      className={className}
       options={options}
       value={value}
       onChange={(next) => {

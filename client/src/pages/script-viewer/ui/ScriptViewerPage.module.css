@@ -1,5 +1,12 @@
+/*
+ * The timings everything on the page takes when focused reading changes: the
+ * quicker --focus-*-out ones leaving focus, the --focus-*-in ones going in
+ * (.pageFocused). A transition takes the timing of the state it's going to.
+ */
 .page {
   --viewer-bar-height: 56px;
+  --chrome-time: var(--focus-chrome-out);
+  --room-time: var(--focus-room-out);
 }
 
 /* ---------- Tool bar (pinned under the site header, which scrolls away) ---------- */
@@ -16,6 +23,9 @@
   border-bottom: 1px solid var(--color-line);
   background: var(--color-header);
   backdrop-filter: blur(8px);
+  transition:
+    background-color var(--chrome-time) ease,
+    border-color var(--chrome-time) ease;
 }
 
 .topBar .backButton {
@@ -42,8 +52,13 @@
   white-space: nowrap;
 }
 
+/* "Script · 104 pages", then the focused reading key. */
 .titleMeta {
   flex: none;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
@@ -56,12 +71,18 @@
   gap: 8px;
 }
 
-/* Begin and End's toggle, in the Midnight blue while the marks show. */
-.topActions .marksShown {
+/* Begin and End's toggle, in the Midnight blue while the marks show: in the bar, or in the thumb dock (ScriptDockTools). */
+.topActions .marksShown,
+.marksToggle.marksShown {
   color: var(--color-mark);
 }
 
 /* ---------- Workspace: PDF + annotator ---------- */
+
+/* The annotator keeps its column even while the PDF pane covers the window in focus. */
+.workspace > :nth-child(2) {
+  grid-column: 2;
+}
 
 /* Fills the window under the site header and tool bar, so the whole annotator shows on arrival. */
 .workspace {
@@ -107,6 +128,79 @@
 
 .sentinel {
   height: 1px;
+}
+
+/* ---------- Focused reading ---------- */
+
+/*
+ * Focus clears the page down to the script. The bar's parts, the annotator
+ * and the site's header blur out of focus as they fade (a rack focus), and
+ * the focus key docks at the top-left corner (features/focused-reading). On
+ * wide screens the PDF pane takes the whole window: the pages run together,
+ * top to bottom, down a dark room, bound with their stack of edges beside
+ * them, at the width they had. On phones the window keeps scrolling them,
+ * and the paper is the room, edge to edge.
+ */
+.pageFocused {
+  --chrome-time: var(--focus-chrome-in);
+  --room-time: var(--focus-room-in);
+}
+
+.recedes {
+  transition:
+    opacity var(--chrome-time) ease,
+    filter var(--chrome-time) ease;
+}
+
+.pageFocused .recedes {
+  opacity: 0;
+  filter: blur(var(--focus-blur));
+  pointer-events: none;
+}
+
+/* Over the pane, its key still in it. A backdrop filter would hold the docked key to the bar. */
+.topBarFocused {
+  z-index: calc(var(--z-header) + 3);
+  border-bottom-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+.pageFocused .viewer {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-header) + 2);
+  background: var(--color-focus-room);
+}
+
+.pageFocused .pagesWrap {
+  padding: 64px 28px;
+}
+
+.pagesWrap:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* Handed focus on going into focus (focusQuietly), the pages take the keys without a ring round the window. */
+.pagesWrap[data-quiet-focus]:focus-visible {
+  outline: none;
+}
+
+.pageFocused .pagesWrap :global(.react-pdf__Document) {
+  gap: 0;
+}
+
+/* Compound selector: the page frame sets its own shadow and corners. */
+.pageFocused .pagesWrap [data-page-number] {
+  border-radius: 0;
+  box-shadow: var(--shadow-focus-stack);
+}
+
+/* The window stays where it was under the pane (ScriptViewerPage, data-focused-reading). */
+:global(html[data-focused-reading="pane"]) {
+  overflow: hidden;
 }
 
 /* The script page styles' color filters (ScriptPageFilters): defined, never drawn. */
@@ -166,6 +260,10 @@
   .pagesWrap {
     padding: 20px 18px 40px;
   }
+
+  .pageFocused .pagesWrap {
+    padding: 64px 18px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -174,7 +272,13 @@
     gap: 8px;
   }
 
-  .titleMeta {
+  /* The title, then the focus key after its divider, closer in; the page count gives way,
+     and the bar's other tools are in the thumb dock (ScriptDockTools). */
+  .titleGroup {
+    gap: 8px;
+  }
+
+  .pageCount {
     display: none;
   }
 
@@ -209,9 +313,58 @@
     bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
     max-width: none;
   }
+
+  /* In focus the bar leaves the page's flow, fading where it sat (--bar-focus-top), so the pages rise to the top. */
+  .topBarFocused {
+    position: fixed;
+    top: var(--bar-focus-top, 0px);
+    left: 0;
+    right: 0;
+  }
+
+  /* The window scrolls the pages; the paper fills it edge to edge, and the key takes the page's mark. */
+  .pageFocused {
+    --focus-key-on: var(--script-mark);
+  }
+
+  .pageFocused .viewer {
+    position: static;
+    background: var(--color-paper);
+  }
+
+  .pageFocused .workspace {
+    border-bottom-color: transparent;
+  }
+
+  .pageFocused .pagesWrap {
+    padding: 0 8px;
+  }
+
+  .pageFocused .pagesWrap [data-page-number] {
+    box-shadow: none;
+  }
+
+  /* Below the pages here, the annotator and the scenes would leave blank paper after the script's end. */
+  .pageFocused .annotator,
+  .pageFocused .scenes {
+    display: none;
+  }
+}
+
+/* Behind the pages as the window runs past either end. */
+:global(html[data-focused-reading="window"]),
+:global(html[data-focused-reading="window"] body) {
+  background: var(--color-paper);
 }
 
 /* Visitors read without the annotator, so the script takes the full width. */
 .workspaceReadOnly {
   grid-template-columns: minmax(0, 1fr);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topBar,
+  .recedes {
+    transition: none;
+  }
 }

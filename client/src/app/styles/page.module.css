@@ -54,7 +54,6 @@
   padding: 10px 16px;
   border-radius: var(--radius-md);
   background: var(--color-popover);
-  box-shadow: var(--shadow-popover);
   color: var(--color-text);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -62,7 +61,9 @@
   transform: translateY(calc(-100% - 24px));
 }
 
+/* The shadow comes with it: put away, its blur would still reach down over whatever the page shows at the top. */
 .skipLink:focus-visible {
+  box-shadow: var(--shadow-popover);
   transform: none;
 }
 

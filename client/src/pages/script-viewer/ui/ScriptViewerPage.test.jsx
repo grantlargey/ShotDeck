@@ -786,3 +786,49 @@ describe("page-frame and capture locality", () => {
     }
   });
 });
+
+describe("focused reading", () => {
+  const focusKey = () => screen.getByRole("button", { name: "Focus" });
+
+  it("clears the page down to the script, out of the annotator's and the anchor keys' way, until Esc", async () => {
+    await renderViewer(ScriptViewerRoute, { scenes: [savedScene] });
+    publishWholeScript();
+    expect(frameProps(3).sceneSegments).toHaveLength(1);
+
+    click(focusKey());
+    expect(focusKey().getAttribute("aria-pressed")).toBe("true");
+    expect(document.documentElement.dataset.focusedReading).toBe("pane");
+    expect(document.querySelector('aside[aria-label="Scene annotator"]').hasAttribute("inert")).toBe(true);
+    expect(document.querySelector('section[aria-labelledby="saved-scenes-title"]').hasAttribute("inert")).toBe(true);
+    // The pages show the script alone: no scene brackets, no Begin or End, no anchor menu.
+    expect(frameProps(3)).toMatchObject({ readOnly: true, showAnchorMarkers: false, sceneSegments: [] });
+    hoverLine(1, 0);
+    expect(pressKey("[")).toBe(true);
+    expect(anchorPage("Begin")).toBeNull();
+
+    expect(pressKey("Escape")).toBe(false);
+    expect(focusKey().getAttribute("aria-pressed")).toBe("false");
+    expect(document.documentElement.dataset.focusedReading).toBeUndefined();
+    expect(frameProps(3)).toMatchObject({ readOnly: false, showAnchorMarkers: true });
+    expect(frameProps(3).sceneSegments).toHaveLength(1);
+  });
+
+  it("leaves F and Esc to a scene dialog open over the script", async () => {
+    await renderViewer(ScriptViewerRoute, { admin: false, scenes: [savedScene, otherScene] });
+    publishWholeScript();
+    expect(pressKey("f")).toBe(false);
+    expect(focusKey().getAttribute("aria-pressed")).toBe("true");
+    pressKey("f");
+    expect(focusKey().getAttribute("aria-pressed")).toBe("false");
+
+    clickSceneBar(2, otherScene.id);
+    const dialog = within(screen.getByRole("dialog"));
+    pressKey("f");
+    expect(dialog.getByRole("button", { name: "Focus" }).getAttribute("aria-pressed")).toBe("true");
+    expect(document.documentElement.dataset.focusedReading).toBeUndefined();
+    pressKey("Escape");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    pressKey("Escape");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});

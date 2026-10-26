@@ -77,3 +77,26 @@ it("rejects pages beyond the document without loading or scrolling", async () =>
   expect(pdf.getPage).not.toHaveBeenCalled();
   expect(wrap.scrollTo).not.toHaveBeenCalled();
 });
+it("holds the pages' width while asked to, and measures again once let go", () => {
+  let resize;
+  vi.stubGlobal("ResizeObserver", class { constructor(callback) { resize = callback; } observe() {} disconnect() {} });
+  const pdf = { numPages: 3, getPage: vi.fn() };
+  const indexed = new Map();
+  let width = 480;
+  const { result, rerender } = renderHook(({ hold }) => usePdfPageWindowing(pdf, indexed, { holdWidth: hold }), {
+    initialProps: { hold: false },
+  });
+  const wrap = document.createElement("div");
+  Object.defineProperty(wrap, "clientWidth", { get: () => width });
+  document.body.append(wrap);
+  act(() => result.current.wrapRef(wrap));
+  expect(result.current.pages[0].pageWidth).toBe(480);
+
+  rerender({ hold: true });
+  width = 1000;
+  act(() => resize());
+  expect(result.current.pages[0].pageWidth).toBe(480);
+
+  rerender({ hold: false });
+  expect(result.current.pages[0].pageWidth).toBe(880);
+});

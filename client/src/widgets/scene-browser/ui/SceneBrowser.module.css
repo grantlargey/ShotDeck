@@ -275,12 +275,7 @@
   padding: 20px var(--page-gutter) 48px;
 }
 
-/* The results heading (a SectionHeading); the Filters button only shows on narrow screens. */
-.toolbar .filtersButton {
-  display: none;
-}
-
-/* The actions take the rest of the row, so the search tile can open across the room beside the heading. */
+/* The results heading (a SectionHeading). Its actions take the rest of the row, so the search tile can open across the room beside the heading. */
 .toolbarActions {
   flex: 1;
   flex-wrap: nowrap;
@@ -350,8 +345,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* No stacking of its own (z-index still counts on a grid item), so the drawer can rise over its backdrop. */
   .dock {
     position: static;
+    z-index: auto;
     height: auto;
     margin: 0;
   }
@@ -393,28 +390,52 @@
     justify-content: flex-end;
   }
 
-  .toolbar .filtersButton {
-    display: inline-flex;
-  }
-
   .results {
     padding: 16px var(--page-gutter) 40px;
   }
 }
 
-@media (max-width: 900px) {
-  .scoped .toolbarActions {
-    --search-inset: 0px;
-    position: relative;
-    flex-basis: 100%;
-  }
+/* ---------- The heading's tools in the thumb dock, at the drawer's width (ThumbDock) ---------- */
 
-  .scoped .toolbarActions .filtersButton {
-    margin-right: auto;
-  }
+/* With its tools in the dock, the heading scrolls away with the scenes instead of pinning. */
+.results .toolbarUnpinned {
+  position: static;
 }
 
-/* Phones: the count stays and "from N titles" goes, so the toolbar keeps to one row the search tile can open across. */
+/* No box of its own: the tools sit in the dock's row, and the dock stays the box the open search spans. */
+.dockTools {
+  display: contents;
+}
+
+/* Compound selectors: the controls set their own look. */
+.dockTools .dockFilters {
+  position: relative;
+}
+
+.dockTools .dockCards {
+  background: transparent;
+}
+
+/* The ticked tags, counted at the filter tile's corner in the Mark blue. */
+.dockCount {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--color-mark);
+  color: var(--color-on-accent);
+  font-family: var(--font-slate);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Phones: the count stays and "from N titles" goes, so the heading keeps to one row. */
 @media (max-width: 480px) {
   .headingNote {
     display: none;

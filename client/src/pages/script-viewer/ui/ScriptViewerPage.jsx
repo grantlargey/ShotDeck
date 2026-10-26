@@ -13,17 +13,23 @@ import {
   projectScriptLocation,
 } from "@/entities/script-scene/model/scriptLocation.js";
 import { useSession } from "@/entities/session/model/useSession.js";
+import { KEY_GLIDE, ROOM_FADE, TEXT_GLIDE, glideBy, glideFrom, readBox } from "@/features/focused-reading/model/focusMotion.js";
+import { focusQuietly } from "@/features/focused-reading/model/focusQuietly.js";
+import { useFocusKeys } from "@/features/focused-reading/model/useFocusKeys.js";
 import { getFilm } from "@/shared/api/films.js";
 import { getScript } from "@/shared/api/scripts.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage } from "@/shared/lib/errors.js";
 import { isTypingTarget } from "@/shared/lib/keyboard.js";
+import { useMediaQuery } from "@/shared/lib/useMediaQuery.js";
+import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
 import { CloseIcon } from "@/shared/ui/icons.jsx";
 import { LoadingState } from "@/shared/ui/LoadingState.jsx";
 import { SceneViewerModal } from "@/widgets/scene-detail-modal/ui/SceneViewerModal.jsx";
+import { holdReadingAnchor, readReadingAnchor } from "../lib/pdfViewport.js";
 import { requestScreenplayProposal } from "../model/aiScreenplayFormat.js";
 import { buildSceneSegmentsByPage, resolveAnchorLine } from "../model/anchors.js";
 import { nextScrollAction } from "../model/pendingScrollIntent.js";
@@ -36,6 +42,7 @@ import { AnnotatorPanel } from "./AnnotatorPanel.jsx";
 import { DraftEditorModal } from "./DraftEditorModal.jsx";
 import { PdfPageFrame } from "./PdfPageFrame.jsx";
 import { SavedScenesGrid } from "./SavedScenesGrid.jsx";
+import { BackToScriptTile, ScriptDockTools } from "./ScriptDockTools.jsx";
 import { ScriptPageFilters } from "./ScriptPageFilters.jsx";
 import { ViewerTopBar } from "./ViewerTopBar.jsx";
 import styles from "./ScriptViewerPage.module.css";
@@ -45,6 +52,10 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 const NO_SEGMENTS = [];
 const MENU_WIDTH = 296;
 const MENU_HEIGHT = 360;
+// Phones and narrow tablets: the window scrolls the pages, and the bar's tools move to the scenes'
+// thumb dock. Keep in step with usePdfPageWindowing's compact width, SceneBrowser's drawer width
+// and ScriptViewerPage.module.css.
+const COMPACT_QUERY = "(max-width: 900px)";
 
 // The editor dialog's re-capture button, by the draft's re-capture option.
 const RECAPTURE_LABELS = {
@@ -109,6 +120,10 @@ function ScriptViewerPage() {
   const [focusSceneId, setFocusSceneId] = useState("");
   // Hides the on-page Begin and End marks for uncluttered reading; anchors stay set.
   const [showAnchorMarkers, setShowAnchorMarkers] = useState(true);
+  // Focused reading: the script alone, filling the window, until the focus key, F or Esc ends it.
+  const [focused, setFocused] = useState(false);
+  // Where a phone's bar sat when focus came on, for it to fade out there, out of the pages' way.
+  const [barFocusTop, setBarFocusTop] = useState(0);
   const [pendingScroll, setPendingScroll] = useState(() => {
     const page = parsePageParam(searchParams.get("page"));
     return page ? { page, offsetPt: null } : null;
@@ -117,12 +132,30 @@ function ScriptViewerPage() {
   const hoverRef = useRef(null);
   const scenesSectionRef = useRef(null);
   const deepLinkedSceneRef = useRef("");
+  const barRef = useRef(null);
+  const viewerRef = useRef(null);
+  const pagesWrapRef = useRef(null);
+  const focusKeyRef = useRef(null);
+  // Where the reader was in the script when the thumb dock took them down to the scenes.
+  const scriptReturnRef = useRef(null);
+  // What a change of focus moves, read just before it: the key's box, and the page being read.
+  const focusShiftRef = useRef(null);
+  const compactLayout = useMediaQuery(COMPACT_QUERY);
+  const reducedMotion = usePrefersReducedMotion();
 
   const numPages = pdfDocument?.numPages ?? 0;
   const textIndex = useScriptTextIndex(pdfDocument);
-  const windowing = usePdfPageWindowing(pdfDocument, textIndex.pages);
+  // In focus the pages keep their width while the viewer takes the whole window around them.
+  const windowing = usePdfPageWindowing(pdfDocument, textIndex.pages, { holdWidth: focused });
   // Callback refs, taken once: JSX may not read a ref off an object during render.
   const { wrapRef, sentinelRef } = windowing;
+  const setPagesWrap = useCallback(
+    (element) => {
+      pagesWrapRef.current = element;
+      wrapRef(element);
+    },
+    [wrapRef]
+  );
   // The captured scenes load in their own request, but they are still part of
   // loading the page: a failure reports the same notice and leaves the page
   // without a film or a script, so the viewer never shows a script whose
@@ -371,7 +404,7 @@ function ScriptViewerPage() {
   });
 
   const handleKeyDown = useStableHandler((event) => {
-    if (!canEdit || modal || menu || isTypingTarget(event.target, { withinDialog: true })) return;
+    if (!canEdit || focused || modal || menu || isTypingTarget(event.target, { withinDialog: true })) return;
     const modifier = event.metaKey || event.ctrlKey;
 
     if (modifier && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "z") {
@@ -392,6 +425,62 @@ function ScriptViewerPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
+
+  // ---------- Focused reading ----------
+
+  // The key shows wherever there's a PDF to read, and works once its pages are in.
+  const focusable = script?.script_url && !pdfLoadError ? numPages > 0 : undefined;
+
+  function setFocus(next) {
+    if (next === focused || (next && !focusable)) return;
+    focusShiftRef.current = { key: readBox(focusKeyRef.current), anchor: readReadingAnchor(pagesWrapRef.current) };
+    if (next && compactLayout) setBarFocusTop(Math.max(0, Math.round(barRef.current?.getBoundingClientRect().top ?? 0)));
+    setFocused(next);
+  }
+
+  useFocusKeys({ enabled: !modal && !menu, focused, canFocus: Boolean(focusable), outsideDialogs: true, onChange: setFocus });
+
+  /*
+   * Focus changes the layout in one step, before the window paints. On wide
+   * screens the viewer covers the window (the "pane"); on phones the window
+   * keeps scrolling the pages, and the site's header and footer leave them
+   * (the "window"; the site header, footer and back-to-top button follow
+   * data-focused-reading). Then the page being read is put back where it was,
+   * so the change doesn't move the reader's place; what scrolling can't
+   * restore, at the top of the script, glides as the pages rise into the
+   * room. The key glides to its corner or back, and the pane's dark room fades
+   * in over what it covers.
+   */
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (focused) root.dataset.focusedReading = compactLayout ? "window" : "pane";
+    const shift = focusShiftRef.current;
+    focusShiftRef.current = null;
+    if (shift) {
+      const wrap = pagesWrapRef.current;
+      const settled = holdReadingAnchor(shift.anchor, compactLayout ? window : wrap);
+      // In the pane, keyboard focus goes to the pages, so the keys scroll them; coming out, back to the key.
+      const active = document.activeElement;
+      const key = focusKeyRef.current;
+      if (focused && !compactLayout && (!active || active === document.body || active === key || active.closest("[inert]"))) {
+        focusQuietly(wrap);
+      } else if (!focused && active && active === wrap) {
+        key?.focus({ preventScroll: true });
+      }
+      if (!reducedMotion) {
+        if (settled) glideBy(wrap?.firstElementChild, -settled.dx, -settled.dy, focused ? TEXT_GLIDE.in : TEXT_GLIDE.out);
+        glideFrom(focusKeyRef.current, shift.key, focused ? KEY_GLIDE.in : KEY_GLIDE.out);
+        const pane = viewerRef.current;
+        if (focused && !compactLayout && typeof pane?.animate === "function") {
+          const room = window.getComputedStyle(pane).backgroundColor;
+          pane.animate([{ backgroundColor: "transparent" }, { backgroundColor: room }], ROOM_FADE);
+        }
+      }
+    }
+    return () => {
+      delete root.dataset.focusedReading;
+    };
+  }, [focused, compactLayout, reducedMotion]);
 
   // ---------- Draft text ----------
 
@@ -469,13 +558,20 @@ function ScriptViewerPage() {
 
 
   return (
-    <div className={styles.page}>
+    <div className={cx(styles.page, focused && styles.pageFocused)}>
       <ViewerTopBar
+        ref={barRef}
         title={title}
         pageCount={numPages}
         sceneCount={scenes.list.length}
         canEdit={canEdit}
         anchorMarkersVisible={showAnchorMarkers}
+        focusable={focusable}
+        focused={focused}
+        focusKeyRef={focusKeyRef}
+        focusTop={compactLayout ? barFocusTop : undefined}
+        toolsInDock={compactLayout}
+        onToggleFocus={setFocus}
         onToggleAnchorMarkers={() => setShowAnchorMarkers((visible) => !visible)}
         onBackToFilm={() => nav(`/films/${filmId}`)}
         onSearchScripts={() => nav("/script-search")}
@@ -483,14 +579,14 @@ function ScriptViewerPage() {
       />
 
       <div className={cx(styles.workspace, !canEdit && styles.workspaceReadOnly)}>
-        <section className={styles.viewer} aria-label="Script PDF">
+        <section ref={viewerRef} className={styles.viewer} aria-label="Script PDF">
           <ScriptPageFilters className={styles.pageFilters} />
           {!script?.script_url ? (
             <p className={styles.viewerMessage}>This script has no PDF file.</p>
           ) : pdfLoadError ? (
             <p className={styles.viewerMessage}>{pdfLoadError}</p>
           ) : (
-            <div ref={wrapRef} className={styles.pagesWrap}>
+            <div ref={setPagesWrap} className={styles.pagesWrap} tabIndex={focused && !compactLayout ? 0 : undefined}>
               <Document
                 file={script.script_url}
                 loading={<p className={styles.viewerMessage}>Loading PDF…</p>}
@@ -503,10 +599,10 @@ function ScriptViewerPage() {
                     <PdfPageFrame
                       key={pageNumber}
                       {...page}
-                      readOnly={!canEdit}
+                      readOnly={!canEdit || focused}
                       projection={draftProjectionsByPage.get(pageNumber)}
-                      showAnchorMarkers={showAnchorMarkers}
-                      sceneSegments={sceneSegmentsByPage.get(pageNumber) || NO_SEGMENTS}
+                      showAnchorMarkers={showAnchorMarkers && !focused}
+                      sceneSegments={focused ? NO_SEGMENTS : sceneSegmentsByPage.get(pageNumber) || NO_SEGMENTS}
                       activeSceneId={activeSceneId}
                       onLineContextMenu={openLineMenu}
                       onHoverLine={handleHoverLine}
@@ -525,6 +621,8 @@ function ScriptViewerPage() {
 
         {canEdit && (
           <AnnotatorPanel
+            className={cx(styles.annotator, styles.recedes)}
+            inert={focused}
             draft={draft}
             draftActions={draftActions}
             activeTab={activeTab}
@@ -552,6 +650,26 @@ function ScriptViewerPage() {
 
       <SavedScenesGrid
         ref={scenesSectionRef}
+        inert={focused}
+        // On phones the scenes' thumb dock holds the bar's tools too while the script is read.
+        thumbDock={{
+          hidden: focused,
+          lead: <BackToScriptTile returnRef={scriptReturnRef} scenesRef={scenesSectionRef} />,
+          elsewhere: {
+            label: "Script tools",
+            tools: (
+              <ScriptDockTools
+                returnRef={scriptReturnRef}
+                canEdit={canEdit}
+                anchorMarkersVisible={showAnchorMarkers}
+                sceneCount={scenes.list.length}
+                onToggleAnchorMarkers={() => setShowAnchorMarkers((visible) => !visible)}
+                onJumpToScenes={jumpToScenes}
+                onSearchScripts={() => nav("/script-search")}
+              />
+            ),
+          },
+        }}
         scriptId={scriptId}
         scenes={scenes.list}
         selectedSceneId={activeSceneId}

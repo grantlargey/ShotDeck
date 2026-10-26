@@ -13,7 +13,7 @@ const MATCH_OPTIONS = [
 ];
 
 /** A book seen from its spine with the cover ajar; the cover closes or opens as the panel will. */
-function FoldIcon() {
+export function FoldIcon() {
   return (
     <svg
       className={styles.foldIcon}

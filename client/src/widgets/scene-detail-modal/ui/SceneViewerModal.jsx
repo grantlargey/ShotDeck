@@ -43,7 +43,9 @@ const STILL_SCENE_NOTES = {
  * The site's one expanded scene viewer, shared by Script Search, the film
  * page, and the script viewer. It shows a moment of a film as a captured
  * scene's script or as a film still, with arrows on both tabs; the tab not
- * being stepped follows along (see sceneViewerCursor.js).
+ * being stepped follows along (see sceneViewerCursor.js). On the script, the
+ * meta line ends in the focused reading key, which clears the dialog down to
+ * the scene's text (F, or Esc to leave).
  *
  * `initial` selects the opening scene or still; `source` supplies owned lists.
  * - `renderActions({ view, scene, still })` adds page-specific footer buttons;
@@ -123,6 +125,8 @@ export function SceneViewerModal({
       hasNext={current.hasNext}
       onStep={current.step}
       onClose={onClose}
+      // Focused reading is for the script; the key rests while a still is up, as the page style does.
+      focusable={!showStill && Boolean(scene)}
       stageKey={showStill ? `still:${still?.id}` : `scene:${scene?.id}`}
       footer={
         scene ? (

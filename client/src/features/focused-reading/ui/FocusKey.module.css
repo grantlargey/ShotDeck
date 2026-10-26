@@ -1,0 +1,151 @@
+/* The key at the end of a meta line: the line's height, in Slate. */
+.key {
+  flex: none;
+  height: 20px;
+  margin: 0 -3px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-slate);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-slate);
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    opacity var(--focus-chrome-out) ease;
+}
+
+.key:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.key:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.icon {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+/* The iris closes down while focus is on, and turns a little as it's pointed at (below). */
+.blades {
+  transform-box: view-box;
+  transform-origin: 8px 8px;
+  transition: transform 408ms var(--focus-ease);
+}
+
+.on .blades {
+  transform: rotate(52deg) scale(0.56);
+}
+
+.word {
+  display: inline-block;
+  max-width: 5.5em;
+  overflow: hidden;
+  transition:
+    max-width var(--focus-layout-out) ease,
+    margin var(--focus-layout-out) ease,
+    opacity var(--focus-chrome-out) ease;
+}
+
+/*
+ * On, the key takes the Mark blue, or the page's own mark where the paper is
+ * the room (--focus-key-on), and docks at a set spot at the top-left corner of
+ * the screen. A ghost there, it comes up when pointed at or tabbed to, and its
+ * word unfolds to say what it is.
+ */
+.on {
+  position: fixed;
+  z-index: 1;
+  top: 28px;
+  left: 24px;
+  margin: 0;
+  color: var(--focus-key-on, var(--color-mark));
+  opacity: 0.34;
+  /* The bar it docks from lets the pointer through to the page in focus; the key itself still takes it. */
+  pointer-events: auto;
+  transition:
+    color var(--transition-fast),
+    opacity var(--focus-chrome-in) ease;
+}
+
+.on:focus-visible {
+  opacity: 1;
+  transition:
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.on .word {
+  max-width: 0;
+  margin-left: -6px;
+  opacity: 0;
+}
+
+.on:focus-visible .word {
+  max-width: 5.5em;
+  margin-left: 0;
+  opacity: 1;
+  transition-duration: 220ms;
+}
+
+/* Where there's a pointer to hover with. A tap leaves a touch screen's hover behind, which would keep the ghost lit. */
+@media (hover: hover) {
+  .key:hover:not(:disabled) {
+    color: var(--color-text);
+  }
+
+  .key:hover:not(:disabled) .blades {
+    transform: rotate(24deg);
+  }
+
+  .on:hover:not(:disabled) {
+    color: var(--focus-key-on, var(--color-mark));
+    opacity: 1;
+    transition:
+      color var(--transition-fast),
+      opacity var(--transition-fast);
+  }
+
+  .on:hover:not(:disabled) .blades {
+    transform: rotate(38deg) scale(0.74);
+  }
+
+  .on:hover .word {
+    max-width: 5.5em;
+    margin-left: 0;
+    opacity: 1;
+    transition-duration: 220ms;
+  }
+}
+
+/* Phones: inside the page's margin, clear of the screen's edge. */
+@media (max-width: 600px) {
+  .on {
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    left: calc(16px + env(safe-area-inset-left, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .key,
+  .key:hover:not(:disabled),
+  .key:focus-visible,
+  .blades,
+  .word {
+    transition: none;
+  }
+}

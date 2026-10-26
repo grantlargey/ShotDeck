@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSemanticSearchStatus, searchScriptScenes, searchScriptScenesSemantically } from "@/shared/api/scriptScenes.js";
 import { setFiltersFolded } from "../model/filterFold.js";
 import { SceneBrowser } from "./SceneBrowser.jsx";
@@ -57,6 +57,11 @@ function deferred() {
   const promise = new Promise((done) => { resolve = done; });
   return { promise, resolve };
 }
+
+afterEach(() => {
+  // Some tests take a phone's width.
+  delete window.matchMedia;
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -241,6 +246,34 @@ describe("folding the filters away", () => {
 });
 
 describe("library scene browsing", () => {
+  it.each([
+    ["the script viewer's scenes", true],
+    ["Script Search", false],
+  ])("puts the heading's tools in a thumb dock at the drawer's width, on %s", async (_page, scoped) => {
+    window.matchMedia = (query) => ({
+      matches: query === "(max-width: 900px)",
+      addEventListener() {},
+      removeEventListener() {},
+    });
+    render(<Browser scoped={scoped} />);
+    const dock = within(screen.getByRole("toolbar", { name: "Scene tools" }));
+    expect(dock.getByRole("radiogroup", { name: "Card preview" })).toBeTruthy();
+    expect(dock.getByRole("searchbox", { name: "Describe a scene" })).toBeTruthy();
+    expect(dock.getByRole("button", { name: /^Page style/ })).toBeTruthy();
+    expect(dock.getByRole("button", { name: "Back to top" })).toBeTruthy();
+    // The heading keeps its title and count: each tool is the dock's alone.
+    expect(screen.getAllByRole("radiogroup", { name: "Card preview" })).toHaveLength(1);
+    expect(screen.getAllByRole("searchbox", { name: "Describe a scene" })).toHaveLength(1);
+
+    fireEvent.click(dock.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("button", { name: "Character Focus" }));
+    toggle("Protagonist");
+    expect(dock.getByRole("button", { name: "Filters, 1 selected" })).toBeTruthy();
+    fireEvent.click(dock.getByRole("radio", { name: "Film still and script" }));
+    expect(params().get("preview")).toBe("stills");
+    await waitFor(() => expect(getSemanticSearchStatus).toHaveBeenCalledOnce());
+  });
+
   it("continues to load the global catalog and search without a script scope", async () => {
     render(<Browser scoped={false} />);
     await waitFor(() => expect(cards()).toHaveLength(3));

@@ -1,5 +1,17 @@
+/*
+ * The timings everything inside takes when focused reading changes: the
+ * quicker --focus-*-out ones leaving focus, the --focus-*-in ones going in
+ * (.overlayFocused). A transition takes the timing of the state it's going to.
+ */
 .sceneOverlay {
+  --chrome-time: var(--focus-chrome-out);
+  --room-time: var(--focus-room-out);
+  --layout-time: var(--focus-layout-out);
+  --layout-delay: 0s;
   padding: 12px;
+  transition:
+    padding var(--layout-time) var(--focus-ease) var(--layout-delay),
+    background-color var(--room-time) ease;
 }
 
 /* Nearly full-screen, like a document viewer, so the script has room. */
@@ -13,13 +25,28 @@
   border-radius: var(--radius-lg);
   background: var(--color-bg-deep);
   box-shadow: var(--shadow-modal);
+  transition:
+    width var(--layout-time) var(--focus-ease) var(--layout-delay),
+    border-color var(--room-time) ease,
+    border-radius var(--layout-time) ease var(--layout-delay),
+    background-color var(--room-time) ease,
+    box-shadow var(--room-time) ease;
 }
 
+/* One row that can fold away (to 0fr) in focused reading, letting the stage take its height. */
 .header {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--layout-time) var(--focus-ease) var(--layout-delay);
+}
+
+.headerRow {
+  min-height: 0;
   padding: 10px 14px 10px 22px;
   display: flex;
   align-items: center;
   gap: 16px;
+  transition: padding var(--layout-time) var(--focus-ease) var(--layout-delay);
 }
 
 .heading {
@@ -38,8 +65,13 @@
   white-space: nowrap;
 }
 
+/* The timing or the still's time, then the focused reading key. */
 .meta {
+  min-height: 20px;
   margin: 4px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
@@ -63,6 +95,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.close {
+  flex: none;
+  display: flex;
+}
+
 /* ---------- Stage ---------- */
 
 .stage {
@@ -70,6 +107,9 @@
   padding: 0 8px;
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr) 56px;
+  transition:
+    padding var(--layout-time) var(--focus-ease) var(--layout-delay),
+    grid-template-columns var(--layout-time) var(--focus-ease) var(--layout-delay);
 }
 
 .stageSolo {
@@ -136,6 +176,14 @@
   background: var(--color-paper);
   color: var(--color-ink);
   scrollbar-width: thin;
+  transition:
+    padding var(--layout-time) var(--focus-ease) var(--layout-delay),
+    box-shadow var(--room-time) ease;
+}
+
+/* Handed focus on going into focused reading (focusQuietly), the paper takes the keys without a ring; tabbing to it shows one. */
+.paper[data-quiet-focus]:focus-visible {
+  outline: none;
 }
 
 /* ---------- Film still: takes the paper's place at full size ---------- */
@@ -170,15 +218,25 @@
 
 /* ---------- Footer: metadata beneath the stage, actions on the right ---------- */
 
+/* One row that can fold away in focused reading, as the header's does. */
 .footer {
   margin-top: 12px;
+  display: grid;
+  grid-template-rows: 1fr;
+  border-top: 1px solid var(--color-line);
+  transition:
+    grid-template-rows var(--layout-time) var(--focus-ease) var(--layout-delay),
+    margin var(--layout-time) var(--focus-ease) var(--layout-delay);
+}
+
+.footerRow {
+  min-height: 0;
   padding: 12px 22px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px 24px;
-  border-top: 1px solid var(--color-line);
 }
 
 .tagGroups {
@@ -248,6 +306,75 @@
   gap: 10px;
 }
 
+/* ---------- Focused reading ---------- */
+
+/*
+ * Focus clears the dialog down to the scene's text. The header, the arrows
+ * and the footer blur out of focus as they fade (a rack focus); the header
+ * and footer fold away, so the paper runs the screen's full height, and the
+ * room around it goes dark, the paper's stack of page edges beside it. The
+ * text settles a little lower on the paper, under the corner where the focus
+ * key docks (features/focused-reading).
+ */
+.recedes {
+  transition:
+    opacity var(--chrome-time) ease,
+    filter var(--chrome-time) ease;
+}
+
+.overlayFocused {
+  --chrome-time: var(--focus-chrome-in);
+  --room-time: var(--focus-room-in);
+  --layout-time: var(--focus-layout-in);
+  --layout-delay: var(--focus-layout-delay);
+  padding: 0;
+  background: var(--color-focus-room);
+}
+
+.focused {
+  width: 100%;
+  border-width: 0;
+  border-radius: 0;
+  background: var(--color-focus-room);
+  box-shadow: none;
+}
+
+.focused .recedes,
+.focused .stepButton:disabled {
+  opacity: 0;
+  filter: blur(var(--focus-blur));
+  pointer-events: none;
+}
+
+.focused .header,
+.focused .footer {
+  grid-template-rows: 0fr;
+}
+
+/* Compound: the footer's row recedes as well as folding. */
+.footerRow.recedes {
+  transition:
+    padding var(--layout-time) var(--focus-ease) var(--layout-delay),
+    opacity var(--chrome-time) ease,
+    filter var(--chrome-time) ease;
+}
+
+.focused .headerRow,
+.focused .footerRow {
+  padding-block: 0;
+}
+
+.focused .footer {
+  margin-top: 0;
+  border-top-width: 0;
+}
+
+.focused .paper {
+  padding-top: 64px;
+  padding-bottom: 96px;
+  box-shadow: var(--shadow-focus-stack);
+}
+
 /* Side-by-side papers (the draft editor's AI proposal) stack on narrower screens. */
 @media (max-width: 900px) {
   .stageBody:has(> :nth-child(2)) {
@@ -274,7 +401,7 @@
     border-radius: 0;
   }
 
-  .header {
+  .headerRow {
     padding: 12px 10px 12px 16px;
     flex-wrap: wrap;
     gap: 10px 12px;
@@ -317,6 +444,9 @@
 
   .footer {
     margin-top: 10px;
+  }
+
+  .footerRow {
     padding: 12px 16px 16px;
     flex-direction: column;
     align-items: stretch;
@@ -333,6 +463,25 @@
 
   .actions > * {
     flex: 1;
+  }
+
+  /* In focus on a phone the paper is the room: it runs edge to edge, its text
+     rising to just under the docked key, and the key takes the page's mark. */
+  .overlayFocused,
+  .focused {
+    --focus-key-on: var(--script-mark);
+    background: var(--color-paper);
+  }
+
+  .focused .stage {
+    padding: 0;
+    grid-template-columns: 0 minmax(0, 1fr) 0;
+  }
+
+  .focused .paper {
+    padding-top: 52px;
+    padding-bottom: 40px;
+    box-shadow: none;
   }
 }
 
@@ -365,5 +514,17 @@
 @media (prefers-reduced-motion: reduce) {
   .developing {
     animation: none;
+  }
+
+  .sceneOverlay,
+  .modal,
+  .header,
+  .headerRow,
+  .stage,
+  .paper,
+  .footer,
+  .recedes,
+  .footerRow.recedes {
+    transition: none;
   }
 }

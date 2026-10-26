@@ -30,6 +30,35 @@
 /* Script viewer: scrolls away above the viewer's pinned tool bar. */
 .navbarStatic {
   position: relative;
+  transition:
+    transform 0.22s ease,
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    opacity var(--focus-chrome-out) ease,
+    filter var(--focus-chrome-out) ease,
+    visibility 0s;
+}
+
+/*
+ * Reading the script in focus (ScriptViewerPage sets data-focused-reading):
+ * the header blurs out of focus as it fades, then hides. On a phone, where
+ * the window scrolls the pages, it also leaves the page's flow from where it
+ * stood, so the script can rise to the top.
+ */
+:global(html[data-focused-reading]) .navbarStatic {
+  visibility: hidden;
+  opacity: 0;
+  filter: blur(var(--focus-blur));
+  transition:
+    opacity var(--focus-chrome-in) ease,
+    filter var(--focus-chrome-in) ease,
+    visibility 0s linear var(--focus-chrome-in);
+}
+
+:global(html[data-focused-reading="window"]) .navbarStatic {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 /* Phones, while scrolling down. */
@@ -332,6 +361,7 @@
 /* Last, so it wins over the motion above: the label shows whole and controls change in place. */
 @media (prefers-reduced-motion: reduce) {
   .navbar,
+  :global(html[data-focused-reading]) .navbarStatic,
   .addFilm,
   .addFilm::after,
   .addFilmIcon,

@@ -148,37 +148,52 @@
   transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1), ease;
 }
 
-/* ---------- Narrow screens: the open tile spans the toolbar row ---------- */
+/* ---------- In the scene browser's thumb dock on a phone (ThumbDock) ---------- */
 
 /*
- * The tile's place moves to the end of the row, and the tile sits over it,
- * placed on the toolbar (Script Search pins it, so it's positioned). Opening
- * widens it leftwards across the row; keep this width in step with
- * SPANNING_QUERY in SceneSearchTile.jsx.
+ * A round tile at the dock's end, over its place there, set on the dock
+ * (which is positioned). Opening widens it leftwards across the dock as the
+ * dock opens across the screen for it (ThumbDock.module.css); --search-inset
+ * is the dock's padding.
  */
-@media (max-width: 900px) {
-  .slot {
-    order: 1;
-    flex: none;
-    width: 36px;
-    height: 36px;
-    margin-left: 0;
-  }
+.slot.dock {
+  order: 1;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin-left: 4px;
+}
 
-  /* Compound, to win over the field's own position whichever stylesheet loads first. */
-  .slot .box {
-    position: absolute;
-    top: 50%;
-    right: var(--search-inset, var(--page-gutter));
-    z-index: 1;
-    transform: translateY(-50%);
-  }
+.slot.dock .box {
+  --icon-left: 12.5px;
+  position: absolute;
+  top: 50%;
+  right: var(--search-inset, 6px);
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  transform: translateY(-50%);
+}
 
-  /* Spanning the row, a spring past its width would run off the screen's edge. */
-  .slot .open {
-    width: calc(100% - 2 * var(--search-inset, var(--page-gutter)));
-    transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1), ease;
-  }
+.slot.dock .box:not(.open, .disabled):hover {
+  background: var(--color-hover);
+}
+
+.slot.dock .box:not(.open) .frame {
+  inset: 7px;
+}
+
+.slot.dock .box:not(.open, .disabled):hover .frame {
+  inset: 6px;
+}
+
+.slot.dock .open {
+  width: calc(100% - 2 * var(--search-inset, 6px));
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1), ease;
 }
 
 @media (prefers-reduced-motion: reduce) {

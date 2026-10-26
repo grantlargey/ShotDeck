@@ -16,7 +16,6 @@ import { getErrorMessage } from "@/shared/lib/errors.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { useMediaQuery } from "@/shared/lib/useMediaQuery.js";
 import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
-import { Button } from "@/shared/ui/Button.jsx";
 import { Callout } from "@/shared/ui/Callout.jsx";
 import { Chip } from "@/shared/ui/Chip.jsx";
 import { EmptyState } from "@/shared/ui/EmptyState.jsx";
@@ -25,14 +24,16 @@ import { FOLD_MS, GLIDE_EASING, glideKeyframes, useFiltersFolded } from "../mode
 import { buildFilterGroups, countSceneTags, filterSceneTags } from "../model/sceneBrowse.js";
 import { sweepDelays } from "../model/stillSweep.js";
 import { CardLayoutSwitch } from "./CardLayoutSwitch.jsx";
-import FilterSidebar from "./FilterSidebar.jsx";
+import FilterSidebar, { FoldIcon } from "./FilterSidebar.jsx";
 import { SceneSearchTile } from "./SceneSearchTile.jsx";
 import { SearchTag } from "./SearchTag.jsx";
+import { DockPageStyle, DockTile, ThumbDock } from "./ThumbDock.jsx";
 import styles from "./SceneBrowser.module.css";
 
 const SKELETON_CARDS = 6;
 const SEMANTIC_RESULT_LIMIT = 24;
-// At this width and below the filters open as a drawer; wider, they dock beside the grid and can fold away.
+// At this width and below the filters open as a drawer and the heading's tools sit in the thumb dock;
+// wider, the filters dock beside the grid and can fold away.
 const DRAWER_QUERY = "(max-width: 900px)";
 // Joins tag values into one stable string for memo dependencies.
 const TAG_SEPARATOR = " ";
@@ -43,8 +44,13 @@ const TAG_SEPARATOR = " ";
  * Tag browsing uses that collection; description search scopes both server
  * retrievers before ranking. `renderScene(scene, display, results)` lets each
  * page keep its own card interactions, with the same display and motion.
+ *
+ * On a phone the heading's tools (filters, cards, page style and search) sit
+ * in a thumb dock at the bottom of the screen instead (ThumbDock). A page can
+ * add to it with `thumbDock`: { lead, elsewhere, hidden }, as the script
+ * viewer does with the way back to its script and its own tools.
  */
-export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, emptyState, renderScene }) {
+export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, emptyState, renderScene, thumbDock }) {
   const scriptId = scope?.scriptId;
   const scopedScenes = scope?.scenes;
   const location = useLocation();
@@ -90,6 +96,9 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
   const catalog = scopedScenes ?? loadedCatalog;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const docked = !useMediaQuery(DRAWER_QUERY);
+  // The heading's tools go to the thumb dock wherever the filters are a drawer.
+  const toolsInDock = !docked;
+  const rootRef = useRef(null);
   const [filtersFolded, setFiltersFolded] = useFiltersFolded();
   const filtersAway = docked && filtersFolded;
   // The filter panel swinging shut or open: "folding" | "unfolding" | null.
@@ -292,6 +301,20 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
     input.setSelectionRange(input.value.length, input.value.length);
   }
 
+  const searchTile = (
+    <SceneSearchTile
+      look={toolsInDock ? "dock" : undefined}
+      value={draftQuery}
+      query={query}
+      disabled={semanticStatus !== null && !semanticConfigured}
+      fieldRef={searchFieldRef}
+      inputRef={searchInputRef}
+      onChange={setDraftQuery}
+      onSubmit={submitSearch}
+      onFocusChange={setSearchFocused}
+    />
+  );
+
   const summary = loading && query
     ? "Searching scenes…"
     : ready
@@ -305,7 +328,7 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
     : "Loading scenes…";
 
   return (
-    <div className={cx(styles.page, scope && styles.scoped, filtersAway && styles.pageFolded)}>
+    <div ref={rootRef} className={cx(styles.page, scope && styles.scoped, filtersAway && styles.pageFolded)}>
       <FilterSidebar
         groups={filterGroups}
         tagCounts={tagCounts}
@@ -333,7 +356,7 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
         <SectionHeading
           ref={toolbarRef}
           id={headingId}
-          className={styles.toolbar}
+          className={cx(styles.toolbar, toolsInDock && styles.toolbarUnpinned)}
           actionsClassName={styles.toolbarActions}
           title={title}
           description={instruction}
@@ -346,25 +369,42 @@ export function SceneBrowser({ scope, title = "Scenes", headingId, instruction, 
             )
           }
           actions={
-            <>
-              <Button size="sm" className={styles.filtersButton} onClick={() => setFiltersOpen(true)}>
-                Filters{selectedTags.length ? ` (${selectedTags.length})` : ""}
-              </Button>
-              <SceneSearchTile
-                value={draftQuery}
-                query={query}
-                disabled={semanticStatus !== null && !semanticConfigured}
-                fieldRef={searchFieldRef}
-                inputRef={searchInputRef}
-                onChange={setDraftQuery}
-                onSubmit={submitSearch}
-                onFocusChange={setSearchFocused}
-              />
-              <CardLayoutSwitch value={chosenLayout} onChange={setCardLayout} stillUrl={sampleStillUrl} />
-              <SceneTextStyleToggle look="toolbar" />
-            </>
+            !toolsInDock && (
+              <>
+                {searchTile}
+                <CardLayoutSwitch value={chosenLayout} onChange={setCardLayout} stillUrl={sampleStillUrl} />
+                <SceneTextStyleToggle look="toolbar" />
+              </>
+            )
           }
         />
+        {toolsInDock && (
+          <ThumbDock browserRef={rootRef} {...thumbDock}>
+            <span className={styles.dockTools}>
+              <DockTile
+                className={styles.dockFilters}
+                label={selectedTags.length ? `Filters, ${selectedTags.length} selected` : "Filters"}
+                title="Filters"
+                onClick={() => setFiltersOpen(true)}
+              >
+                <FoldIcon />
+                {selectedTags.length > 0 && (
+                  <span className={styles.dockCount} aria-hidden="true">
+                    {selectedTags.length}
+                  </span>
+                )}
+              </DockTile>
+              <CardLayoutSwitch
+                className={styles.dockCards}
+                value={chosenLayout}
+                onChange={setCardLayout}
+                stillUrl={sampleStillUrl}
+              />
+              <DockPageStyle />
+              {searchTile}
+            </span>
+          </ThumbDock>
+        )}
         <p className={styles.visuallyHidden} aria-live="polite">
           {summary}
         </p>

@@ -20,6 +20,16 @@
   box-shadow: var(--shadow-popover);
 }
 
+/*
+ * Not while the script is read in focus (ScriptViewerPage, data-focused-reading),
+ * nor beside the script viewer's thumb dock (ViewerDock, data-thumb-dock),
+ * which it would sit under.
+ */
+:global(html[data-focused-reading]) .dock,
+:global(html[data-thumb-dock]) .dock {
+  display: none;
+}
+
 @keyframes back-to-top-in {
   from {
     opacity: 0;

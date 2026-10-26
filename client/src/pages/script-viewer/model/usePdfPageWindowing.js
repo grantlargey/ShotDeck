@@ -30,8 +30,12 @@ function chunkStartFor(pageNumber) {
  * Page sizing, windowing, and scrolling for the PDF viewer. Desktop renders
  * every page; compact (mobile) layouts render a window of pages around the
  * reading position and grow the list as the user scrolls.
+ *
+ * `holdWidth` keeps the pages at their width while the viewer's box changes
+ * under them, as it does in focused reading, so they don't re-render at a new
+ * scale and lose the reader's place. Released, the width is measured again.
  */
-export function usePdfPageWindowing(pdfDocument, indexedPages = new Map()) {
+export function usePdfPageWindowing(pdfDocument, indexedPages = new Map(), { holdWidth = false } = {}) {
   const numPages = pdfDocument?.numPages ?? 0;
   const [wrap, setWrap] = useState(null);
   const [sentinel, setSentinel] = useState(null);
@@ -45,6 +49,9 @@ export function usePdfPageWindowing(pdfDocument, indexedPages = new Map()) {
   const scrollCompleteRef = useRef(null);
   const widthRef = useRef(pageWidth);
   useLayoutEffect(() => { widthRef.current = pageWidth; }, [pageWidth]);
+  // Read by the resize observer, which can report a change before an effect would run.
+  const holdWidthRef = useRef(holdWidth);
+  useLayoutEffect(() => { holdWidthRef.current = holdWidth; }, [holdWidth]);
   useEffect(() => () => { scrollRunRef.current += 1; }, [pdfDocument]);
 
   const renderedPageCount = compact ? Math.min(numPages, loadedCount) : numPages;
@@ -82,6 +89,7 @@ export function usePdfPageWindowing(pdfDocument, indexedPages = new Map()) {
     if (!wrap) return undefined;
     let lastWidth = -1;
     const update = () => {
+      if (holdWidthRef.current) return;
       const computed = window.getComputedStyle(wrap);
       const padding = parseFloat(computed.paddingLeft) + parseFloat(computed.paddingRight);
       const width = Math.min(MAX_PAGE_WIDTH, Math.max(compact ? 220 : 280, Math.floor(wrap.clientWidth - padding)));
@@ -93,7 +101,7 @@ export function usePdfPageWindowing(pdfDocument, indexedPages = new Map()) {
     const observer = new ResizeObserver(update);
     observer.observe(wrap);
     return () => observer.disconnect();
-  }, [wrap, compact]);
+  }, [wrap, compact, holdWidth]);
 
   useEffect(() => {
     if (!wrap) return undefined;

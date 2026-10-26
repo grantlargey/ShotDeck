@@ -39,3 +39,37 @@ export function scrollPageInWrap(wrap, pageElement, behavior = "auto", offsetPx 
   const maxTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
   wrap.scrollTo({ top: Math.min(maxTop, Math.max(0, targetTop)), behavior });
 }
+
+/**
+ * The page under the reading line (a third of the way down the window) and
+ * where it sits on screen, read before a layout change so the change can be
+ * made without moving what the reader is looking at. Null while the pages
+ * are off screen, as when the reader is down among the scenes.
+ */
+export function readReadingAnchor(wrap) {
+  if (!wrap) return null;
+  const box = wrap.getBoundingClientRect();
+  if (box.bottom <= 0 || box.top >= window.innerHeight) return null;
+  const line = window.innerHeight / 3;
+  let anchor = null;
+  for (const page of wrap.querySelectorAll("[data-page-number]")) {
+    const pageBox = page.getBoundingClientRect();
+    anchor = { page, left: pageBox.left, top: pageBox.top };
+    if (pageBox.bottom > line) break;
+  }
+  return anchor;
+}
+
+/**
+ * Scrolls `scroller` (the wrap, or the window where it scrolls the pages) to
+ * put the anchor's page back where it was, and returns how far the page still
+ * is from there ({ dx, dy }), as far as scrolling couldn't take it: at the top
+ * of the script, the pages rise into room the change made above them.
+ */
+export function holdReadingAnchor(anchor, scroller) {
+  if (!anchor?.page.isConnected || !scroller) return null;
+  const shift = anchor.page.getBoundingClientRect().top - anchor.top;
+  if (Math.abs(shift) >= 0.5) scroller.scrollBy({ top: shift, behavior: "instant" });
+  const box = anchor.page.getBoundingClientRect();
+  return { dx: box.left - anchor.left, dy: box.top - anchor.top };
+}

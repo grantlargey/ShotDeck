@@ -6,13 +6,26 @@ import styles from "./ScriptViewerPage.module.css";
 
 /**
  * The script's captured scenes. Admins click a card to edit it and
- * double-click to expand; visitors (`readOnly`) click to open the scene.
+ * double-click to expand; visitors (`readOnly`) click to open the scene. On a
+ * phone the viewer adds to the scene browser's thumb dock (`thumbDock`).
  */
-export function SavedScenesGrid({ ref, scriptId, scenes, selectedSceneId, title, readOnly = false, onSelect, onExpand }) {
+export function SavedScenesGrid({
+  ref,
+  inert,
+  thumbDock,
+  scriptId,
+  scenes,
+  selectedSceneId,
+  title,
+  readOnly = false,
+  onSelect,
+  onExpand,
+}) {
   return (
-    <section ref={ref} className={styles.scenes} aria-labelledby="saved-scenes-title">
+    <section ref={ref} className={styles.scenes} aria-labelledby="saved-scenes-title" inert={inert}>
       <SceneBrowser
         scope={{ scriptId, scenes }}
+        thumbDock={thumbDock}
         headingId="saved-scenes-title"
         title="Scenes captured"
         instruction={readOnly ? "Click a card to open the scene" : "Click a card to edit it · Double-click to expand"}

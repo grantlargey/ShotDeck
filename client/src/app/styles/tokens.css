@@ -81,6 +81,16 @@
      and the accent of the still open in the viewer. */
   --color-hero-still: #8bb6ff;
 
+  /* Focused reading (features/focused-reading): the dark room the script is
+     read in on wide screens, darker than any surface so the page is the only
+     lit thing, and the bound script's stack of page edges beside the page,
+     in the page style's paper. */
+  --color-focus-room: #04070e;
+  --shadow-focus-stack:
+    4px 0 0 -1px color-mix(in srgb, var(--color-paper) 74%, var(--color-focus-room)),
+    8px 0 0 -2px color-mix(in srgb, var(--color-paper) 52%, var(--color-focus-room)),
+    12px 0 0 -3px color-mix(in srgb, var(--color-paper) 32%, var(--color-focus-room));
+
   /* Type */
   /* Type has four faces, one job each (DESIGN.md, Typography):
      Gloock for titles, Host Grotesk for the interface, Alegreya for scene
@@ -116,6 +126,19 @@
   /* Keeps light text legible where it sits directly on artwork. */
   --shadow-text: 0 2px 18px rgba(0, 0, 0, 0.45);
   --transition-fast: 0.16s ease;
+  /* Focused reading's rack focus. Going in, the chrome blurs out of focus as
+     it fades, the room darkens, and the layout settles a beat behind; coming
+     out plays back quicker. The focus key's glide to and from its corner keeps
+     in step (features/focused-reading/model/focusMotion.js). */
+  --focus-blur: 10px;
+  --focus-chrome-in: 480ms;
+  --focus-chrome-out: 360ms;
+  --focus-room-in: 420ms;
+  --focus-room-out: 300ms;
+  --focus-layout-in: 460ms;
+  --focus-layout-out: 400ms;
+  --focus-layout-delay: 140ms;
+  --focus-ease: cubic-bezier(0.3, 0.7, 0.2, 1);
 
   /* Layout */
   --sd-nav-height: 72px;

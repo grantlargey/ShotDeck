@@ -1,13 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { SceneSearchField } from "@/features/scene-search/ui/SceneSearchField.jsx";
 import { cx } from "@/shared/lib/cx.js";
-import { useMediaQuery } from "@/shared/lib/useMediaQuery.js";
 import styles from "./SceneSearchTile.module.css";
 
-// At this width and below, the open tile lifts out of its place and spans the toolbar row.
-const SPANNING_QUERY = "(max-width: 900px)";
-// Wider, it opens across the room its slot takes beside the heading. With less room
-// than the longest example needs, it covers the heading instead.
+// Beside the heading it opens across the room its slot takes. With less room than
+// the longest example needs, it covers the heading instead.
 const MIN_ROOM = 440;
 
 /**
@@ -68,10 +65,15 @@ function useSlotRoom(slotRef) {
  * is short, the open tile covers the heading instead. Enter or the shutter
  * searches and closes the tile; the page shows the search as a tag.
  *
+ * In the scene browser's thumb dock on a phone (`look="dock"`) the tile is a
+ * round one at the dock's end, and opens across the dock instead, while it
+ * has focus.
+ *
  * value: the description in the field; query: the one last searched.
  * fieldRef: the tile's box, for the tag to fly in from. inputRef: the field.
  */
 export function SceneSearchTile({
+  look = "toolbar",
   value,
   query,
   examples,
@@ -82,21 +84,21 @@ export function SceneSearchTile({
   onSubmit,
   onFocusChange,
 }) {
-  const spanning = useMediaQuery(SPANNING_QUERY);
+  const inDock = look === "dock";
   const slotRef = useRef(null);
   const room = useSlotRoom(slotRef);
   const [focused, setFocused] = useState(false);
-  const covering = !spanning && room !== null && room.width < MIN_ROOM;
+  const covering = !inDock && room !== null && room.width < MIN_ROOM;
   const draft = value.replace(/\s+/g, " ").trim();
   // Open while it has focus; beside the heading also while it holds a description not yet searched.
-  const open = !disabled && (focused || (!spanning && !covering && draft !== "" && draft !== query));
+  const open = !disabled && (focused || (!inDock && !covering && draft !== "" && draft !== query));
 
   return (
     <span
       ref={slotRef}
-      className={cx(styles.slot, covering && styles.covering)}
+      className={cx(styles.slot, covering && styles.covering, inDock && styles.dock)}
       style={
-        room && !spanning
+        room && !inDock
           ? { ...paceFor(covering ? room.span : room.width), "--cover-right": `${room.right}px` }
           : undefined
       }
