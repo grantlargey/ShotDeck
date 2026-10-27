@@ -14,7 +14,7 @@ const MAX_TEXT_LENGTH = 60000;
 const MAX_PAGE_IMAGES = 6;
 const MAX_IMAGE_DATA_URL_LENGTH = 3_000_000;
 const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
-const SCREENPLAY_MODEL = "gpt-5-nano";
+const SCREENPLAY_MODEL = "gpt-6-luna";
 
 function optionalPage(value) {
     return Number.isInteger(value) && value > 0 ? value : null;
@@ -80,10 +80,11 @@ const SYSTEM_PROMPT = [
     "You convert screenplay excerpts into ScriptDeck screenplay markdown, so that reading the markdown feels like reading the script page.",
     "",
     "RULES",
-    "1. Preserve every word of the script body exactly: same spelling, capitalization, and punctuation. Never summarize, paraphrase, correct, complete, or invent text.",
+    "1. Preserve the screenplay's wording, spelling, capitalization, and punctuation. Correct text-extraction or OCR errors only when a provided PDF page image clearly shows the intended characters within the captured selection, including misread characters, misplaced spaces, and missing or misread punctuation. If the relevant image is absent, cropped out, or unclear, keep the captured wording unchanged. Do not infer corrections from context or the draft. Never summarize, paraphrase, rewrite for grammar or style, complete unfinished text, or invent words.",
     '2. Leave out anything that is not the body of the script: scene numbers, page numbers, revision asterisks, running headers and footers, "(MORE)", and the "(CONT\'D)" cue that repeats a speaker after a page break. Merge a speech that continues across a page break into one dialogue block.',
     "3. Cover exactly the CAPTURED TEXT, from its first line to its last. Page images can show text outside the selection; ignore that text.",
-    "4. Return only the markdown, with no code fences and no commentary.",
+    "4. Reading order is essential: preserve the sequence of text and speaker turns across pages and within each page. Never move text earlier or later, regroup passages by speaker, or merge speeches across an intervening speaker cue or action, even when both speeches belong to the same character. Formatting and image-supported OCR corrections must not change who says what or when. For simultaneous dialogue, preserve each column's reading order using the grammar below.",
+    "5. Return only the markdown, with no code fences and no commentary.",
     "",
     "GRAMMAR (one screenplay element per block, blocks separated by one blank line)",
     "- Scene heading: ## INT. LOCATION - TIME",
@@ -134,12 +135,12 @@ function buildUserContent({ capturedText, draftMarkdown, pageStart, pageEnd, pag
         {
             type: "input_text",
             text: [
-                "CAPTURED TEXT (exact words from the PDF text layer, in reading order; the authority for wording):",
+                "CAPTURED TEXT (from the PDF text layer, in reading order; defines the selection and supplies wording except where a provided image clearly supports correcting an extraction error):",
                 "<<<",
                 capturedText,
                 ">>>",
                 "",
-                "DRAFT MARKDOWN (automatic layout-based conversion; element types or paragraph breaks may be wrong):",
+                "DRAFT MARKDOWN (automatic conversion; may contain extraction errors and incorrect element types or paragraph breaks; not evidence for wording corrections):",
                 "<<<",
                 draftMarkdown || "(none)",
                 ">>>",
@@ -179,6 +180,7 @@ export async function formatScreenplaySelection(body) {
             signal: controller.signal,
             body: JSON.stringify({
                 model: SCREENPLAY_MODEL,
+                reasoning: { effort: "low" },
                 input: [
                     { role: "system", content: [{ type: "input_text", text: SYSTEM_PROMPT }] },
                     { role: "user", content: buildUserContent(input) },

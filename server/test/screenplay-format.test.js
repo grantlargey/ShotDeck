@@ -85,7 +85,7 @@ describe("the AI formatter", () => {
         }
     });
 
-    test("always sends and reports gpt-5-nano without a temperature", async (t) => {
+    test("always sends and reports gpt-6-luna with low reasoning and without a temperature", async (t) => {
         const previousKey = process.env.OPENAI_API_KEY;
         const previousModel = process.env.OPENAI_SCREENPLAY_MODEL;
         process.env.OPENAI_API_KEY = "test-only-key";
@@ -103,8 +103,9 @@ describe("the AI formatter", () => {
         try {
             const response = await format({ capturedText: "INT. DINER - NIGHT" });
             assert.equal(response.status, 200, response.text);
-            assert.deepEqual(response.body, { markdown: "## INT. DINER - NIGHT", model: "gpt-5-nano" });
-            assert.equal(sent.model, "gpt-5-nano");
+            assert.deepEqual(response.body, { markdown: "## INT. DINER - NIGHT", model: "gpt-6-luna" });
+            assert.equal(sent.model, "gpt-6-luna");
+            assert.deepEqual(sent.reasoning, { effort: "low" });
             assert.ok(!("temperature" in sent));
         } finally {
             if (previousKey === undefined) delete process.env.OPENAI_API_KEY;

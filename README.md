@@ -112,6 +112,8 @@ The client defaults to `http://localhost:4000`. Override it with `VITE_API_BASE`
 
 Restart the relevant development process after changing configuration.
 
+AI screenplay formatting uses `gpt-6-luna` with `low` reasoning through the OpenAI Responses API. The model and reasoning effort are set in `server/src/services/screenplay-format.service.js`; changing them requires deploying the backend, with no frontend rebuild or database migration. The formatter is instructed to preserve reading order and correct OCR errors only when the supplied PDF images clearly support the correction. Review proposals before accepting them.
+
 ## Tests and checks
 
 | Command | Purpose |
