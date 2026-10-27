@@ -146,26 +146,53 @@
   }
 }
 
+/*
+ * Narrow screens keep the desktop's order: the headline above the falling
+ * figure, the subtitle and the search under his feet. The hero holds one
+ * height, so the art is drawn at a known scale: it covers the hero by height,
+ * and Miles falls from 41% to 63% of it, centred across the frame (and across
+ * HeroArt's phone crop).
+ */
 @media (max-width: 780px) {
   .hero {
-    min-height: 640px;
+    --hero-height: 640px;
+    min-height: var(--hero-height);
   }
 
   .heroArt img {
-    object-position: 54% top;
+    object-position: 50% top;
   }
 
+  /* The first row runs from the headline down to just past Miles's feet, so the subtitle starts there. */
   .heroInner {
-    padding: calc(var(--sd-nav-height) + 24px) var(--page-gutter) 86px;
+    padding: calc(var(--sd-nav-height) + 24px) var(--page-gutter) 56px;
+    display: grid;
+    grid-template-rows:
+      minmax(calc(var(--hero-height) * 0.634 + 20px - var(--sd-nav-height) - 24px), auto)
+      auto
+      auto;
+    align-content: start;
+    justify-items: center;
+    gap: 0;
+  }
+
+  .heroIntro {
+    display: contents;
   }
 
   .heroTitle {
+    align-self: start;
     font-size: clamp(2.25rem, 10vw, 2.75rem);
   }
 
   .heroSubtitle {
-    margin-top: 12px;
+    max-width: 340px;
+    margin: 0 0 30px;
     font-size: 1rem;
+  }
+
+  .heroCredit {
+    text-align: center;
   }
 }
 
@@ -173,13 +200,5 @@
   .recent .recentGrid {
     grid-auto-columns: 42%;
     gap: 12px;
-  }
-}
-
-/* Phones get HeroArt's crop from the middle of the frame; centered, it shows the
-   same slice as 54% across the whole frame. */
-@media (max-width: 470px) {
-  .heroArt img {
-    object-position: 50% top;
   }
 }

@@ -945,23 +945,96 @@
   aspect-ratio: 16 / 9;
 }
 
-/* ---------- Narrow screens: stacked hero, two-column stills ---------- */
+/* ---------- Narrow screens: the whole still above, two-column stills ---------- */
 
+/* A phone's hero is too tall for a still to cover it without enlarging it into
+   a closeup, so the still shows whole, edge to edge under the site header, and
+   fades into the page. --still-height is its height at the screen's width. */
 @media (max-width: 600px) {
-  /* The cover is one size, closed or open: only the cover swings. */
+  .hero {
+    --still-height: calc(100cqw * 9 / 16);
+    padding-top: 0;
+  }
+
+  .backdrops {
+    top: var(--sd-nav-height);
+    bottom: auto;
+    height: var(--still-height);
+    background: none;
+  }
+
+  .backdropLoaded {
+    opacity: 0.92;
+  }
+
+  .backdrops::after {
+    background:
+      linear-gradient(
+        0deg,
+        var(--color-bg) 0,
+        color-mix(in srgb, var(--color-bg) 55%, transparent) 26%,
+        transparent 56%
+      ),
+      linear-gradient(180deg, var(--color-bg) 0, transparent 18%);
+  }
+
+  /* The cover overlaps the still's faded foot, with the eyebrow and title
+     beside it and the facts across the full width below. The cover is one
+     size, closed or open: only the cover swings. */
   .heroInner {
     --cover-size: 136;
     min-height: 0;
-    padding: calc(var(--sd-nav-height) + 28px) var(--page-gutter) 28px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 20px;
+    padding: calc(var(--sd-nav-height) + var(--still-height) - 64px) var(--page-gutter) 28px;
+    display: grid;
+    grid-template-columns: var(--cover-width) minmax(0, 1fr);
+    grid-template-rows: 1fr auto auto auto;
+    align-items: end;
+    gap: 0 16px;
+  }
+
+  .heroInner > :is(.poster, .cover) {
+    grid-row: 1 / 4;
+  }
+
+  .heroBody {
+    display: contents;
+  }
+
+  :is(.eyebrow, .skeletonEyebrow) {
+    grid-column: 2;
+    grid-row: 2;
+    margin-bottom: 10px;
+  }
+
+  /* The time typed for a new still wraps under the count in this column, so
+     an admin's eyebrow keeps that line from the start and opening moves nothing. */
+  .heroEditable .eyebrow {
+    min-height: 2lh;
+  }
+
+  :is(.heroTitle, .skeletonTitle) {
+    grid-column: 2;
+    grid-row: 3;
+    margin: 0;
+    font-size: 2.25rem;
+  }
+
+  :is(.facts, .skeletonFacts) {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    margin-top: 22px;
   }
 
   /* An admin's hero keeps room under the details for Save and Discard, so
      opening the cover pushes nothing below it down. */
   .heroEditable {
     padding-bottom: 40px;
+  }
+
+  .editActions {
+    top: auto;
+    bottom: 6px;
+    left: var(--page-gutter);
   }
 
   /* The script's controls keep their size from the desktop's cover rather

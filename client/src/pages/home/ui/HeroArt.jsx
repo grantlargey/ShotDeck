@@ -36,8 +36,8 @@ const WEBP_SRCSET = widthSet([
 // 2.39:1 frame is never narrower than 1337px (1528px).
 const SIZES = "(max-width: 780px) 1528px, (max-width: 1337px) 1337px, 100vw";
 
-// Phones show only a narrow slice from the middle of the frame, so they get a
-// portrait crop of it instead of the whole 4200px frame. Past 470px the crop
+// Phones show only a narrow slice of the frame, so they get a portrait crop of it,
+// centred on the falling figure, instead of the whole 4200px frame. Past 470px the crop
 // would no longer cover the 640px-tall hero at the same scale.
 const PHONE_MEDIA = "(max-width: 470px)";
 
