@@ -3,7 +3,6 @@ import { TagCategoryList } from "@/entities/script-scene/ui/TagCategoryList.jsx"
 import { cx } from "@/shared/lib/cx.js";
 import { Button } from "@/shared/ui/Button.jsx";
 import { IconButton } from "@/shared/ui/IconButton.jsx";
-import { CloseIcon } from "@/shared/ui/icons.jsx";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl.jsx";
 import styles from "./SceneBrowser.module.css";
 
@@ -38,7 +37,8 @@ export function FoldIcon() {
  * The scene filters. On wide screens (`docked`) they sit in a column beside
  * the grid and can fold away: the panel swings shut onto a spine down the
  * column's edge, and the spine brings them back. On narrow screens they open
- * as a drawer instead.
+ * as a drawer instead, which swings in from the screen's edge and back the
+ * same way; there the book button beside Clear all closes it.
  *
  * folded: the filters are folded away; it only applies while docked.
  * motion: "folding" | "unfolding" while the panel swings, otherwise null.
@@ -85,7 +85,8 @@ export default function FilterSidebar({
 
   return (
     <>
-      {open && <div className={styles.sidebarBackdrop} onClick={onClose} aria-hidden="true" />}
+      {/* Always there, so it can clear as the drawer swings shut. */}
+      <div className={cx(styles.sidebarBackdrop, open && styles.sidebarBackdropOpen)} onClick={onClose} aria-hidden="true" />
 
       <div className={styles.dock}>
         <aside
@@ -100,12 +101,6 @@ export default function FilterSidebar({
           aria-label="Scene filters"
           inert={away}
         >
-          <div className={styles.sidebarTop}>
-            <IconButton label="Close filters" onClick={onClose}>
-              <CloseIcon size={18} />
-            </IconButton>
-          </div>
-
           <div className={styles.filterHeader}>
             <h2 className={styles.filterHeading}>Filter results</h2>
             <div className={styles.filterHeaderEnd}>
@@ -118,20 +113,18 @@ export default function FilterSidebar({
               >
                 Clear all
               </Button>
-              {docked && (
-                <IconButton
-                  ref={foldRef}
-                  size="sm"
-                  className={styles.fold}
-                  label="Fold the filters away"
-                  title="Fold the filters away"
-                  aria-expanded={!away}
-                  aria-controls={panelId}
-                  onClick={fold}
-                >
-                  <FoldIcon />
-                </IconButton>
-              )}
+              <IconButton
+                ref={foldRef}
+                size="sm"
+                className={styles.fold}
+                label={docked ? "Fold the filters away" : "Close filters"}
+                title={docked ? "Fold the filters away" : "Close filters"}
+                aria-expanded={docked ? !away : open}
+                aria-controls={panelId}
+                onClick={docked ? fold : onClose}
+              >
+                <FoldIcon />
+              </IconButton>
             </div>
           </div>
 
