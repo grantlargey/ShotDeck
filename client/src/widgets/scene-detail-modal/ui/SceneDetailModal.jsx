@@ -55,6 +55,8 @@ export function SceneDetailModal({
   useFocusKeys({ enabled: focusable !== undefined, focused, canFocus: focusable === true, onChange: setFocus });
 
   useLayoutEffect(() => {
+    // Enter focused reading at the top even after scrolling down to the tags.
+    if (focused) headerRef.current?.closest('[role="dialog"]')?.scrollTo?.(0, 0);
     const from = keyFromRef.current;
     keyFromRef.current = null;
     if (!from) return;
@@ -82,7 +84,7 @@ export function SceneDetailModal({
     <Dialog
       title={title}
       onClose={onClose}
-      className={cx(styles.modal, focused && styles.focused)}
+      className={cx(styles.modal, onStep && styles.scrollable, focused && styles.focused)}
       overlayClassName={cx(styles.sceneOverlay, focused && styles.overlayFocused)}
       renderContent={({ titleId, closeButton }) => (
         <>

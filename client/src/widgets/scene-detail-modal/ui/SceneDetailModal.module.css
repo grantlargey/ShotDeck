@@ -33,6 +33,14 @@
     box-shadow var(--room-time) ease;
 }
 
+.scrollable {
+  /* Keep a generous viewing area; long tag lists extend the dialog below it. */
+  grid-template-rows: auto minmax(60%, 1fr) auto;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+}
+
 /* One row that can fold away (to 0fr) in focused reading, letting the stage take its height. */
 .header {
   display: grid;
@@ -301,6 +309,12 @@
   font-size: var(--text-sm);
 }
 
+.scrollable .tagGroups {
+  max-height: none;
+  overflow: visible;
+  row-gap: 12px;
+}
+
 .tagGroup dt {
   color: var(--color-text);
   font-family: var(--font-slate);
@@ -380,6 +394,8 @@
   border-radius: 0;
   background: var(--color-focus-room);
   box-shadow: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
 .focused .recedes,
