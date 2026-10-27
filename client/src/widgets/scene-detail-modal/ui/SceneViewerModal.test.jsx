@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SceneDetailModal } from "./SceneDetailModal.jsx";
 import { SceneViewerModal } from "./SceneViewerModal.jsx";
@@ -35,16 +35,17 @@ describe("SceneViewerModal", () => {
       />
     );
 
+    const navigation = within(screen.getByRole("group", { name: "Scene navigation" }));
     expect(screen.getByText("FIRST SCENE")).toBeTruthy();
-    expect(screen.getByText("1 / 2")).toBeTruthy();
+    expect(navigation.getByText("1 / 2")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText("SECOND SCENE")).toBeTruthy();
-    expect(screen.getByText("2 / 2")).toBeTruthy();
+    expect(navigation.getByText("2 / 2")).toBeTruthy();
 
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     expect(screen.getByText("FIRST SCENE")).toBeTruthy();
-    expect(screen.getByText("1 / 2")).toBeTruthy();
+    expect(navigation.getByText("1 / 2")).toBeTruthy();
   });
 
   it("clears down to the scene's text in focused reading; Esc leaves focus, and the next closes", () => {

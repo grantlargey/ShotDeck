@@ -109,6 +109,7 @@
   grid-template-columns: 56px minmax(0, 1fr) 56px;
   transition:
     padding var(--layout-time) var(--focus-ease) var(--layout-delay),
+    grid-template-rows var(--layout-time) var(--focus-ease) var(--layout-delay),
     grid-template-columns var(--layout-time) var(--focus-ease) var(--layout-delay);
 }
 
@@ -118,11 +119,36 @@
 }
 
 .stageBody {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   justify-content: center;
   gap: 16px;
+}
+
+.stageSolo .stageBody {
+  grid-column: 1;
+}
+
+/* One set of arrows: beside the stage on desktop, in a rail below it on mobile. */
+.navigation {
+  display: contents;
+}
+
+.railCounter {
+  display: none;
+}
+
+.previous {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.next {
+  grid-column: 3;
+  grid-row: 1;
 }
 
 .stepButton {
@@ -424,22 +450,56 @@
   }
 
   .stage {
-    padding: 0 2px;
-    grid-template-columns: 36px minmax(0, 1fr) 36px;
+    padding: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 52px;
+  }
+
+  .stageBody {
+    grid-column: 1;
   }
 
   .stageSolo {
     padding: 0 10px;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .headerCounter {
+    display: none;
+  }
+
+  .navigation {
+    min-height: 0;
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    align-items: center;
+    padding-inline: 12px;
+    overflow: hidden;
+    border-top: 1px solid var(--color-line);
+  }
+
+  .railCounter {
+    display: block;
+    grid-column: 2;
+    grid-row: 1;
+    text-align: center;
   }
 
   .stepButton {
-    width: 30px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
+    background: transparent;
+    color: var(--color-text);
+  }
+
+  .stepButton:active:not(:disabled) {
+    background: var(--color-line);
   }
 
   .paper {
-    padding: 24px 18px 40px;
+    padding: 24px 20px 40px;
   }
 
   .footer {
@@ -475,7 +535,11 @@
 
   .focused .stage {
     padding: 0;
-    grid-template-columns: 0 minmax(0, 1fr) 0;
+    grid-template-rows: minmax(0, 1fr) 0px;
+  }
+
+  .focused .navigation {
+    border-top-width: 0;
   }
 
   .focused .paper {

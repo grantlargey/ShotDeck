@@ -111,7 +111,9 @@ export function SceneDetailModal({
                   {toolbar}
                 </div>
               )}
-              {counter && <span className={cx(styles.counter, styles.recedes)}>{counter}</span>}
+              {counter && (
+                <span className={cx(styles.counter, onStep && styles.headerCounter, styles.recedes)}>{counter}</span>
+              )}
               <span className={cx(styles.close, styles.recedes)} inert={focused}>
                 {closeButton}
               </span>
@@ -119,34 +121,34 @@ export function SceneDetailModal({
           </header>
 
           <div className={cx(styles.stage, !onStep && styles.stageSolo)}>
-            {onStep && (
-              <button
-                type="button"
-                className={cx(styles.stepButton, styles.recedes)}
-                onClick={() => onStep(-1)}
-                disabled={!hasPrev}
-                inert={focused}
-                aria-label="Previous"
-              >
-                <ChevronLeftIcon size={18} strokeWidth={2.4} />
-              </button>
-            )}
-
             <div key={stageKey} className={styles.stageBody}>
               {children}
             </div>
 
             {onStep && (
-              <button
-                type="button"
-                className={cx(styles.stepButton, styles.recedes)}
-                onClick={() => onStep(1)}
-                disabled={!hasNext}
-                inert={focused}
-                aria-label="Next"
-              >
-                <ChevronRightIcon size={18} strokeWidth={2.4} />
-              </button>
+              <div className={styles.navigation} role="group" aria-label="Scene navigation" inert={focused}>
+                <button
+                  type="button"
+                  className={cx(styles.stepButton, styles.previous, styles.recedes)}
+                  onClick={() => onStep(-1)}
+                  disabled={!hasPrev}
+                  inert={focused}
+                  aria-label="Previous"
+                >
+                  <ChevronLeftIcon size={18} strokeWidth={2.4} />
+                </button>
+                <span className={cx(styles.counter, styles.railCounter, styles.recedes)}>{counter}</span>
+                <button
+                  type="button"
+                  className={cx(styles.stepButton, styles.next, styles.recedes)}
+                  onClick={() => onStep(1)}
+                  disabled={!hasNext}
+                  inert={focused}
+                  aria-label="Next"
+                >
+                  <ChevronRightIcon size={18} strokeWidth={2.4} />
+                </button>
+              </div>
             )}
           </div>
 
