@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useSession } from "@/entities/session/model/useSession.js";
 import { changePassword } from "@/shared/api/auth.js";
+import { keyboardWaitsForTap } from "@/shared/lib/onScreenKeyboard.js";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle.js";
 import { getErrorMessage, ValidationError } from "@/shared/lib/errors.js";
 import { Button } from "@/shared/ui/Button.jsx";
@@ -39,6 +40,8 @@ export default function LoginPage() {
   const [temporaryPassword, setTemporaryPassword] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // The first field takes the caret, except on a touch screen, where the keyboard waits for a tap.
+  const focusFirstField = !keyboardWaitsForTap();
   // Signing in here must not trigger the "already signed in" redirect below.
   const signedInHereRef = useRef(false);
 
@@ -101,7 +104,7 @@ export default function LoginPage() {
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
                 required
-                autoFocus
+                autoFocus={focusFirstField}
               />
             </Field>
             <Field label="Confirm new password" required>
@@ -142,7 +145,7 @@ export default function LoginPage() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
-              autoFocus
+              autoFocus={focusFirstField}
             />
           </Field>
           <Field label="Password" required>

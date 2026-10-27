@@ -28,6 +28,12 @@ function hold(event) {
   event.preventDefault();
 }
 
+/** How far the field is scaled down to its type: on touch screens it's set at 16px (SceneSearchField.module.css). */
+function drawnScale(input) {
+  const matrix = /^matrix\(([^,]+)/.exec(getComputedStyle(input).transform);
+  return matrix ? Number(matrix[1]) : 1;
+}
+
 /** Starts a caret's blink over, so it stays lit while it moves and blinks while it waits. */
 function restartBlink(caret) {
   for (const animation of caret?.getAnimations?.() ?? []) animation.currentTime = 0;
@@ -145,7 +151,8 @@ function FieldCaret({ inputRef, value }) {
     function place() {
       const start = input.selectionStart ?? input.value.length;
       textRef.current.textContent = input.value.slice(0, start);
-      lineRef.current.style.transform = input.scrollLeft ? `translateX(${-input.scrollLeft}px)` : "";
+      const scrolled = input.scrollLeft * drawnScale(input);
+      lineRef.current.style.transform = scrolled ? `translateX(${-scrolled}px)` : "";
       caretRef.current.style.visibility = start === input.selectionEnd ? "" : "hidden";
       const at = `${start}:${input.value}`;
       if (at !== placed) {

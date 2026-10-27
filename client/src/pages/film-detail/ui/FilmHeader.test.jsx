@@ -78,6 +78,15 @@ function lessMotion() {
   window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
 }
 
+/** A phone or tablet, where a field with the caret raises the on-screen keyboard. */
+function touchScreen() {
+  window.matchMedia = (query) => ({
+    matches: query === "(pointer: coarse)",
+    addEventListener() {},
+    removeEventListener() {},
+  });
+}
+
 beforeEach(() => {
   reported = undefined;
   vi.useFakeTimers();
@@ -239,6 +248,16 @@ describe("the film hero's editor", () => {
 
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Title" }));
     expect(screen.getAllByRole("textbox")).toHaveLength(6);
+  });
+
+  it("leaves the caret out of the details on a touch screen, so the keyboard waits for one to be tapped", () => {
+    touchScreen();
+    render(<EditableHeader film={{ ...FILM, director: "Ada Lane", writer: "Ada Lane, Sam Ford" }} />);
+
+    openCover();
+
+    expect(screen.getByRole("textbox", { name: "Writer" })).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
   });
 
   it("opens onto the script's title page, with the way into the script and a way to replace it", () => {

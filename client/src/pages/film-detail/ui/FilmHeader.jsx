@@ -6,6 +6,7 @@ import { parseFilmMoment } from "@/entities/script-scene/model/filmTiming.js";
 import { sortStillsByTime } from "@/entities/still/model/stillTimeline.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
 import { cx } from "@/shared/lib/cx.js";
+import { keyboardWaitsForTap } from "@/shared/lib/onScreenKeyboard.js";
 import { usePrefersReducedMotion } from "@/shared/lib/usePrefersReducedMotion.js";
 import { formatMinutesToHms, formatMomentToHms } from "@/shared/lib/time.js";
 import { Skeleton } from "@/shared/ui/Skeleton.jsx";
@@ -339,10 +340,11 @@ function BoundCover({ film, poster, label, tip, disabled, onClick, children }) {
  * at, it lifts off the page beneath and dotted lines sweep under the title and
  * facts, ending in a blinking caret. Clicked, it swings open to the title
  * page, which holds the script's controls (`script`), and every detail, filled
- * in or not, becomes an input in place; the caret becomes the last one's, and
- * Save and Discard appear under the facts. A time typed after the stills count
- * adds a still there (`edit.onAddStill`, with `edit.onPendingStill` hearing it
- * as it's typed). Enter or a click on the open cover saves; Esc discards.
+ * in or not, becomes an input in place; the caret becomes the last one's (on a
+ * touch screen it waits for a detail to be tapped), and Save and Discard
+ * appear under the facts. A time typed after the stills count adds a still
+ * there (`edit.onAddStill`, with `edit.onPendingStill` hearing it as it's
+ * typed). Enter or a click on the open cover saves; Esc discards.
  * `edit.values` holds the details being typed while the editor is open and is
  * null while it's closed.
  */
@@ -400,6 +402,12 @@ export function FilmHeader({
 
   function openEditor() {
     flushSync(edit.onStart);
+    // On a touch screen the caret would raise the keyboard, so it waits for a
+    // detail to be tapped; focus waits on the title meanwhile.
+    if (keyboardWaitsForTap()) {
+      titleRef.current?.focus({ preventScroll: true });
+      return;
+    }
     const input = bodyRef.current?.querySelector(`[name="${caretField}"]`);
     if (!input) return;
     input.focus({ preventScroll: true });
@@ -479,7 +487,14 @@ export function FilmHeader({
         )}
       </div>
 
-      <div className={cx(styles.heroInner, editing && styles.heroEditing, opening && styles.heroOpening)}>
+      <div
+        className={cx(
+          styles.heroInner,
+          edit && styles.heroEditable,
+          editing && styles.heroEditing,
+          opening && styles.heroOpening
+        )}
+      >
         {cover}
 
         <div ref={bodyRef} className={styles.heroBody}>

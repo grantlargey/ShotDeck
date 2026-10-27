@@ -72,6 +72,13 @@
   outline: none;
 }
 
+/* iOS zooms into a field set under 16px as it takes focus, so touch screens get 16px. */
+@media (pointer: coarse) {
+  .source {
+    font-size: var(--text-base);
+  }
+}
+
 .loading {
   margin: 0;
   color: var(--color-ink-muted);

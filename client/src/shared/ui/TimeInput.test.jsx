@@ -171,4 +171,29 @@ describe("shared time entry", () => {
     expect(onKeyDown).toHaveBeenCalled();
     expect(blur).not.toHaveBeenCalled();
   });
+
+  it("scales an inline field in type under 16px, so on a touch screen it's set at 16px and iOS doesn't zoom in", () => {
+    render(
+      <p style={{ fontSize: "11.52px", letterSpacing: "1.6128px" }}>
+        <TimeInput inline aria-label="Timestamp" value="" onValueChange={() => {}} />
+      </p>
+    );
+    const control = screen.getByRole("textbox", { name: "Timestamp" }).parentElement;
+
+    expect(control.classList.contains(styles.scaled)).toBe(true);
+    expect(Number(control.style.getPropertyValue("--type-scale"))).toBeCloseTo(0.72);
+    expect(parseFloat(control.style.getPropertyValue("--type-tracking"))).toBeCloseTo(2.24);
+  });
+
+  it("leaves an inline field in 16px type as it is", () => {
+    render(
+      <p style={{ fontSize: "16px" }}>
+        <TimeInput inline aria-label="Timestamp" value="" onValueChange={() => {}} />
+      </p>
+    );
+    const control = screen.getByRole("textbox", { name: "Timestamp" }).parentElement;
+
+    expect(control.classList.contains(styles.scaled)).toBe(false);
+    expect(control.style.getPropertyValue("--type-scale")).toBe("");
+  });
 });

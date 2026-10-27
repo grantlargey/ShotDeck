@@ -13,6 +13,14 @@
   line-height: 1.3;
 }
 
+/* iOS zooms into a field set under 16px as it takes focus, so on touch screens
+   the page is set at 16px; its lines wrap sooner on a phone. */
+@media (pointer: coarse) {
+  .sheet {
+    font-size: var(--text-base);
+  }
+}
+
 .block {
   --x: 0cqi;
   --w: 100cqi;

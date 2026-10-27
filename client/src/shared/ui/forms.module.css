@@ -59,6 +59,13 @@
   cursor: not-allowed;
 }
 
+/* iOS zooms into a field set under 16px as it takes focus, so touch screens get 16px. */
+@media (pointer: coarse) {
+  .control {
+    font-size: var(--text-base);
+  }
+}
+
 .numeric {
   font-family: var(--font-slate);
 }

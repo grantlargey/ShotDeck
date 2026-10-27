@@ -6,7 +6,7 @@ import net from "node:net";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { chromium } from "playwright";
+import { chromium, devices } from "playwright";
 import { makeSyntheticPdf } from "./make-pdf.mjs";
 import { createTestDatabases, postgresAdmin } from "../../server/test/helpers/database-lifetime.js";
 
@@ -208,6 +208,11 @@ async function setTiming(panel, start, end) {
   throwIfShuttingDown();
 }
 
+// A transparent 1×1 PNG, served for every image the pages ask the S3 stub for.
+const PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "base64"
+);
 const filmId = randomUUID();
 const scriptId = randomUUID();
 const userId = randomUUID();
@@ -324,7 +329,7 @@ try {
   const interceptedMedia = [];
   const interceptedFonts = [];
   const blockedExternal = [];
-  await context.route("**/*", async (route) => {
+  async function routeOutside(route) {
     const url = new URL(route.request().url());
     if (url.origin === appOrigin || url.origin === apiOrigin) return route.continue();
     // The signed view URL the API hands the browser, addressed path-style at
@@ -345,7 +350,8 @@ try {
     }
     blockedExternal.push(url.toString());
     return route.abort("blockedbyclient");
-  });
+  }
+  await context.route("**/*", routeOutside);
 
   const login = await context.request.post(`${apiOrigin}/auth/login`, { data: { email, password } });
   assert.equal(login.status(), 200);
@@ -528,6 +534,81 @@ try {
   await ready();
   assert.equal(await grid.getByText("00:10:00 – 00:11:06", { exact: true }).count(), 0);
   pass("delete persists and remains deleted after reload");
+
+  // Stills and covers the pages show, signed for the S3 stub: a pixel each.
+  async function servePixel(route) {
+    const url = new URL(route.request().url());
+    if (url.origin === s3Origin && route.request().resourceType() === "image") {
+      return route.fulfill({ status: 200, contentType: "image/png", body: PIXEL_PNG });
+    }
+    return route.fallback();
+  }
+
+  /** The film's cover before and after it's opened (tapped on a touch screen), and where focus went. */
+  async function openCover(target, { tap }) {
+    await target.goto(`${appOrigin}/films/${filmId}`);
+    const cover = target.getByRole("button", { name: "Edit details and script", exact: true });
+    await cover.waitFor();
+    const closed = await cover.boundingBox();
+    await (tap ? cover.tap() : cover.click());
+    const open = target.getByRole("button", { name: "Save details", exact: true });
+    await open.waitFor();
+    // The cover takes 0.85s to swing open.
+    await target.waitForTimeout(1000);
+    const opened = await open.evaluate((button) => ({
+      box: button.getBoundingClientRect().toJSON(),
+      flapLeft: button.firstElementChild.getBoundingClientRect().left,
+      typing: document.activeElement.matches("input, textarea"),
+    }));
+    return { closed, opened };
+  }
+
+  // On a touch screen iOS zooms into a text field set under 16px as it takes
+  // focus, so none may be. The film cover keeps its size as it swings open,
+  // clear of the screen's edge, and opening it hands no field the caret.
+  const phone = await browser.newContext({ ...devices["iPhone 13"], storageState: await context.storageState() });
+  phone.setDefaultTimeout(30_000);
+  await phone.route("**/*", routeOutside);
+  const phonePage = await phone.newPage();
+  await phonePage.route("**/*", servePixel);
+  const widePage = await context.newPage();
+  await widePage.route("**/*", servePixel);
+  for (const target of [phonePage, widePage]) {
+    target.on("pageerror", (error) => pageErrors.push(error.message));
+    target.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+  }
+  const smallFields = () =>
+    phonePage.evaluate(() =>
+      [...document.querySelectorAll("input, textarea, select")]
+        .filter((field) => !["checkbox", "file", "hidden", "radio"].includes(field.type))
+        .filter((field) => parseFloat(getComputedStyle(field).fontSize) < 16)
+        .map((field) => field.getAttribute("aria-label") || field.name || field.type)
+    );
+  for (const pagePath of ["/", "/library", "/script-search", `/films/${filmId}/scripts/${scriptId}`]) {
+    await phonePage.goto(appOrigin + pagePath);
+    await phonePage.locator("input").first().waitFor({ state: "attached" });
+    assert.deepEqual(await smallFields(), [], `no text field on ${pagePath} is under 16px on a touch screen`);
+  }
+  for (const width of [375, 390, 430]) {
+    await phonePage.setViewportSize({ width, height: 800 });
+    const { closed, opened } = await openCover(phonePage, { tap: true });
+    for (const side of ["x", "y", "width", "height"]) {
+      assert(Math.abs(closed[side] - opened.box[side]) < 0.5, `the cover keeps its ${side} as it opens at ${width}px`);
+    }
+    assert(opened.flapLeft >= 6, `the open cover stands clear of the screen's edge at ${width}px`);
+    assert.equal(opened.typing, false, "a tap on the cover hands no field the caret");
+    assert.deepEqual(await smallFields(), [], "the cover's fields are 16px or more on a touch screen");
+  }
+  for (const width of [700, 1024]) {
+    await widePage.setViewportSize({ width, height: 900 });
+    const { opened } = await openCover(widePage, { tap: false });
+    assert(opened.flapLeft >= 6, `the open cover stands clear of the window's edge at ${width}px`);
+  }
+  await phone.close();
+  await widePage.close();
+  pass("touch-screen fields are 16px or more, and the film cover keeps its size and opens clear of the edge");
 
   assert(interceptedMedia.length >= 1, "each signed PDF load was fulfilled inside Playwright");
   assert(interceptedFonts.length >= 1, "external font stylesheets were replaced inside Playwright");

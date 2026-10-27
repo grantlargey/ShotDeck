@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Dialog } from "./Dialog.jsx";
 
 function DialogHarness() {
@@ -18,6 +18,15 @@ function DialogHarness() {
     </>
   );
 }
+
+/** jsdom lays nothing out, so every control reads as hidden; this shows them. */
+function laidOut() {
+  vi.spyOn(Element.prototype, "getClientRects").mockReturnValue([{ width: 1, height: 1 }]);
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("Dialog lifecycle", () => {
   it("closes on Escape", () => {
@@ -84,6 +93,54 @@ describe("Dialog lifecycle", () => {
     expect(panel.closest("header")).toBeNull();
     expect(container.contains(panel)).toBe(false);
     expect(panel.parentElement.parentElement).toBe(document.body);
+  });
+
+  it("focuses the first field", () => {
+    laidOut();
+    render(
+      <Dialog title="Example dialog" onClose={() => {}}>
+        <input aria-label="Example field" />
+        <button type="button">Choose a file</button>
+      </Dialog>
+    );
+
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Example field" }));
+  });
+
+  describe("on a touch screen", () => {
+    beforeEach(() => {
+      laidOut();
+      window.matchMedia = (query) => ({
+        matches: query === "(pointer: coarse)",
+        addEventListener() {},
+        removeEventListener() {},
+      });
+    });
+
+    afterEach(() => {
+      delete window.matchMedia;
+    });
+
+    it("focuses the first button rather than a field, so the keyboard waits for a tap", () => {
+      render(
+        <Dialog title="Example dialog" onClose={() => {}}>
+          <input aria-label="Example field" />
+          <button type="button">Choose a file</button>
+        </Dialog>
+      );
+
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Choose a file" }));
+    });
+
+    it("focuses the close button when the body holds only fields", () => {
+      render(
+        <Dialog title="Example dialog" onClose={() => {}}>
+          <input aria-label="Example field" />
+        </Dialog>
+      );
+
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+    });
   });
 
   it("restores focus to the opener when it closes", async () => {

@@ -57,3 +57,32 @@
 .control:has(:disabled) .mask {
   color: var(--color-text-muted);
 }
+
+/* iOS zooms into a field set under 16px as it takes focus. */
+@media (pointer: coarse) {
+  .control:not(.inline) {
+    font-size: var(--text-base);
+  }
+
+  /*
+   * An inline field in smaller type (.scaled, see TimeInput) is set at 16px
+   * and drawn at its type's size, its tracking scaled up to match, while the
+   * mask lays out the time in its place.
+   */
+  .scaled .input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: calc(100% / var(--type-scale));
+    height: calc(100% / var(--type-scale));
+    font-size: 16px;
+    letter-spacing: var(--type-tracking);
+    transform: scale(var(--type-scale));
+    transform-origin: 0 0;
+  }
+
+  .scaled .mask {
+    position: relative;
+    inset: auto;
+  }
+}

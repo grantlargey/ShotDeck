@@ -97,6 +97,15 @@ those tokens and **MUST NOT** set scene fonts or inks directly.
 - **Focus**: every interactive element shows `2px solid var(--color-accent)`
   with a 2px offset on `:focus-visible`. Focus **MUST NOT** be removed without
   an equal replacement.
+- **Fields on touch screens** (`pointer: coarse`): iOS zooms the page into a
+  text field set under 16px as it takes focus, so every field **MUST** be
+  16px or more there. A field designed smaller, such as the Slate scene search
+  or an inline timecode, is set at 16px and scaled down to its type, so it
+  looks the same. The zoom **MUST NOT** be stopped with `maximum-scale` or
+  `user-scalable=no`: readers must always be able to zoom themselves.
+- **The on-screen keyboard**: on a touch screen nothing hands a field the
+  caret on its own (a dialog opening, the film cover's editor, sign-in); the
+  keyboard opens when the reader taps a field (`keyboardWaitsForTap`).
 - **Search tags**: viewfinder corners (four 8px corner brackets in
   `--color-accent-line`, `--color-accent` on hover) around Slate text.
 - **Scene tags** (`shared/ui/Badge`, neutral tone): pills on `--color-fill`.
@@ -120,6 +129,9 @@ those tokens and **MUST NOT** set scene fonts or inks directly.
 - Text over artwork uses `--shadow-text`.
 - State changes use `--transition-fast` (160ms). Every animation **MUST**
   stop under `prefers-reduced-motion: reduce`.
+- Opening something **MUST NOT** resize it or zoom to it: the film cover is
+  one size, closed or open, and only swings, staying clear of the screen's
+  edge.
 - Stills keep their own aspect ratio; do not crop a frame to fill a grid.
 
 ## 7. Review checklist
@@ -136,3 +148,5 @@ A UI change is ready when:
 - [ ] Screenplay text reads `--scene-*` tokens, not its own fonts or colors.
 - [ ] Motion respects `prefers-reduced-motion`.
 - [ ] The page works at phone width (the header stacks below 780px).
+- [ ] On a touch screen, text fields are 16px or more and no field takes the
+      caret until it's tapped.

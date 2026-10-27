@@ -9,11 +9,13 @@
 /* ---------- Hero ---------- */
 
 /* --fade-under: how far the backdrop runs on below the hero, under the stills
-   timeline, finishing its fade into the page just past the timeline's scale. */
+   timeline, finishing its fade into the page just past the timeline's scale.
+   The hero's width places the cover (see --cover-room). */
 .hero {
   --fade-under: 150px;
   position: relative;
   padding-top: 70px;
+  container-type: inline-size;
 }
 
 /* The film's stills taking turns, or a blurred cover. It sits under the whole
@@ -84,10 +86,13 @@
 
 /* Tall enough that a good slice of the backdrop shows above the poster. The
    site header floats over the hero's top, so the hero runs up behind it by its
-   height and the poster and details stay below it. --cover-width sizes the
-   poster and the bound cover. */
+   height and the poster and details stay below it. --cover-size (in px) sizes
+   the poster and the bound cover, the same open or closed; --cover-room is how
+   far the cover's spine sits from the screen's edge. */
 .heroInner {
-  --cover-width: 240px;
+  --cover-size: 240;
+  --cover-width: calc(var(--cover-size) * 1px);
+  --cover-room: max(var(--page-gutter), calc((100cqw - var(--page-max-width)) / 2 + var(--page-gutter)));
   position: relative;
   z-index: 1;
   max-width: var(--page-max-width);
@@ -109,7 +114,6 @@
   background: linear-gradient(145deg, var(--color-surface-raised), var(--color-surface));
   object-fit: cover;
   box-shadow: var(--shadow-modal);
-  transition: width 0.5s ease;
 }
 
 .heroBody {
@@ -177,6 +181,14 @@
   margin: 0;
   font-size: var(--text-md);
   font-variant-numeric: tabular-nums;
+}
+
+/* The details are typed in place, and iOS zooms into a field set under 16px
+   as it takes focus, so on touch screens they're 16px open or closed. */
+@media (pointer: coarse) {
+  .facts dd {
+    font-size: var(--text-base);
+  }
 }
 
 /* Year and runtime; the input that edits one inherits it. */
@@ -375,15 +387,25 @@
   line-height: 1.35;
 }
 
-/* The button itself never turns, so the whole cover answers the pointer while it lifts. */
+/* The button itself never turns, so the whole cover answers the pointer while
+   it lifts. Standing open, the cover leans out past its spine by the eye's
+   distance from the spine times size / (depth - size). The eye sits at the
+   cover's middle, unless the cover would then lean more than 60% of the way to
+   the screen's edge (into --flap-margin); then it moves toward the spine just
+   enough. */
 .coverButton {
+  --cover-depth: 1100;
+  --flap-margin: calc(var(--cover-room) * 0.4);
   position: relative;
   display: block;
   padding: 0;
   border: 0;
   border-radius: var(--radius-md);
   background: none;
-  perspective: 1100px;
+  perspective: calc(var(--cover-depth) * 1px);
+  perspective-origin:
+    min(50%, calc((var(--cover-room) - var(--flap-margin)) * (var(--cover-depth) - var(--cover-size)) / var(--cover-size)))
+    50%;
   cursor: pointer;
 }
 
@@ -926,8 +948,9 @@
 /* ---------- Narrow screens: stacked hero, two-column stills ---------- */
 
 @media (max-width: 600px) {
+  /* The cover is one size, closed or open: only the cover swings. */
   .heroInner {
-    --cover-width: 120px;
+    --cover-size: 136;
     min-height: 0;
     padding: calc(var(--sd-nav-height) + 28px) var(--page-gutter) 28px;
     flex-direction: column;
@@ -935,14 +958,42 @@
     gap: 20px;
   }
 
-  /* Opened, the cover grows so the script's controls fit on its title page. */
-  .heroEditing {
-    --cover-width: 176px;
+  /* An admin's hero keeps room under the details for Save and Discard, so
+     opening the cover pushes nothing below it down. */
+  .heroEditable {
+    padding-bottom: 40px;
   }
 
-  .editActions {
-    position: static;
-    margin-top: 2px;
+  /* The script's controls keep their size from the desktop's cover rather
+     than shrinking with this one, and stack. The status is set small enough
+     to stay on one line. */
+  .scriptControls {
+    font-size: 16px;
+  }
+
+  .scriptStatus {
+    font-size: 0.5em;
+    white-space: nowrap;
+  }
+
+  .scriptRow {
+    grid-template-columns: 1fr;
+  }
+
+  /* A phone has no file to drop. */
+  .scriptDrop {
+    display: none;
+  }
+
+  /* A picked PDF's controls take the page: the title page's own lines make
+     room, and so, while it asks before a replacement, do the status and the
+     file's name. */
+  .cover:has(.scriptFile) .titlePage > * {
+    visibility: hidden;
+  }
+
+  .scriptControls:has(.scriptWarning) :is(.scriptStatus, .scriptFile) {
+    display: none;
   }
 
   .stillGrid {
@@ -963,7 +1014,6 @@
 
   /* The cover still opens and the lines still show, without the motion; the caret holds still. */
   .coverFlap,
-  .poster,
   .titlePage::before,
   .coverTip,
   .field::before,

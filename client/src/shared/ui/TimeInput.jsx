@@ -6,6 +6,8 @@ import styles from "./TimeInput.module.css";
 
 // Colons and empty slots are decoration; a decimal point stays part of the entry.
 const entryOf = (text) => text.replace(/[^\d.]/g, "");
+// iOS zooms into a field set smaller than this as it takes focus.
+const FIELD_TYPE_PX = 16;
 
 function timecode(entry, padding) {
   const [whole, fraction] = entry.split(".");
@@ -19,6 +21,8 @@ function timecode(entry, padding) {
  * immediately, so consumers can validate/save without waiting for blur.
  * `tenths` permits an explicit decimal and one digit; `inline` inherits the
  * surrounding typography instead of using the standard boxed input styling.
+ * Inline type under 16px is drawn as it is, while on touch screens the field
+ * itself is set at 16px and scaled to it, so iOS doesn't zoom in on focus.
  * Native input props and events are forwarded; preventing a key's default
  * lets a consumer own shortcuts such as Enter to save or Escape to discard.
  */
@@ -27,6 +31,9 @@ export function TimeInput({
   onFocus, onBlur, onKeyDown, disabled, readOnly, ...props
 }) {
   const [editing, setEditing] = useState(null);
+  // For inline type under 16px: its share of 16px, and its tracking at 16px.
+  const [fit, setFit] = useState(null);
+  const controlRef = useRef(null);
   const inputRef = useRef(null);
   const pendingCaret = useRef(null);
   const entry = editing?.value === value ? editing.entry : entryOf(value);
@@ -40,6 +47,15 @@ export function TimeInput({
       pendingCaret.current = null;
     }
   });
+
+  useLayoutEffect(() => {
+    if (!inline) return;
+    const type = getComputedStyle(controlRef.current);
+    const size = parseFloat(type.fontSize);
+    if (!(size > 0 && size < FIELD_TYPE_PX)) return;
+    const scale = size / FIELD_TYPE_PX;
+    setFit({ scale, tracking: (parseFloat(type.letterSpacing) || 0) / scale });
+  }, [inline]);
 
   function update(nextEntry, beforeCaret = nextEntry.length) {
     if (disabled || readOnly) return;
@@ -72,7 +88,11 @@ export function TimeInput({
 
   const Control = inline ? "input" : Input;
   return (
-    <span className={cx(styles.control, inline && styles.inline, className)}>
+    <span
+      ref={controlRef}
+      className={cx(styles.control, inline && styles.inline, fit && styles.scaled, className)}
+      style={fit ? { "--type-scale": fit.scale, "--type-tracking": `${fit.tracking}px` } : undefined}
+    >
       <Control
         {...props}
         ref={inputRef}

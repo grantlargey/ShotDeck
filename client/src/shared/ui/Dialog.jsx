@@ -1,14 +1,16 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { cx } from "@/shared/lib/cx.js";
+import { keyboardWaitsForTap } from "@/shared/lib/onScreenKeyboard.js";
 import { IconButton } from "./IconButton.jsx";
 import { CloseIcon } from "./icons.jsx";
 import styles from "./Dialog.module.css";
 
 /**
  * Centered modal dialog with a title row, body, and optional footer. Escape
- * and the backdrop close it; focus moves to the first field and returns to
- * the opener afterwards.
+ * and the backdrop close it; focus moves to the first field (on a touch
+ * screen, the first button, so the keyboard stays down) and returns to the
+ * opener afterwards.
  *
  * It is drawn at the end of the document rather than where it is written. The
  * overlay covers the viewport through `position: fixed`, and an ancestor that
@@ -33,8 +35,11 @@ export function Dialog({ title, onClose, footer, className, overlayClassName, re
     const previousFocus = document.activeElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Skip hidden controls, such as a file picker's native input.
-    const firstField = [...(bodyRef.current?.querySelectorAll("input, select, textarea, button") ?? [])].find(
+    // Skip hidden controls, such as a file picker's native input. On a touch
+    // screen a field would raise the keyboard, so only a button takes focus
+    // there and the keyboard waits for a field to be tapped.
+    const controls = keyboardWaitsForTap() ? "button" : "input, select, textarea, button";
+    const firstField = [...(bodyRef.current?.querySelectorAll(controls) ?? [])].find(
       (element) => !element.disabled && element.getClientRects().length > 0
     );
     (firstField || closeRef.current)?.focus();

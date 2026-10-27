@@ -4,7 +4,9 @@
  * what's inside, from these sizes. Each variant sets them once.
  */
 .field {
-  --type: 10.5px;
+  /* The type as a share of 16px: 10.5px. On touch screens the input is set at 16px and drawn at this size (see .input). */
+  --type-scale: 0.65625;
+  --type: calc(16px * var(--type-scale));
   --line: 16px;
   /* How far the underscore sits above the foot of the line. */
   --lift: 4px;
@@ -25,7 +27,8 @@
 
 /* The home hero's field: larger, on glass over artwork. Keep TOOL_SPACE.hero in SceneSearchField.jsx in step. */
 .hero {
-  --type: 13px;
+  /* 13px */
+  --type-scale: 0.8125;
   --line: 20px;
   --lift: 5px;
   --icon-size: 18px;
@@ -42,7 +45,8 @@
 
 @media (max-width: 780px) {
   .hero {
-    --type: 12px;
+    /* 12px */
+    --type-scale: 0.75;
     --line: 18px;
     --lift: 4.5px;
     --icon-size: 16px;
@@ -93,6 +97,26 @@
   font: 700 var(--type) / var(--line) var(--font-slate);
   letter-spacing: var(--tracking-slate);
   text-transform: uppercase;
+}
+
+/*
+ * iOS zooms into a field set under 16px as it takes focus. On touch screens
+ * the input is set at 16px and scaled to the field's type, so it looks the
+ * same; FieldCaret reads the scale to follow the field's scrolling.
+ */
+@media (pointer: coarse) {
+  .input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: calc(100% / var(--type-scale));
+    height: calc(100% / var(--type-scale));
+    padding: 0 calc((var(--tools, 12px) + 10px) / var(--type-scale)) 0 calc(var(--text-left) / var(--type-scale));
+    font-size: 16px;
+    line-height: calc(var(--line) / var(--type-scale));
+    transform: scale(var(--type-scale));
+    transform-origin: 0 0;
+  }
 }
 
 .input::-webkit-search-cancel-button,
