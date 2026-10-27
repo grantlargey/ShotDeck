@@ -1,4 +1,8 @@
 .card {
+  /* HOLD_MS in useHoldPress.js; the hold shows only once a press outlasts a tap. */
+  --hold-ms: 500ms;
+  --hold-wait: 120ms;
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -11,16 +15,21 @@
   text-align: left;
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   transition:
     transform var(--transition-fast),
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
 }
 
-.card:hover {
-  transform: translateY(-2px);
-  border-color: var(--color-line-strong);
-  box-shadow: var(--shadow-card);
+/* A tap leaves hover stuck on touch screens, so only a pointer lifts the card. */
+@media (hover: hover) {
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-line-strong);
+    box-shadow: var(--shadow-card);
+  }
 }
 
 .selected,
@@ -29,6 +38,49 @@
   box-shadow:
     0 0 0 1px var(--color-mark-line),
     var(--shadow-card);
+}
+
+/*
+ * A held touch traces a ring round the card, just inside its edge (the card
+ * clips the stroke's outer half), from the top-left corner clockwise.
+ */
+.holdRing {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.holdRing rect {
+  fill: none;
+  stroke: var(--color-mark);
+  stroke-width: 4;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+}
+
+.holding .holdRing rect {
+  animation: hold-trace calc(var(--hold-ms) - var(--hold-wait)) linear var(--hold-wait) forwards;
+}
+
+.holdLabel {
+  opacity: 0;
+  animation: hold-label 1ms linear var(--hold-wait) forwards;
+}
+
+@keyframes hold-trace {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes hold-label {
+  to {
+    opacity: 1;
+  }
 }
 
 /* ---------- Film still (split layout) ---------- */
@@ -49,8 +101,10 @@
   transition: transform 0.24s ease;
 }
 
-.card:hover .stillImage {
-  transform: scale(1.03);
+@media (hover: hover) {
+  .card:hover .stillImage {
+    transform: scale(1.03);
+  }
 }
 
 .stillEmpty {

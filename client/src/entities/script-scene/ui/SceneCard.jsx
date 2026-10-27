@@ -1,6 +1,7 @@
 import { getStillThumbnail } from "@/entities/still/model/still.js";
 import { cx } from "@/shared/lib/cx.js";
 import { useSignedMediaUrl } from "@/shared/lib/media/useSignedMediaUrl.js";
+import { useHoldPress } from "@/shared/lib/useHoldPress.js";
 import { getScreenplaySceneHeading } from "@/shared/lib/screenplay/grammar.js";
 import { Badge } from "@/shared/ui/Badge.jsx";
 import { ImageIcon } from "@/shared/ui/icons.jsx";
@@ -25,6 +26,9 @@ const MAX_PREVIEW_ELEMENTS = 14;
  * it turns back (stillMotion.js): { phase: "in" | "out", delay, frameDelay },
  * where `delay` holds this card's still back and `frameDelay` is when the
  * frames close, both in ms.
+ * touch: on a touch screen, a tap runs `onTap` instead of onClick and a held
+ * press runs `onHold`, tracing a ring round the card meanwhile with
+ * `holdLabel` beside the timing (useHoldPress): { onTap, onHold, holdLabel }.
  */
 export function SceneCard({
   scene,
@@ -38,7 +42,9 @@ export function SceneCard({
   onDoubleClick,
   onKeyActivate,
   stillMotion,
+  touch,
 }) {
+  const { holding, pressProps } = useHoldPress({ onClick, onTap: touch?.onTap, onHold: touch?.onHold });
   const split = layout === "split";
   const text = displayScriptSceneText(scene);
   const heading = getScreenplaySceneHeading(text);
@@ -63,6 +69,7 @@ export function SceneCard({
         styles.card,
         split && styles.split,
         selected && styles.selected,
+        holding && styles.holding,
         stillMotion && (stillMotion.phase === "in" ? styles.stillIn : styles.stillOut)
       )}
       style={
@@ -74,7 +81,7 @@ export function SceneCard({
       aria-haspopup={hasPopup ? "dialog" : undefined}
       aria-label={[cardTitle, heading].filter(Boolean).join(", ")}
       title={tooltip}
-      onClick={onClick}
+      {...pressProps}
       onDoubleClick={onDoubleClick}
       onKeyDown={handleKeyDown}
     >
@@ -105,7 +112,11 @@ export function SceneCard({
         </div>
         <div className={styles.subRow}>
           <span className={styles.timing}>{formatFilmTiming(scene)}</span>
-          {status && <span className={styles.status}>{status}</span>}
+          {holding && touch.holdLabel ? (
+            <span className={cx(styles.status, styles.holdLabel)}>{touch.holdLabel}</span>
+          ) : (
+            status && <span className={styles.status}>{status}</span>
+          )}
         </div>
         {tags.length > 0 && (
           <div className={styles.tags}>
@@ -116,6 +127,12 @@ export function SceneCard({
           </div>
         )}
       </div>
+
+      {touch?.onHold && (
+        <svg className={styles.holdRing} aria-hidden="true">
+          <rect width="100%" height="100%" rx="7" pathLength="1" />
+        </svg>
+      )}
     </div>
   );
 }
